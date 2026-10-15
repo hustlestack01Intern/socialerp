@@ -18,13 +18,18 @@ from typing import Protocol
 
 from packages.agent.errors import AgentError
 from packages.agent.gateway import LLMError, LLMMessage
-from packages.agent.intent import Intent, IntentResult
+from packages.agent.intent import Intent, IntentResult, ItemSlot
 from packages.agent.policy import (
     AutonomyLevel,
     PolicyAction,
     PolicyDecision,
     PolicyEngine,
     RiskLevel,
+)
+from packages.agent.tools import (
+    OrderCreateLine,
+    OrderCreateRequest,
+    OrderCreator,
 )
 
 HANDOFF_TEXT = "Let me connect you with a team member who can help with this."
@@ -91,6 +96,7 @@ class AgentOutcome:
     sent: bool
     grounded: bool
     tools_used: list[str] = field(default_factory=list)
+    order_id: str = ""
     model_version: str = ""
     prompt_tokens: int = 0
     completion_tokens: int = 0
@@ -107,15 +113,21 @@ class Agent:
         catalog: Catalog,
         facts: BusinessFacts,
         autonomy: AutonomyLevel = AutonomyLevel.L0_SHADOW,
+        order_creator: OrderCreator | None = None,
     ) -> None:
         self.extractor = extractor
         self.policy = policy
         self.catalog = catalog
         self.facts = facts
         self.autonomy = autonomy
+        self.order_creator = order_creator
 
     async def handle_message(
-        self, message: str, *, history: list[LLMMessage] | None = None
+        self,
+        message: str,
+        *,
+        history: list[LLMMessage] | None = None,
+        customer_phone: str | None = None,
     ) -> AgentOutcome:
         try:
             intent = await self.extractor.extract(message)
@@ -150,6 +162,9 @@ class Agent:
                 grounded=False,
             )
 
+        if decision.may_execute:
+            return await self._execute_order(intent, decision, customer_phone)
+
         reply, grounded, tools_used = self._compose(intent)
         return AgentOutcome(
             intent=intent,
@@ -158,6 +173,107 @@ class Agent:
             sent=decision.auto_send,
             grounded=grounded,
             tools_used=tools_used,
+        )
+
+    # -- L2 transaction execution -----------------------------------------
+
+    async def _execute_order(
+        self,
+        intent: IntentResult,
+        decision: PolicyDecision,
+        customer_phone: str | None,
+    ) -> AgentOutcome:
+        """Create the order through the deterministic tool (L2+).
+
+        The agent resolves each requested item to a catalog SKU and hands the
+        tool a *price guard* (the catalog price). The tool re-validates against
+        the catalog, computes the total and reserves stock — the agent never
+        does arithmetic. Any failure is reported truthfully from the tool (or
+        handed to a human); nothing is improvised.
+        """
+        if self.order_creator is None or not customer_phone:
+            return AgentOutcome(
+                intent=intent,
+                decision=decision,
+                reply_text="I can place that order — what phone number should I use for payment?",
+                sent=False,
+                grounded=False,
+            )
+
+        resolved: list[OrderCreateLine] = []
+        unresolved: list[ItemSlot] = []
+        for slot in intent.items:
+            matches = self.catalog.find(slot.description)
+            if not matches:
+                unresolved.append(slot)
+                continue
+            item = matches[0]
+            resolved.append(
+                OrderCreateLine(
+                    sku=item.sku,
+                    quantity=slot.quantity,
+                    expected_unit_price_cents=item.price_cents,
+                )
+            )
+
+        if unresolved or not resolved:
+            missing = ", ".join(s.description for s in unresolved) if unresolved else ""
+            reply = (
+                f"I couldn't match {missing} to an item in our catalogue. "
+                "Could you confirm the product name?"
+                if missing
+                else "Sure — what would you like to order, and how many?"
+            )
+            return AgentOutcome(
+                intent=intent,
+                decision=decision,
+                reply_text=reply,
+                sent=False,
+                grounded=False,
+                tools_used=["catalog.find"],
+            )
+
+        request = OrderCreateRequest(
+            customer_phone=customer_phone,
+            lines=tuple(resolved),
+            delivery_area=intent.delivery_area,
+        )
+        try:
+            result = await self.order_creator.create_order(request)
+        except Exception:
+            return AgentOutcome(
+                intent=intent,
+                decision=decision,
+                reply_text=f"{SAFE_FALLBACK} {HANDOFF_TEXT}",
+                sent=False,
+                grounded=False,
+                tools_used=["catalog.find", "orders.create"],
+            )
+
+        if not result.ok:
+            # A business rejection (out of stock, unknown item): tell the truth
+            # from the tool and let a human take over. Never claim success.
+            return AgentOutcome(
+                intent=intent,
+                decision=decision,
+                reply_text=result.customer_message,
+                sent=False,
+                grounded=False,
+                tools_used=["catalog.find", "orders.create"],
+            )
+
+        total = f"KES {result.total_cents // 100:,}"
+        return AgentOutcome(
+            intent=intent,
+            decision=decision,
+            reply_text=(
+                f"Done! Order {result.order_id} is confirmed at {total}. "
+                f"I'll send an M-Pesa payment request to {customer_phone} shortly."
+            ),
+            sent=True,
+            grounded=True,
+            tools_used=["catalog.find", "orders.create"],
+            order_id=result.order_id,
         )
 
     # -- grounded composition ---------------------------------------------

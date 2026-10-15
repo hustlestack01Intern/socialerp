@@ -35,6 +35,7 @@ class RiskLevel(str, Enum):
 class PolicyAction(str, Enum):
     AUTO_REPLY = "auto_reply"  # send automatically (L1+)
     DRAFT_FOR_APPROVAL = "draft_for_approval"  # L0 shadow
+    EXECUTE_ORDER = "execute_order"  # L2+: create order + reserve stock via the tool
     HANDOFF = "handoff"  # route to a human, agent stops
     ESCALATE_HUMAN = "escalate_human"  # high-risk/low-confidence; human must decide
 
@@ -75,7 +76,12 @@ class PolicyDecision:
 
     @property
     def auto_send(self) -> bool:
-        return self.action is PolicyAction.AUTO_REPLY
+        return self.action in (PolicyAction.AUTO_REPLY, PolicyAction.EXECUTE_ORDER)
+
+    @property
+    def may_execute(self) -> bool:
+        """True when the agent may run a transaction tool (L2+) for this intent."""
+        return self.action is PolicyAction.EXECUTE_ORDER
 
 
 class PolicyEngine:
@@ -136,8 +142,16 @@ class PolicyEngine:
                 autonomy,
             )
 
-        # 6. State-changing intents: draft for approval until L2 exists.
+        # 6. State-changing intents: L2+ transacts through the deterministic tool;
+        # below L2 the agent only drafts the order for human approval.
         if result.intent is Intent.CREATE_ORDER:
+            if autonomy in (AutonomyLevel.L2_TRANSACT, AutonomyLevel.L3_OPTIMIZE):
+                return PolicyDecision(
+                    PolicyAction.EXECUTE_ORDER,
+                    RiskLevel.MEDIUM,
+                    "L2: order creation permitted within tenant rules",
+                    autonomy,
+                )
             return PolicyDecision(
                 PolicyAction.DRAFT_FOR_APPROVAL,
                 RiskLevel.MEDIUM,

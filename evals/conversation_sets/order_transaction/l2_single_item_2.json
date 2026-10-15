@@ -1,0 +1,14 @@
+{
+  "id": "order_transaction_002",
+  "capability": "order_transaction",
+  "language": "en",
+  "phone": "254712345678",
+  "tags": ["l2", "single_item", "delivery_area"],
+  "turns": [
+    {"role": "customer", "content": "I want to buy 1 red t-shirt deliver to Westlands"}
+  ],
+  "expected_outcome": {
+    "order_created": true,
+    "total_cents": 120000
+  }
+}

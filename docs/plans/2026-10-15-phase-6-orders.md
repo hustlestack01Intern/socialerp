@@ -1,7 +1,8 @@
 # PLAN: Phase 6 — Order creation, stock reservation and the paid→packed path
 
-Date: 2026-10-15 · Author: Chief Engineer · Status: **step 1 landed** (order core first slice,
-`make check` green: ruff + mypy + 401 tests + evals). Step 2 (agent L2 tool) still pending.
+Date: 2026-10-15 · Author: Chief Engineer · Status: **steps 1–2 landed** (order core + agent L2
+`create_order` tool + active L2 evals; `make check` green: ruff + mypy + 417 tests + 8 evals).
+Step 3 (conversation wiring) still pending.
 
 ## Goal and non-goals
 - Goal: deterministically **create an order** from catalog items, **reserve stock** in the
@@ -54,8 +55,11 @@ Date: 2026-10-15 · Author: Chief Engineer · Status: **step 1 landed** (order c
    `metadata_json`; align ORM enum storage for reservations/stock/catalog variants; `CustomerRepository`
    + `OrderRepository`; `OrderService` (create/cancel/mark_packed/record_sale); worker
    `payment.completed` handler; orders API; tests (happy + failure paths, RLS, concurrent last item).
-2. Next — agent L2 `create_order` tool + policy L2 rules + eval promotion.
-3. Then — pay-on-delivery trigger, delivery/rider (Phase 7).
+2. **Landed** — agent L2 `create_order` tool (`packages/agent/tools.py` +
+   `service_tools.py`), policy `EXECUTE_ORDER` at L2/L3, and the new active `order_transaction`
+   eval capability (checked: `order_created`, exact `total_cents`).
+3. Then — conversation-pipeline wiring (audit, idempotency key, send within the 24h window),
+   pay-on-delivery trigger and delivery/rider (Phase 7).
 
 ## Blast radius and rollback
 - New modules; touches `models/{catalog,reservation,stock}.py` (enum storage only), `apps/worker/main.py`

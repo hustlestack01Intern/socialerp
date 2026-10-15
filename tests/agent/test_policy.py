@@ -70,6 +70,39 @@ def test_create_order_drafts_for_approval() -> None:
     decision = PolicyEngine().decide(_result(Intent.CREATE_ORDER), autonomy=AutonomyLevel.L1_ANSWER)
     assert decision.action is PolicyAction.DRAFT_FOR_APPROVAL
     assert not decision.auto_send
+    assert not decision.may_execute
+
+
+@pytest.mark.parametrize("autonomy", [AutonomyLevel.L2_TRANSACT, AutonomyLevel.L3_OPTIMIZE])
+def test_create_order_executes_at_l2_and_above(autonomy: AutonomyLevel) -> None:
+    decision = PolicyEngine().decide(_result(Intent.CREATE_ORDER), autonomy=autonomy)
+    assert decision.action is PolicyAction.EXECUTE_ORDER
+    assert decision.may_execute
+    assert decision.auto_send
+    assert not decision.requires_human
+
+
+def test_order_capture_still_drafts_at_l0() -> None:
+    decision = PolicyEngine().decide(_result(Intent.CREATE_ORDER), autonomy=AutonomyLevel.L0_SHADOW)
+    assert decision.action is PolicyAction.DRAFT_FOR_APPROVAL
+    assert not decision.may_execute
+
+
+def test_injection_blocks_l2_order_execution() -> None:
+    decision = PolicyEngine().decide(
+        _result(Intent.CREATE_ORDER, injection_detected=True),
+        autonomy=AutonomyLevel.L2_TRANSACT,
+    )
+    assert decision.action is PolicyAction.ESCALATE_HUMAN
+    assert not decision.may_execute
+
+
+def test_low_confidence_blocks_l2_order_execution() -> None:
+    decision = PolicyEngine().decide(
+        _result(Intent.CREATE_ORDER, confidence=0.2), autonomy=AutonomyLevel.L2_TRANSACT
+    )
+    assert decision.action is PolicyAction.ESCALATE_HUMAN
+    assert not decision.may_execute
 
 
 def test_faq_shadow_mode_drafts() -> None:

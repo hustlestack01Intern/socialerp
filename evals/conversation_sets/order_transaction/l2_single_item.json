@@ -1,0 +1,14 @@
+{
+  "id": "order_transaction_001",
+  "capability": "order_transaction",
+  "language": "en",
+  "phone": "254712345678",
+  "tags": ["l2", "single_item"],
+  "turns": [
+    {"role": "customer", "content": "nataka 2 black hoodie deliver to Kilimani"}
+  ],
+  "expected_outcome": {
+    "order_created": true,
+    "total_cents": 500000
+  }
+}

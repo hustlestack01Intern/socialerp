@@ -44,6 +44,14 @@ from packages.agent.policy import (
     PolicyEngine,
     RiskLevel,
 )
+from packages.agent.tools import (
+    FakeOrderCreator,
+    OrderCreateLine,
+    OrderCreateRequest,
+    OrderCreateResult,
+    OrderCreator,
+    OrderToolError,
+)
 
 __all__ = [
     "ALWAYS_HUMAN_ACTIONS",
@@ -55,6 +63,7 @@ __all__ = [
     "BusinessFacts",
     "CachingGateway",
     "CatalogItem",
+    "FakeOrderCreator",
     "HeuristicIntentExtractor",
     "InMemoryCatalog",
     "Intent",
@@ -71,6 +80,11 @@ __all__ = [
     "LLMTimeoutError",
     "LLMUsage",
     "OpenAICompatibleGateway",
+    "OrderCreateLine",
+    "OrderCreateRequest",
+    "OrderCreateResult",
+    "OrderCreator",
+    "OrderToolError",
     "PolicyAction",
     "PolicyConfig",
     "PolicyDecision",

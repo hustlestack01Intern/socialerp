@@ -5,30 +5,34 @@
 
 ## Current Phase
 **M3 (catalog/stock/orders) complete. Phase 4 (payments) done except the aggregator provider.
-Phase 5 (agent) L0/L1 core complete. Phase 6 (orders) first slice landed: deterministic
-`OrderService` (catalog-price authority, reservation on creation, release on cancel/expiry, the
+Phase 5 (agent) L0/L1 core complete. Phase 6 (orders) landed: deterministic `OrderService`
+(catalog-price authority, reservation on creation, release on cancel/expiry, the
 `payment.completed` sale side effect, idempotency, concurrent last-item race), tenant-scoped
-orders API, migration `0009` (`metadata` → `metadata_json`) and enum storage alignment.
-L2 transact tools, conversation integration, and Phase 7–10 not started.**
+orders API, migration `0009` (`metadata` → `metadata_json`), enum storage alignment, and the
+**agent L2 `create_order` tool** wired into the agent loop with policy gating and active L2
+evals. Conversation-pipeline wiring (persisting agent actions, sending replies) and Phase 7–10
+not started.**
 
-## Measured Results (real output, 2026-10-15, after Phase 6 first slice)
+## Measured Results (real output, 2026-10-15, after Phase 6 order core + agent L2 tool)
 | Gate | Command | Result |
 |---|---|---|
 | Lint | `uv run ruff check .` | **All checks passed!** |
-| Format | `uv run ruff format --check .` | **211 files already formatted** |
-| Types | `uv run mypy packages apps` (strict) | **Success: no issues found in 77 source files** |
-| Tests | `uv run pytest` | **401 passed, 99 warnings** (~8:26 in `make check`, 8:49 standalone) |
-| Evals | `uv run python -m evals.runner` | **6/6 cases pass, wrong-price/stock hallucinations: 0** |
-| Full gate | `make check` | **✅ All checks passed!** (ruff + mypy + 401 tests + real evals) |
+| Format | `uv run ruff format --check .` | **215 files already formatted** |
+| Types | `uv run mypy packages apps` (strict) | **Success: no issues found in 79 source files** |
+| Tests | `uv run pytest` | **417 passed, 100 warnings** (~8:12 in `make check`) |
+| Evals | `uv run python -m evals.runner` | **8/8 cases pass (6 capabilities incl. `order_transaction`), wrong-price/stock hallucinations: 0** |
+| Full gate | `make check` | **✅ All checks passed!** (ruff + mypy + 417 tests + real evals) |
 
-Phase 6 tests: **37 in `tests/orders/`** — `test_order_service.py` (16: reservation + totals,
-catalog-price authority, price mismatch, unknown/inactive variant, insufficient stock writes
-nothing, idempotency, duplicate-line merge, customer reuse, cancel/release, cannot-cancel-paid,
-idempotent sale, TTL expiry, concurrent last-item race), `test_orders_api.py` (6: create/get,
-idempotent header, 409 insufficient, 400 unknown variant, cancel/pack, pack-paid), and
-`test_orders_rls.py` (1 cross-tenant isolation). `tests/conftest.py` now installs RLS on the
-orders/customers/order_items/reservations/stock_movements/products/product_variants/categories
-tables so isolation is actually exercised.
+Phase 6 tests: **53 in `tests/orders` + `tests/agent`** — `tests/orders/test_order_service.py`
+(16: reservation + totals, catalog-price authority, price mismatch, unknown/inactive variant,
+insufficient stock writes nothing, idempotency, duplicate-line merge, customer reuse,
+cancel/release, cannot-cancel-paid, idempotent sale, TTL expiry, concurrent last-item race),
+`tests/orders/test_orders_api.py` (6), `tests/orders/test_orders_rls.py` (1),
+`tests/orders/test_agent_order_tool.py` (3: agent → `ServiceOrderCreator` → real
+`OrderService`, out-of-stock writes no order, cross-tenant SKU fails closed),
+`tests/agent/test_l2_order_tool.py` (8: L2 create via `FakeOrderCreator`, no-phone guard,
+unknown item, out-of-stock truth, tool crash fail-safe, L1 still drafts, injection blocked,
+idempotency), plus 5 policy tests for the L2→`EXECUTE_ORDER` decision.
 
 Phase 4 tests: **46 new** — `tests/integrations/daraja/test_daraja_provider.py` (18, 4a),
 `tests/payments/test_payment_service.py` (13), `tests/payments/test_payments_api.py` (6),
@@ -161,6 +165,17 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
 - **Phase 6 orders API**: `apps/api/routes/orders.py` — `POST /api/v1/orders` (idempotency
   header), `GET /api/v1/orders`, `GET /api/v1/orders/{id}`, `POST /{id}/cancel`,
   `POST /{id}/pack`.
+- **Phase 6 agent L2 tool** (`packages/agent/tools.py`, `packages/agent/service_tools.py`):
+  the `OrderCreator` boundary (`OrderCreateRequest`/`OrderCreateResult`, stable error codes,
+  customer-safe messages) with a deterministic `FakeOrderCreator` (tests/evals) and
+  `ServiceOrderCreator` (backed by the real `OrderService`; agent → core dependency direction).
+  Policy now returns `EXECUTE_ORDER` for `CREATE_ORDER` at L2/L3 (still `ESCALATE_HUMAN` on
+  injection/risk/low-confidence, still `DRAFT_FOR_APPROVAL` below L2). The agent resolves items
+  to catalog SKUs, passes the catalog price as a *guard*, calls the tool and reports the tool's
+  authoritative total — it never does arithmetic; a tool crash fails safe to a human.
+- **Phase 6 evals promoted**: new `order_transaction` capability (L2, `FakeOrderCreator`) is
+  **active**, checking `order_created` and exact `total_cents`; the harness now reports every
+  expected-but-unchecked assertion as deferred (no silent drops). 8 cases / 6 capabilities.
 
 ## Corrected facts vs. earlier docs
 - Namespace/generation target decided and implemented: **ADR 0008** — `packages.core` is the
@@ -173,12 +188,12 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
 ## Known Gaps / Not Yet Done
 - **Phases 7–10 are unimplemented**: delivery/rider flow, CRM memory/segments/insights,
   Instagram, onboarding wizard, TikTok assisted mode, billing, hardening/load/security review.
-  **Phase 6 core is done**; the L2 agent wiring is not (see below).
-- **Phase 6 remainder**: wire the agent's L2 `create_order` tool (policy L2) into the
-  conversation/channel pipeline with full audit logging, and promote the deferred Phase-6
-  eval assertions (order_created, price_accurate, total_cents, payment_initiated) to hard
-  checks now that the deterministic service exists. The `/evals` sets cover 5 capabilities
-  with one or two cases each; broaden before promoting any prompt/model.
+  **Phase 6 core + L2 tool are done**; the conversation wiring is not (see below).
+- **Phase 6 remainder — conversation pipeline**: persist each agent action and its
+  policy decision to the audit log, thread `customer_phone` and the provider message id (as the
+  tool's idempotency key) through the channel → agent → tool path, send the reply through the
+  channel sender respecting the 24h window, and surface `EXECUTE_ORDER` outcomes to the inbox.
+  This is the "L2 transact end-to-end on WhatsApp" acceptance item from the roadmap.
 - **Known gap from the payment flow**: when a customer cancels the STK push, the protected
   payment service cancels the order directly and does **not** release the stock reservation.
   The reservation TTL job backstops it (released after expiry) rather than immediately; a
@@ -219,8 +234,8 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
   (use ≥10 min when running `make check` locally).
 
 ## Next Steps
-1. Phase 6 finish: agent L2 `create_order` tool + policy L2 rules wired into the conversation
-   pipeline (audit every agent action); promote deferred Phase-6 eval assertions to hard checks.
+1. Phase 6 finish: wire the L2 tool into the conversation pipeline (audit every agent action,
+   pass the provider message id as the idempotency key, send the reply within the 24h window).
 2. Phase 4 finish: aggregator provider + its statement feed.
 3. Phase 7: delivery zones/fees, rider WhatsApp flow, pay-on-delivery trigger, tracking page.
 4. Reconcile docker-compose files; verify `make migrate`/`make run-api` from root; wire tenancy
