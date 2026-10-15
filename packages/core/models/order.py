@@ -34,6 +34,16 @@ from packages.core.models.base import Base
 # =============================================================================
 
 
+def _enum_values(enum_cls: type[enum.Enum]) -> list[str]:
+    """Persist enum *values* (lowercase) to match the Alembic columns.
+
+    SQLAlchemy's Enum defaults to persisting member *names*; the migrations
+    define these columns as ``String`` with lowercase ``server_default``s, so
+    we force value-based storage to keep the ORM and the schema consistent.
+    """
+    return [member.value for member in enum_cls]
+
+
 class OrderStatus(str, enum.Enum):
     DRAFT = "draft"
     AWAITING_PAYMENT = "awaiting_payment"
@@ -104,13 +114,13 @@ class Order(Base):
     total_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     status: Mapped[str] = mapped_column(
-        Enum(OrderStatus, native_enum=False),
+        Enum(OrderStatus, native_enum=False, values_callable=_enum_values),
         nullable=False,
         default=OrderStatus.DRAFT,
         server_default="draft",
     )
     order_type: Mapped[str] = mapped_column(
-        Enum(OrderType, native_enum=False),
+        Enum(OrderType, native_enum=False, values_callable=_enum_values),
         nullable=False,
         default=OrderType.STANDARD,
         server_default="standard",
@@ -128,13 +138,13 @@ class Order(Base):
 
     # Payment info
     payment_method: Mapped[str] = mapped_column(
-        Enum(PaymentMethod, native_enum=False),
+        Enum(PaymentMethod, native_enum=False, values_callable=_enum_values),
         nullable=False,
         default=PaymentMethod.MPESA_STK,
         server_default="mpesa_stk",
     )
     payment_status: Mapped[str] = mapped_column(
-        Enum(PaymentStatus, native_enum=False),
+        Enum(PaymentStatus, native_enum=False, values_callable=_enum_values),
         nullable=False,
         default=PaymentStatus.PENDING,
         server_default="pending",

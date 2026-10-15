@@ -120,15 +120,18 @@ def create_app() -> FastAPI:
     app.include_router(whatsapp_webhook_router, tags=["WhatsApp Webhooks"])
 
     # Phase 3: Catalog, Inventory, Orders
+    # NOTE: these routers carry their own "/api/v1/<section>" prefix, so we do
+    # NOT pass a prefix here (doing both produced doubled paths).
     from apps.api.routes import catalog, orders, stock
 
-    app.include_router(catalog.router, prefix="/api/v1/catalog", tags=["catalog"])
-    app.include_router(stock.router, prefix="/api/v1/stock", tags=["stock"])
-    app.include_router(orders.router, prefix="/api/v1/orders", tags=["orders"])
+    app.include_router(catalog.router, tags=["catalog"])
+    app.include_router(stock.router, tags=["stock"])
+    app.include_router(orders.router, tags=["orders"])
 
-    # Phase 4: Payments
-    # from apps.api.routes import payments
-    # app.include_router(payments.router, prefix="/api/v1/payments", tags=["payments"])
+    # Phase 4: Payments (router carries its own "/api/v1/payments" prefix)
+    from apps.api.routes import payments
+
+    app.include_router(payments.router, tags=["payments"])
 
     # Phase 5: Agent
     # from apps.api.routes import agent

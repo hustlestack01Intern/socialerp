@@ -32,6 +32,11 @@ from packages.core.models.order import (
     PaymentMethod,
     PaymentStatus,
 )
+from packages.core.models.payment import (
+    Payment,
+    PaymentMethodType,
+    PaymentRecordStatus,
+)
 from packages.core.models.reservation import (
     Reservation,
     ReservationReason,
@@ -68,7 +73,10 @@ __all__ = [
     "OrderStatus",
     "OrderType",
     "OutboxEvent",
+    "Payment",
     "PaymentMethod",
+    "PaymentMethodType",
+    "PaymentRecordStatus",
     "PaymentStatus",
     "Product",
     "ProductStatus",

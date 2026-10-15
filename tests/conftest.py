@@ -49,7 +49,7 @@ _RLS_FUNCTION_SQL = """
 """
 
 # Tables that carry a tenant key and must enforce row-level security.
-_RLS_TENANT_TABLES = ("tenants", "audit_log", "outbox", "idempotency_keys")
+_RLS_TENANT_TABLES = ("tenants", "audit_log", "outbox", "idempotency_keys", "payments")
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -213,7 +213,9 @@ async def tenant_session(db_session, tenant):
     from socialerp.tenancy import reset_current_tenant_id, set_current_tenant_id
 
     token = set_current_tenant_id(tenant.id)
-    await db_session.execute(f"SET LOCAL app.current_tenant_id = '{tenant.id}'")
+    await db_session.execute(
+        text("SELECT set_config('app.current_tenant_id', :tid, true)"), {"tid": str(tenant.id)}
+    )
 
     yield db_session
 

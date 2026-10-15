@@ -90,8 +90,6 @@ class CancelOrderRequest(BaseModel):
 # Orders Endpoints (Placeholder - Full implementation in M3.5)
 # =============================================================================
 
-router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
-
 
 @router.post("", response_model=dict, status_code=201)
 async def create_order(data: CreateOrderRequest) -> dict[str, str]:

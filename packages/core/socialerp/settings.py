@@ -92,6 +92,10 @@ class Settings(BaseSettings):
     DARAJA_SHORTCODE: str = "174379"
     DARAJA_BASE_URL: str = "https://sandbox.safaricom.co.ke"
     DARAJA_CALLBACK_URL: str = ""
+    # Shared secret embedded in the STK callback path so we can attribute an
+    # inbound callback to a tenant before any tenant context exists.
+    DARAJA_CALLBACK_TOKEN: str = ""
+    DARAJA_ALLOWED_CALLBACK_IPS: str = ""
     DARAJA_TIMEOUT_SECONDS: int = 30
 
     # -------------------------------------------------------------------------

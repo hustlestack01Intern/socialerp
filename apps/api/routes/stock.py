@@ -31,8 +31,6 @@ class StockAdjustmentRequest(BaseModel):
 # Stock Endpoints (Placeholder - Full implementation in M3.5)
 # =============================================================================
 
-router = APIRouter(prefix="/api/v1/stock", tags=["stock"])
-
 
 @router.get("/levels")
 async def get_stock_levels(
