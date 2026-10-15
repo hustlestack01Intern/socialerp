@@ -114,7 +114,7 @@ class WhatsAppSender:
             status=WhatsAppMessageStatus.SENT,
             text_body=body,
             meta_message_id=response.get("messages", [{}])[0].get("id"),
-            metadata={"meta_response": response},
+            metadata_json={"meta_response": response},
         )
 
         # Update limits
@@ -185,7 +185,7 @@ class WhatsAppSender:
             template_language=language_code,
             template_components=payload_components,
             meta_message_id=response.get("messages", [{}])[0].get("id"),
-            metadata={"meta_response": response},
+            metadata_json={"meta_response": response},
         )
 
         # Update limits
@@ -250,7 +250,7 @@ class WhatsAppSender:
             media_url=media_url,
             media_caption=caption,
             meta_message_id=response.get("messages", [{}])[0].get("id"),
-            metadata={"meta_response": response},
+            metadata_json={"meta_response": response},
         )
 
         # Update limits
@@ -314,7 +314,7 @@ class WhatsAppSender:
             status=WhatsAppMessageStatus.SENT,
             interactive_data=payload["interactive"],
             meta_message_id=response.get("messages", [{}])[0].get("id"),
-            metadata={"meta_response": response},
+            metadata_json={"meta_response": response},
         )
 
         # Update limits
@@ -464,6 +464,31 @@ class WhatsAppSender:
             )
         )
         return result.scalar_one_or_none()
+
+
+class WhatsAppSenderAdapter:
+    """Adapter exposing :class:`WhatsAppSender` through the agent's send seam.
+
+    The conversation agent depends on a tiny protocol (return the provider
+    message id, raise on failure); this keeps the agent package free of the
+    Meta HTTP client. The caller (worker) owns the lifecycle and closes it.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._sender = WhatsAppSender(session)
+
+    async def send_text(
+        self,
+        tenant_id: TenantId,
+        to: CustomerPhone,
+        body: str,
+        conversation_id: UUID | None = None,
+    ) -> str | None:
+        message = await self._sender.send_text(tenant_id, to, body, conversation_id)
+        return message.meta_message_id
+
+    async def close(self) -> None:
+        await self._sender.close()
 
 
 # =============================================================================

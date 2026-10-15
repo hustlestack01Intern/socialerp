@@ -53,6 +53,7 @@ class WhatsAppMessageType(str, enum.Enum):
 
 
 class WhatsAppMessageStatus(str, enum.Enum):
+    DRAFT = "draft"
     SENT = "sent"
     DELIVERED = "delivered"
     READ = "read"

@@ -15,6 +15,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
+from socialerp.outbox import add_outbox_event
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -368,7 +369,7 @@ async def _process_inbound_message(
         template_components=normalized["template_components"],
         meta_message_id=provider_msg_id,
         meta_timestamp=normalized["meta_timestamp"],
-        metadata={"webhook_id": webhook_id},
+        metadata_json={"webhook_id": webhook_id},
     )
 
     db.add(message)
@@ -419,6 +420,24 @@ async def _process_inbound_message(
     )
 
     logger.info(f"Processed inbound message: {provider_msg_id} for tenant {tenant_id}")
+
+    # Hand the inbound message to the agent via the outbox (ADR 0014). The
+    # webhook stays fast; the worker relay runs the agent, retryably. The
+    # idempotency key makes a replayed event a no-op.
+    await add_outbox_event(
+        event_type="inbound_message",
+        payload={
+            "message_id": str(message.id),
+            "conversation_id": str(conversation.id),
+            "contact_id": str(contact.id),
+            "customer_phone": contact.phone,
+            "text_body": normalized["text_body"],
+            "provider_message_id": provider_msg_id,
+        },
+        idempotency_key=f"inbound_message:{provider_msg_id}",
+        tenant_id=tenant_id,
+        session=db,
+    )
 
 
 async def _process_status_update(

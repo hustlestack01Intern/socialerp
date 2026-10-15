@@ -117,6 +117,64 @@ async def handle_payment_completed(payload: dict[str, Any], tenant_id: Any) -> N
     logger.info("Recorded sale for paid order", order_id=str(order_id))
 
 
+def build_conversation_agent_service(session: Any, tenant_id: Any) -> Any:
+    """Construct the conversation→agent service with the real Meta sender.
+
+    Isolated as a factory so tests can substitute a deterministic extractor and
+    a fake sender without touching the network (ADR 0014).
+    """
+    from packages.conversation.agent_service import ConversationAgentService
+    from packages.integrations.meta.sender import WhatsAppSenderAdapter
+
+    return ConversationAgentService(session, tenant_id, sender=WhatsAppSenderAdapter(session))
+
+
+async def handle_inbound_message(payload: dict[str, Any], tenant_id: Any) -> None:
+    """Run the agent for one inbound WhatsApp message.
+
+    Invoked by the outbox relay. The outbox event is idempotent on
+    ``inbound_message:{provider_message_id}``; this handler opens its own
+    tenant-scoped session and commits the outcome.
+    """
+    from uuid import UUID
+
+    from socialerp.database import get_session_factory
+    from sqlalchemy import text
+
+    text_body = payload.get("text_body")
+    if not text_body:
+        # Non-text inbound (media/status) is not handled by the text agent yet.
+        logger.debug("inbound message has no text body; skipping", payload=payload)
+        return
+
+    async with get_session_factory()() as session:
+        await session.execute(
+            text("SELECT set_config('app.current_tenant_id', :tid, true)"),
+            {"tid": str(tenant_id)},
+        )
+        service = build_conversation_agent_service(session, UUID(str(tenant_id)))
+        try:
+            result = await service.respond_to_message(
+                conversation_id=UUID(payload["conversation_id"]),
+                contact_id=UUID(payload["contact_id"]),
+                customer_phone=payload["customer_phone"],
+                text=text_body,
+                provider_message_id=payload.get("provider_message_id"),
+            )
+            await session.commit()
+        finally:
+            await service.aclose()
+
+    logger.info(
+        "Handled inbound message",
+        conversation_id=payload["conversation_id"],
+        intent=result.intent,
+        action=result.action,
+        sent=result.sent,
+        order_id=result.order_id or None,
+    )
+
+
 # =============================================================================
 # ARQ SETTINGS
 # =============================================================================
@@ -162,6 +220,7 @@ async def run_outbox_relay() -> None:
 
     # Register handlers.
     relay.register_handler("payment.completed", handle_payment_completed)
+    relay.register_handler("inbound_message", handle_inbound_message)
     # Acknowledged events with no side effect yet (keeps them from being marked
     # FAILED; these become real handlers in later phases).
     for event_type in (

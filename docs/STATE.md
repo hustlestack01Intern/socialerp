@@ -240,3 +240,34 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
 3. Phase 7: delivery zones/fees, rider WhatsApp flow, pay-on-delivery trigger, tracking page.
 4. Reconcile docker-compose files; verify `make migrate`/`make run-api` from root; wire tenancy
    middleware into `main.py`.
+## Phase 6b — conversation pipeline wiring (agent on inbound WhatsApp) (2026-10-15)
+- **ADR 0014** (`docs/adr/0014-agent-conversation-pipeline.md`): outbox→worker pipeline; webhook
+  enqueues `inbound_message` event with `provider_message_id`, `conversation_id`, `contact_id`,
+  `customer_phone`, `text_body`; worker runs the agent; outbound replies are persisted as `sent`
+  when auto-send is allowed and sent succeeds, else `draft` for owner approval (L0 default).
+- **DRAFT status**: added `WhatsAppMessageStatus.DRAFT` (non-native enum, no migration).
+- **ConversationAgentService** (`packages/conversation/agent_service.py`): loads tenant
+  settings/facts and builds a read-only catalog from active products; constructs `Agent` with
+  injected `IntentExtractor`, real `ServiceOrderCreator(session, tenant_id)` and policy; audits
+  `agent.message_handled` (intent/confidence/language/injection, autonomy, decision/risk/tools,
+  `order_id`, grounded/sent/requires_human); on `requires_human` calls `ConversationManager.set_handoff`;
+  persists outbound messages with status `SENT` or `DRAFT` (records `send_error` in `metadata_json`
+  on degradation), updates `conversation.last_agent_message_at`. Sender abstraction
+  `MessageSender` protocol + `WhatsAppSenderAdapter` over the Meta sender (closes resources).
+- **Webhook** (`packages/integrations/meta/webhook.py`): after persisting the inbound message,
+  enqueues an `inbound_message` outbox event with idempotency key `inbound_message:{provider_message_id}`
+  (prevents duplicate agent runs on webhook retry). Fixed a latent bug: store WhatsApp message
+  metadata under `metadata_json` (not `metadata`).
+- **Worker** (`apps/worker/main.py`): factory `build_conversation_agent_service` creates service
+  with the real sender adapter (tests monkeypatch it); new handler `handle_inbound_message` sets
+  tenant context, runs the service, commits, and closes the sender. Registered
+  `inbound_message` in the outbox relay.
+- **Idempotency thread-through**: `Agent.handle_message(..., idempotency_key=...)` and
+  `_execute_order` pass the provider message id into `OrderCreateRequest.idempotency_key`, so a
+  retried event cannot create a second order (the tool/OrderService already dedupe by key).
+- **Tests**: new `tests/conversation/test_agent_service.py` (L2→sent+real order, L0→draft+no order,
+  L1 FAQ→sent, handoff→handoff_requested+draft, send failure→degrades to draft, tenant-scoped
+  catalog). `tests/conversation/test_worker_inbound.py` (handler creates order, replayed event does
+  not create a second order, non-text payload skipped). `tests/conversation/test_webhook_outbox.py`
+  (webhook enqueues exactly one event with correct payload and idempotency key; duplicate webhook
+  deduped). All 11 conversation tests pass; full suite **428 passed, 114 warnings**.

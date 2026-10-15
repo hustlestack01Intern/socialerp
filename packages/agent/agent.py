@@ -128,6 +128,7 @@ class Agent:
         *,
         history: list[LLMMessage] | None = None,
         customer_phone: str | None = None,
+        idempotency_key: str | None = None,
     ) -> AgentOutcome:
         try:
             intent = await self.extractor.extract(message)
@@ -163,7 +164,7 @@ class Agent:
             )
 
         if decision.may_execute:
-            return await self._execute_order(intent, decision, customer_phone)
+            return await self._execute_order(intent, decision, customer_phone, idempotency_key)
 
         reply, grounded, tools_used = self._compose(intent)
         return AgentOutcome(
@@ -182,6 +183,7 @@ class Agent:
         intent: IntentResult,
         decision: PolicyDecision,
         customer_phone: str | None,
+        idempotency_key: str | None = None,
     ) -> AgentOutcome:
         """Create the order through the deterministic tool (L2+).
 
@@ -237,6 +239,7 @@ class Agent:
             customer_phone=customer_phone,
             lines=tuple(resolved),
             delivery_area=intent.delivery_area,
+            idempotency_key=idempotency_key,
         )
         try:
             result = await self.order_creator.create_order(request)
