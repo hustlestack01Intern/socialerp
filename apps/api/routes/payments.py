@@ -28,18 +28,26 @@ from socialerp.settings import get_settings
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from packages.core.auth.dependencies import get_current_tenant_id, get_db
+from packages.core.auth.dependencies import (
+    get_current_tenant_id,
+    get_current_user,
+    get_db,
+)
 from packages.core.domain.payment import (
     CallbackVerificationError,
     PaymentProvider,
     PaymentProviderError,
 )
+from packages.core.domain.user import User
 from packages.core.models.payment import Payment
 from packages.core.payments import (
     OrderNotFoundError,
     OrderNotPayableError,
     PaymentNotFoundError,
     PaymentService,
+    RefundError,
+    RefundNotAllowedError,
+    RefundNotApprovedError,
 )
 from packages.integrations.daraja import build_direct_daraja_provider
 
@@ -86,6 +94,18 @@ class PaymentView(BaseModel):
     mpesa_receipt_number: str | None
     result_code: int | None
     failure_reason: str | None
+
+
+class RefundBody(BaseModel):
+    """Body for a human-approved refund."""
+
+    reason: str = Field(..., min_length=1)
+    amount_cents: int | None = Field(default=None, gt=0)
+
+
+class RefundView(BaseModel):
+    outcome: str
+    payment: PaymentView
 
 
 def _status_value(value: object) -> str:
@@ -169,6 +189,38 @@ async def list_order_payments(
     )
     payments = (await db.execute(stmt)).scalars().all()
     return [_view(p) for p in payments]
+
+
+@router.post("/{payment_id}/refund", response_model=RefundView)
+async def refund_payment(
+    payment_id: UUID,
+    body: RefundBody,
+    tenant_id: Annotated[UUID, Depends(get_current_tenant_id)],
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    provider: Annotated[PaymentProvider, Depends(get_payment_provider)],
+) -> RefundView:
+    """Refund a completed payment. Always human-approved and audited."""
+    service = PaymentService(db, provider)
+    try:
+        result = await service.refund_payment(
+            tenant_id=tenant_id,
+            payment_id=payment_id,
+            approved_by=user.id,
+            reason=body.reason,
+            amount_cents=body.amount_cents,
+        )
+    except PaymentNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except RefundNotApprovedError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except RefundNotAllowedError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except RefundError as exc:
+        await db.commit()
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    await db.commit()
+    return RefundView(outcome=result.outcome.value, payment=_view(result.payment))
 
 
 @router.post("/stk/callback/{tenant_id}/{callback_token}")

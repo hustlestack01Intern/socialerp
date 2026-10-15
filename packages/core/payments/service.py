@@ -16,7 +16,9 @@ and tested. Stock release on cancellation is owned by the reservation service
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from enum import Enum
 from typing import Any
 from uuid import UUID
 
@@ -33,6 +35,7 @@ from packages.core.domain.order import (
 from packages.core.domain.payment import (
     CallbackVerificationError,
     FailureReason,
+    NotSupportedError,
     PaymentProvider,
     PaymentProviderError,
     ProviderPaymentResult,
@@ -61,6 +64,31 @@ class PaymentNotFoundError(PaymentError):
 
 class MalformedCallbackError(PaymentError):
     """The callback payload could not be parsed."""
+
+
+class RefundNotApprovedError(PaymentError):
+    """A refund was attempted without an explicit human approver."""
+
+
+class RefundNotAllowedError(PaymentError):
+    """The payment/order is not in a state that can be refunded."""
+
+
+class RefundError(PaymentError):
+    """The refund could not be carried out."""
+
+
+class RefundOutcome(str, Enum):
+    """Result of a (human-approved) refund attempt."""
+
+    REFUNDED = "refunded"
+    MANUAL_REQUIRED = "manual_required"  # provider cannot refund; do it offline
+
+
+@dataclass(frozen=True)
+class RefundResult:
+    outcome: RefundOutcome
+    payment: Payment
 
 
 # Terminal payment states: a callback arriving after one of these is a
@@ -422,6 +450,129 @@ class PaymentService:
             },
         )
 
+    # -- refunds (human-approved only) ------------------------------------
+
+    async def refund_payment(
+        self,
+        *,
+        tenant_id: UUID,
+        payment_id: UUID,
+        approved_by: UUID | None,
+        reason: str,
+        amount_cents: int | None = None,
+    ) -> RefundResult:
+        """Refund a completed payment. Requires an explicit human approver.
+
+        Daraja exposes no self-serve refund API, so a provider that cannot
+        refund raises ``NotSupportedError``; in that case the attempt is
+        recorded as ``payment.refund_manual_required`` (an operator completes it
+        offline) and the ledger is left unchanged rather than faked.
+        """
+        if approved_by is None:
+            raise RefundNotApprovedError("Refunds require an explicit human approver")
+
+        stmt = (
+            select(Payment)
+            .where(Payment.id == payment_id, Payment.tenant_id == tenant_id)
+            .with_for_update()
+        )
+        payment = (await self.session.execute(stmt)).scalar_one_or_none()
+        if payment is None:
+            raise PaymentNotFoundError(f"No payment {payment_id} for this tenant")
+
+        # Idempotent: an already-refunded payment is a safe no-op.
+        if PaymentRecordStatus(payment.status) is PaymentRecordStatus.REFUNDED:
+            return RefundResult(RefundOutcome.REFUNDED, payment)
+
+        if PaymentRecordStatus(payment.status) is not PaymentRecordStatus.COMPLETED:
+            raise RefundNotAllowedError(
+                f"Only completed payments can be refunded (status={payment.status!r})"
+            )
+
+        order = await self._get_order(tenant_id, payment.order_id)
+        if not is_legal_transition(OrderStatus(order.status), OrderStatus.REFUNDED):
+            raise RefundNotAllowedError(
+                f"Order {order.id} is {order.status!r} and cannot be refunded"
+            )
+
+        amount = payment.amount_cents if amount_cents is None else amount_cents
+        if amount <= 0 or amount > payment.amount_cents:
+            raise RefundError("Refund amount must be positive and not exceed the paid amount")
+
+        receipt = payment.mpesa_receipt_number
+        if not receipt:
+            raise RefundError("Payment has no M-Pesa receipt to refund against")
+
+        try:
+            provider_accepted = await self.provider.refund(receipt, amount, reason)
+        except NotSupportedError:
+            await self.audit.log_action(
+                tenant_id=payment.tenant_id,
+                user_id=approved_by,
+                action="payment.refund_manual_required",
+                resource="payment",
+                resource_id=payment.id,
+                metadata={
+                    "order_id": str(order.id),
+                    "mpesa_receipt_number": receipt,
+                    "amount_cents": amount,
+                    "reason": reason,
+                },
+            )
+            await self.session.flush()
+            return RefundResult(RefundOutcome.MANUAL_REQUIRED, payment)
+
+        if not provider_accepted:
+            await self.audit.log_action(
+                tenant_id=payment.tenant_id,
+                user_id=approved_by,
+                action="payment.refund_failed",
+                resource="payment",
+                resource_id=payment.id,
+                metadata={
+                    "order_id": str(order.id),
+                    "mpesa_receipt_number": receipt,
+                    "amount_cents": amount,
+                    "reason": reason,
+                },
+            )
+            await self.session.flush()
+            raise RefundError("Provider declined the refund")
+
+        payment.status = PaymentRecordStatus.REFUNDED
+        order.payment_status = "refunded"
+        self._transition(order, OrderStatus.REFUNDED)
+
+        await add_outbox_event(
+            event_type="payment.refunded",
+            payload={
+                "payment_id": str(payment.id),
+                "order_id": str(order.id),
+                "mpesa_receipt_number": receipt,
+                "amount_cents": amount,
+                "approved_by": str(approved_by),
+                "reason": reason,
+            },
+            idempotency_key=f"payment_refunded:{payment.id}",
+            tenant_id=payment.tenant_id,
+            session=self.session,
+        )
+        await self.audit.log_action(
+            tenant_id=payment.tenant_id,
+            user_id=approved_by,
+            action="payment.refunded",
+            resource="payment",
+            resource_id=payment.id,
+            after={
+                "order_id": str(order.id),
+                "mpesa_receipt_number": receipt,
+                "amount_cents": amount,
+                "reason": reason,
+            },
+        )
+        await self.session.flush()
+        return RefundResult(RefundOutcome.REFUNDED, payment)
+
 
 __all__ = [
     "MalformedCallbackError",
@@ -430,4 +581,9 @@ __all__ = [
     "PaymentError",
     "PaymentNotFoundError",
     "PaymentService",
+    "RefundError",
+    "RefundNotAllowedError",
+    "RefundNotApprovedError",
+    "RefundOutcome",
+    "RefundResult",
 ]

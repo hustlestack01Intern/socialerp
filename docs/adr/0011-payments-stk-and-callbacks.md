@@ -74,18 +74,43 @@ first working slice (4a provider + 4b persistence/service/API).
    audit entry (status left `pending`). Failures and user cancellations are applied
    directly. A provider error during a query leaves the payment stale for the next run.
 
-9. **Deferred to later Phase 4 slices (tracked, not faked).** Statement-based daily
-   reconciliation vs provider settlement files, refunds (provider raises
-   `NotSupportedError`; human-approved runbook), aggregator providers, and the
-   pay-on-delivery trigger. The `httpx` packaging gap (runtime import but dev-only
-   dependency) is now **fixed** — `httpx` is a runtime dependency in `pyproject.toml`.
+9. **Refunds are human-approved and never faked.** `PaymentService.refund_payment` requires
+   an explicit `approved_by` (403 otherwise), a `completed` payment and an order that can
+   legally reach `refunded`. It calls `provider.refund`; on `NotSupportedError` (Daraja has
+   no self-serve refund API) it writes `payment.refund_manual_required` and leaves the
+   ledger unchanged (operator completes the reversal offline); a provider decline writes
+   `payment.refund_failed` and raises. Success moves payment → `refunded`, order →
+   `refunded`, emits `payment.refunded` and audits. Idempotent. Runbook:
+   `docs/RUNBOOKS/refunds.md`.
+
+10. **Statement reconciliation compares, never auto-adjusts.**
+    `reconcile_statement` diffs completed payments against a provider settlement statement
+    (`StatementEntry(receipt, amount_cents)`) and writes one
+    `payment.reconciliation_mismatch` audit entry per discrepancy
+    (`missing_in_ledger` / `missing_at_provider` / `amount_mismatch` / `no_receipt`). The
+    statement source is an integration/operator upload — deliberately no fabricated fetch.
+    Runbook: `docs/RUNBOOKS/reconciliation.md`.
+
+11. **A second, real provider: the manual pay-to-Till fallback.**
+    `packages.integrations.manual.ManualPaymentProvider` implements the interface with no
+    network call: it returns a `MANUAL-…` checkout id with Till instructions, surfaces
+    operator confirmations as callback-shaped results (shared-token, fail-closed),
+    reports `pending` on query, and raises `NotSupportedError` on refund. It reuses the
+    same money-safe `PaymentService` (amount matching, order transition, idempotency).
+
+12. **Deferred to later Phase 4 slices (tracked, not faked).** A licensed aggregator
+    provider (`PaymentProvider` third implementation) and its settlement feed, and the
+    pay-on-delivery trigger (Phase 7). The `httpx` packaging gap is **fixed** — `httpx`
+    is a runtime dependency in `pyproject.toml`.
 
 ## Consequences
 
 - The payments path is money-safe and test-covered: success, cancel, insufficient
   funds, pending, wrong amount, duplicate success, invalid signature, unknown checkout,
-  RLS cross-tenant read, blocked cross-tenant insert, and the status-query fallback
-  (failure applied, unverified success flagged for review, cancellation applied).
+  RLS cross-tenant read, blocked cross-tenant insert, the status-query fallback
+  (failure applied, unverified success flagged for review, cancellation applied),
+  human-approved refunds (success / manual-required / decline / idempotent), statement
+  reconciliation mismatches, and the manual-provider end-to-end flow.
 - Because callbacks are acknowledged on unknown checkout ids and uncredited on amount
   mismatch without retry, the reconciliation job is the backstop for genuinely missing
   money; success-without-callback remains a human-review case rather than an auto-credit.

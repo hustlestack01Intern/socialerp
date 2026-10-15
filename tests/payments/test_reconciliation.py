@@ -28,7 +28,12 @@ from packages.core.domain.payment import (
 from packages.core.models import AuditLog
 from packages.core.models.order import Customer, Order, PaymentMethod
 from packages.core.models.payment import Payment, PaymentRecordStatus
-from packages.core.payments import reconcile_tenant, stale_payments
+from packages.core.payments import (
+    StatementEntry,
+    reconcile_statement,
+    reconcile_tenant,
+    stale_payments,
+)
 
 
 class FakeProvider(PaymentProvider):
@@ -160,3 +165,76 @@ async def test_reconcile_cancel_cancels_order(tenant_session, tenant) -> None:
     assert payment.status == PaymentRecordStatus.CANCELLED
     order = (await tenant_session.execute(select(Order))).scalar_one()
     assert order.status == OrderStatus.CANCELLED
+
+
+async def _seed_completed(
+    session: Any,
+    tenant_id: UUID,
+    *,
+    receipt: str,
+    amount_cents: int = 500_000,
+) -> Payment:
+    phone = f"2547{abs(hash(receipt)) % 10**8:08d}"
+    customer = Customer(tenant_id=tenant_id, phone=phone, name="Buyer")
+    session.add(customer)
+    await session.flush()
+    order = Order(
+        tenant_id=tenant_id,
+        customer_id=customer.id,
+        customer_phone=phone,
+        total_cents=amount_cents,
+        status=OrderStatus.PAID,
+        payment_method=PaymentMethod.MPESA_STK,
+        payment_status="completed",
+    )
+    session.add(order)
+    await session.flush()
+    payment = Payment(
+        tenant_id=tenant_id,
+        order_id=order.id,
+        phone_number=phone,
+        amount_cents=amount_cents,
+        status=PaymentRecordStatus.COMPLETED,
+        checkout_request_id=f"ws_CO_{receipt}",
+        mpesa_receipt_number=receipt,
+        completed_at=datetime.now(UTC),
+    )
+    session.add(payment)
+    await session.flush()
+    return payment
+
+
+async def test_statement_all_matched(tenant_session, tenant) -> None:
+    await _seed_completed(tenant_session, tenant.id, receipt="R1")
+    await _seed_completed(tenant_session, tenant.id, receipt="R2")
+    result = await reconcile_statement(
+        tenant_session,
+        tenant.id,
+        [StatementEntry("R1", 500_000), StatementEntry("R2", 500_000)],
+    )
+    assert result.ok
+    assert result.matched == 2
+
+
+async def test_statement_missing_at_provider(tenant_session, tenant) -> None:
+    await _seed_completed(tenant_session, tenant.id, receipt="R1")
+    result = await reconcile_statement(tenant_session, tenant.id, [])
+    kinds = {m.kind for m in result.mismatches}
+    assert kinds == {"missing_at_provider"}
+
+
+async def test_statement_missing_in_ledger(tenant_session, tenant) -> None:
+    result = await reconcile_statement(
+        tenant_session, tenant.id, [StatementEntry("GHOST", 500_000)]
+    )
+    kinds = {m.kind for m in result.mismatches}
+    assert kinds == {"missing_in_ledger"}
+    assert result.mismatches[0].provider_amount_cents == 500_000
+
+
+async def test_statement_amount_mismatch_audited(tenant_session, tenant) -> None:
+    await _seed_completed(tenant_session, tenant.id, receipt="R1", amount_cents=500_000)
+    result = await reconcile_statement(tenant_session, tenant.id, [StatementEntry("R1", 499_000)])
+    assert {m.kind for m in result.mismatches} == {"amount_mismatch"}
+    actions = (await tenant_session.execute(select(AuditLog.action))).scalars().all()
+    assert "payment.reconciliation_mismatch" in actions

@@ -97,6 +97,10 @@ class Settings(BaseSettings):
     DARAJA_CALLBACK_TOKEN: str = ""
     DARAJA_ALLOWED_CALLBACK_IPS: str = ""
     DARAJA_TIMEOUT_SECONDS: int = 30
+    # Manual "pay to Till and confirm" fallback: shared secret an operator/staff
+    # member presents when recording that a manual payment arrived.
+    MANUAL_PAYMENT_TOKEN: str = ""
+    MANUAL_PAYMENT_TILL: str = ""
 
     # -------------------------------------------------------------------------
     # Payment Aggregators

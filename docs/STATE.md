@@ -4,25 +4,25 @@
 > gates green. If this contradicts MAP.md or the filesystem, check `git log` and `docs/plans/`.
 
 ## Current Phase
-**M3 (catalog/stock/orders) complete. Phase 4 (payments) 4a + 4b + status-query fallback
-done — direct Daraja STK Push provider, payments ledger, callback handling, API routes and
-a reconciliation job. Statement-based reconciliation, refunds and aggregator providers remain.
-Phases 5–10 not started.**
+**M3 (catalog/stock/orders) complete. Phase 4 (payments) done except the aggregator provider:
+direct Daraja STK Push, payments ledger, callbacks, status-query fallback, human-approved
+refunds, statement reconciliation and the manual pay-to-Till fallback. Phases 5–10 not started.**
 
-## Measured Results (real output, 2026-10-15, after Phase 4 status-query fallback)
+## Measured Results (real output, 2026-10-15, after Phase 4 refunds + statement + manual)
 | Gate | Command | Result |
 |---|---|---|
 | Lint | `uv run ruff check .` | **All checks passed!** |
-| Format | `uv run ruff format --check .` | **183 files already formatted** |
-| Types | `uv run mypy packages apps` (strict) | **Success: no issues found in 65 source files** |
-| Tests | `uv run pytest` | **294 passed, 78 warnings** (~6:11) |
-| Full gate | `make check` | **✅ All checks passed!** (ruff + mypy + 294 tests + eval stub) |
+| Format | `uv run ruff format --check .` | **190 files already formatted** |
+| Types | `uv run mypy packages apps` (strict) | **Success: no issues found in 67 source files** |
+| Tests | `uv run pytest` | **315 passed, 83 warnings** (~6:23) |
+| Full gate | `make check` | **✅ All checks passed!** (ruff + mypy + 315 tests + eval stub) |
 
-Phase 4 tests: **25 new** — `tests/integrations/daraja/test_daraja_provider.py` (18 unit,
-Phase 4a) plus the 4b/fallback suite: `tests/payments/test_payment_service.py` (13),
-`tests/payments/test_payments_api.py` (6), `tests/payments/test_payments_rls.py` (2),
-`tests/payments/test_reconciliation.py` (4: stale selection, failure applied, unverified
-success flagged for review, cancellation applied).
+Phase 4 tests: **46 new** — `tests/integrations/daraja/test_daraja_provider.py` (18, 4a),
+`tests/payments/test_payment_service.py` (13), `tests/payments/test_payments_api.py` (6),
+`tests/payments/test_payments_rls.py` (2), `tests/payments/test_reconciliation.py` (8:
+status-query fallback + statement reconciliation), `tests/payments/test_refunds.py` (7),
+`tests/integrations/manual/test_manual_provider.py` (6),
+`tests/payments/test_manual_flow.py` (3, manual provider end-to-end).
 
 No skips. The 5 RLS tests that previously skipped themselves ("RLS policy not working in test
 environment") now run and pass, so the cross-tenant isolation guarantee is exercised (not just
@@ -86,6 +86,15 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
   provider factory `packages/integrations/daraja/factory.py`, worker job
   `reconcile_stale_payments` (cron every 5 min), 4 reconciliation tests. Moved `httpx` to
   runtime dependencies in `pyproject.toml`.
+- **Phase 4 refunds** (human-approved): `PaymentService.refund_payment` (+ `RefundOutcome`/
+  `RefundResult`), `POST /api/v1/payments/{payment_id}/refund`, audit + outbox, 7 tests,
+  runbook `docs/RUNBOOKS/refunds.md`.
+- **Phase 4 statement reconciliation**: `reconcile_statement` (our ledger vs a provider
+  settlement statement) with `StatementEntry`/`StatementMismatch`, audit-per-mismatch,
+  4 tests, runbook `docs/RUNBOOKS/reconciliation.md`.
+- **Phase 4 manual provider**: `packages/integrations/manual/ManualPaymentProvider`
+  (pay-to-Till and confirm, fail-closed token), end-to-end through the payment service,
+  9 tests. New settings `MANUAL_PAYMENT_TOKEN`/`MANUAL_PAYMENT_TILL`.
 
 ## Corrected facts vs. earlier docs
 - Namespace/generation target decided and implemented: **ADR 0008** — `packages.core` is the
@@ -99,10 +108,10 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
 - **Phases 5–10 are unimplemented**: agent L0–L3 + policy engine + evals, L2 end-to-end
   transact, delivery/rider flow, CRM memory/segments/insights, Instagram, onboarding
   wizard, TikTok assisted mode, billing, hardening/load/security review.
-- **Phase 4 remainder**: statement-based daily reconciliation vs provider settlement files,
-  refunds (provider currently raises `NotSupportedError`; human-approved runbook), aggregator
-  payment providers, and the pay-on-delivery trigger (Phase 7). The status-query fallback and
-  the `httpx` runtime-dependency fix are **done**.
+- **Phase 4 remainder**: a licensed **aggregator provider** (third `PaymentProvider`
+  implementation) plus its settlement-statement feed, and the pay-on-delivery trigger
+  (Phase 7). Status-query fallback, refunds, statement reconciliation, the manual
+  provider and the `httpx` runtime-dependency fix are **done**.
 - **`evals/runner.py` is a stub** — `make eval` exits 0 but runs no assertions. The eval gate is
   therefore not yet meaningful; must be built with Phase 5.
 - **`apps/dashboard`** has no `node_modules` (not installed); `lint-js`/`typecheck-js` are not
@@ -133,7 +142,8 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
   (use ≥10 min when running `make check` locally).
 
 ## Next Steps
-1. Phase 4 finish: statement-based reconciliation + refunds runbook + aggregator provider.
-2. Build a real eval harness (Phase 5) so the eval gate asserts something.
+1. Phase 4 finish: aggregator provider + its statement feed.
+2. Phase 5: write the plan + acceptance tests, then build the model-agnostic LLM gateway
+   (Ollama-backed) + agent L0/L1 + policy engine + real eval harness.
 3. Reconcile docker-compose files; verify `make migrate`/`make run-api` from root; wire tenancy
    middleware into `main.py`.
