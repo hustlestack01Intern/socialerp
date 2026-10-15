@@ -31,6 +31,8 @@ dependencies = [
     "fastapi>=0.143.0",
     "python-json-logger>=4.2.0",
     "psycopg2-binary>=2.9.13",
+    # Runtime HTTP client (Meta Graph API sender, Daraja STK client).
+    "httpx>=0.27,<1",
 ]
 
 # The `socialerp` public facade package lives in the workspace member
