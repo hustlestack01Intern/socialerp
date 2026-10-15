@@ -41,7 +41,7 @@ from packages.core.payments import (
     PaymentNotFoundError,
     PaymentService,
 )
-from packages.integrations.daraja import DirectDarajaProvider
+from packages.integrations.daraja import build_direct_daraja_provider
 
 router = APIRouter(prefix="/api/v1/payments", tags=["payments"])
 
@@ -54,20 +54,7 @@ router = APIRouter(prefix="/api/v1/payments", tags=["payments"])
 @lru_cache(maxsize=1)
 def get_payment_provider() -> PaymentProvider:
     """Build the configured M-Pesa provider (cached per process)."""
-    s = get_settings()
-    allowed_ips = tuple(
-        ip.strip() for ip in (s.DARAJA_ALLOWED_CALLBACK_IPS or "").split(",") if ip.strip()
-    )
-    return DirectDarajaProvider(
-        consumer_key=s.DARAJA_CONSUMER_KEY,
-        consumer_secret=s.DARAJA_CONSUMER_SECRET,
-        passkey=s.DARAJA_PASSKEY,
-        shortcode=s.DARAJA_SHORTCODE,
-        base_url=s.DARAJA_BASE_URL,
-        callback_url=s.DARAJA_CALLBACK_URL,
-        callback_token=s.DARAJA_CALLBACK_TOKEN,
-        allowed_callback_ips=allowed_ips,
-    )
+    return build_direct_daraja_provider()
 
 
 # =============================================================================

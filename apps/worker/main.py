@@ -37,10 +37,24 @@ async def process_outbox(ctx: dict[str, Any]) -> None:
     pass
 
 
-async def daily_reconciliation(ctx: dict[str, Any]) -> None:
-    """Daily reconciliation job."""
-    logger.info("Running daily reconciliation")
-    # TODO: Implement reconciliation per tenant
+async def reconcile_stale_payments(ctx: dict[str, Any]) -> None:
+    """Status-query fallback: re-query providers for stale payments.
+
+    Runs across all tenants and applies provider outcomes for payments that
+    never received a (terminal) callback. Successes without a verifiable amount
+    are flagged for human review rather than auto-credited.
+    """
+    from socialerp.database import get_session_factory
+
+    from packages.core.payments import reconcile_all
+    from packages.integrations.daraja import build_direct_daraja_provider
+
+    try:
+        provider = build_direct_daraja_provider()
+        reconciled = await reconcile_all(get_session_factory(), provider)
+        logger.info("Payment reconciliation complete", reconciled=reconciled)
+    except Exception as e:
+        logger.exception("Failed to reconcile payments", error=str(e))
 
 
 # =============================================================================
@@ -59,13 +73,13 @@ class WorkerSettings:
     functions: ClassVar[list[Any]] = [
         cleanup_idempotency_keys,
         process_outbox,
-        daily_reconciliation,
+        reconcile_stale_payments,
     ]
     cron_jobs: ClassVar[list[Any]] = [
         # Cleanup every hour
         {"func": "cleanup_idempotency_keys", "cron": "0 * * * *"},
-        # Reconciliation daily at 2 AM
-        {"func": "daily_reconciliation", "cron": "0 2 * * *"},
+        # Status-query fallback for missing/late callbacks, every 5 minutes.
+        {"func": "reconcile_stale_payments", "cron": "*/5 * * * *"},
     ]
     on_startup = None
     on_shutdown = None

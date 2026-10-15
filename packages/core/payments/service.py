@@ -35,6 +35,7 @@ from packages.core.domain.payment import (
     FailureReason,
     PaymentProvider,
     PaymentProviderError,
+    ProviderPaymentResult,
     ProviderPaymentStatus,
     STKPushRequest,
 )
@@ -207,6 +208,19 @@ class PaymentService:
 
     # -- callback ----------------------------------------------------------
 
+    async def _load_payment_for_update(
+        self, tenant_id: UUID, checkout_request_id: str
+    ) -> Payment | None:
+        stmt = (
+            select(Payment)
+            .where(
+                Payment.tenant_id == tenant_id,
+                Payment.checkout_request_id == checkout_request_id,
+            )
+            .with_for_update()
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
     async def handle_callback(
         self,
         *,
@@ -219,20 +233,10 @@ class PaymentService:
             raise CallbackVerificationError("Invalid callback payload")
 
         result = await self.provider.parse_callback(payload)
-        checkout_request_id = result.checkout_request_id
-
-        stmt = (
-            select(Payment)
-            .where(
-                Payment.tenant_id == tenant_id,
-                Payment.checkout_request_id == checkout_request_id,
-            )
-            .with_for_update()
-        )
-        payment = (await self.session.execute(stmt)).scalar_one_or_none()
+        payment = await self._load_payment_for_update(tenant_id, result.checkout_request_id)
         if payment is None:
             raise PaymentNotFoundError(
-                f"No payment for checkout_request_id {checkout_request_id!r}"
+                f"No payment for checkout_request_id {result.checkout_request_id!r}"
             )
 
         # Duplicate / late callback: already terminal -> safe no-op.
@@ -240,7 +244,44 @@ class PaymentService:
             return payment
 
         order = await self._get_order(tenant_id, payment.order_id)
+        await self._apply_result(payment, order, result, trusted_amount=True)
+        await self.session.flush()
+        return payment
 
+    async def apply_query_result(
+        self,
+        *,
+        tenant_id: UUID,
+        result: ProviderPaymentResult,
+    ) -> Payment:
+        """Apply a status-query result (fallback for missing/late callbacks).
+
+        The Daraja status query is authenticated but does **not** return the
+        amount, so a "completed" query result cannot be auto-credited: it is
+        flagged for human review instead. Failures/cancellations are safe to
+        apply.
+        """
+        payment = await self._load_payment_for_update(tenant_id, result.checkout_request_id)
+        if payment is None:
+            raise PaymentNotFoundError(
+                f"No payment for checkout_request_id {result.checkout_request_id!r}"
+            )
+        if PaymentRecordStatus(payment.status) in _TERMINAL_STATES:
+            return payment
+
+        order = await self._get_order(tenant_id, payment.order_id)
+        await self._apply_result(payment, order, result, trusted_amount=False)
+        await self.session.flush()
+        return payment
+
+    async def _apply_result(
+        self,
+        payment: Payment,
+        order: Order,
+        result: ProviderPaymentResult,
+        *,
+        trusted_amount: bool,
+    ) -> None:
         payment.result_code = result.result_code
         payment.result_desc = result.result_desc
         payment.failure_reason = (
@@ -248,18 +289,31 @@ class PaymentService:
         )
 
         if result.status is ProviderPaymentStatus.COMPLETED:
-            await self._complete_payment(
-                payment, order, result.amount_cents, result.mpesa_receipt_number
-            )
+            if trusted_amount:
+                await self._complete_payment(
+                    payment, order, result.amount_cents, result.mpesa_receipt_number
+                )
+            else:
+                # Cannot verify the amount from a status query: never auto-credit.
+                payment.status = PaymentRecordStatus.PENDING
+                await self.audit.log_action(
+                    tenant_id=payment.tenant_id,
+                    user_id=None,
+                    action="payment.reconciliation_review_required",
+                    resource="payment",
+                    resource_id=payment.id,
+                    metadata={
+                        "order_id": str(order.id),
+                        "checkout_request_id": payment.checkout_request_id,
+                        "reason": "status query reports success without a verified amount",
+                    },
+                )
         elif result.status is ProviderPaymentStatus.CANCELLED:
             await self._cancel_payment(payment, order, result.result_desc)
         elif result.status is ProviderPaymentStatus.PENDING:
             payment.status = PaymentRecordStatus.PENDING
         else:
             await self._fail_payment(payment, order, result.result_desc)
-
-        await self.session.flush()
-        return payment
 
     async def _complete_payment(
         self,

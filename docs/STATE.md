@@ -4,34 +4,33 @@
 > gates green. If this contradicts MAP.md or the filesystem, check `git log` and `docs/plans/`.
 
 ## Current Phase
-**M3 (catalog/stock/orders) complete. Phase 4 (payments) 4a + 4b done — direct Daraja
-STK Push provider, payments ledger, callback handling and API routes. Phases 5–10 not started.**
+**M3 (catalog/stock/orders) complete. Phase 4 (payments) 4a + 4b + status-query fallback
+done — direct Daraja STK Push provider, payments ledger, callback handling, API routes and
+a reconciliation job. Statement-based reconciliation, refunds and aggregator providers remain.
+Phases 5–10 not started.**
 
-The earlier blockers recorded on 2026-10-14 (namespace fork, `Money.from_kes` truncation,
-skipped RLS tests, non-hermetic suite) are **resolved in tree** — see Measured Results below.
-
-## Measured Results (real output, 2026-10-15, after Phase 4b)
+## Measured Results (real output, 2026-10-15, after Phase 4 status-query fallback)
 | Gate | Command | Result |
 |---|---|---|
 | Lint | `uv run ruff check .` | **All checks passed!** |
-| Format | `uv run ruff format --check .` | **179 files already formatted** |
-| Types | `uv run mypy packages apps` (strict) | **Success: no issues found in 63 source files** |
-| Collect | `uv run pytest --collect-only -q` | **290 collected, 0 errors** |
-| Tests | `uv run pytest` | **290 passed, 76 warnings** (~6:00) |
-| Tenancy/RLS | `uv run pytest tests/tenancy tests/property` | **76 passed, 0 skipped** |
-| Full gate | `make check` | **✅ All checks passed!** (ruff + mypy + 290 tests + eval stub) |
+| Format | `uv run ruff format --check .` | **183 files already formatted** |
+| Types | `uv run mypy packages apps` (strict) | **Success: no issues found in 65 source files** |
+| Tests | `uv run pytest` | **294 passed, 78 warnings** (~6:11) |
+| Full gate | `make check` | **✅ All checks passed!** (ruff + mypy + 294 tests + eval stub) |
 
-Phase 4 tests: **21 new** — `tests/integrations/daraja/test_daraja_provider.py` (18 unit,
-Phase 4a) plus the 4b suite: `tests/payments/test_payment_service.py` (13),
-`tests/payments/test_payments_api.py` (6), `tests/payments/test_payments_rls.py` (2).
-Paid/short-path and abuse cases covered: success, customer cancel, insufficient funds,
-pending, wrong amount (no credit + audit), duplicate success (no double credit), invalid
-signature, unknown checkout, cross-tenant read isolation and blocked cross-tenant insert.
+Phase 4 tests: **25 new** — `tests/integrations/daraja/test_daraja_provider.py` (18 unit,
+Phase 4a) plus the 4b/fallback suite: `tests/payments/test_payment_service.py` (13),
+`tests/payments/test_payments_api.py` (6), `tests/payments/test_payments_rls.py` (2),
+`tests/payments/test_reconciliation.py` (4: stale selection, failure applied, unverified
+success flagged for review, cancellation applied).
 
 No skips. The 5 RLS tests that previously skipped themselves ("RLS policy not working in test
 environment") now run and pass, so the cross-tenant isolation guarantee is exercised (not just
 asserted). The `Money.from_kes` truncation bug is fixed and covered by
 `tests/property/test_domain_primitives.py`.
+
+The earlier blockers recorded on 2026-10-14 (namespace fork, `Money.from_kes` truncation,
+skipped RLS tests, non-hermetic suite) are **resolved in tree**.
 
 ## Fixed this session (2026-10-15)
 Build-gate code fixes (all under the root `pyproject.toml` configuration):
@@ -76,11 +75,17 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
 - **Phase 4a** (commit `35f0d62`): `PaymentProvider` interface + value objects
   (`packages/core/domain/payment.py`) and `DirectDarajaProvider`
   (`packages/integrations/daraja/client.py`), 18 unit tests.
-- **Phase 4b**: `Payment` model + migration `0008_payments` (RLS + grants),
+- **Phase 4b** (commit `d715853`): `Payment` model + migration `0008_payments` (RLS + grants),
   `PaymentService` (`packages/core/payments/`), `apps/api/routes/payments.py` wired into
   `apps/api/main.py`; ADR `0011-payments-stk-and-callbacks`. Fixed the doubled router
   prefix in `main.py` (catalog/stock/orders) and aligned order/payment enum storage with
   the migrations via `values_callable`.
+- **Phase 4 status-query fallback**: `packages/core/payments/reconciliation.py`
+  (`stale_payments`/`reconcile_tenant`/`reconcile_all`), `PaymentService.apply_query_result`
+  (shared `_apply_result` with the callback path; unverified success → review, not credit),
+  provider factory `packages/integrations/daraja/factory.py`, worker job
+  `reconcile_stale_payments` (cron every 5 min), 4 reconciliation tests. Moved `httpx` to
+  runtime dependencies in `pyproject.toml`.
 
 ## Corrected facts vs. earlier docs
 - Namespace/generation target decided and implemented: **ADR 0008** — `packages.core` is the
@@ -94,13 +99,10 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
 - **Phases 5–10 are unimplemented**: agent L0–L3 + policy engine + evals, L2 end-to-end
   transact, delivery/rider flow, CRM memory/segments/insights, Instagram, onboarding
   wizard, TikTok assisted mode, billing, hardening/load/security review.
-- **Phase 4 remainder**: status-query fallback job for missing/late callbacks, daily
-  reconciliation vs provider statements, refunds (provider currently raises
-  `NotSupportedError`; human-approved runbook), aggregator payment providers, and the
-  pay-on-delivery trigger (Phase 7).
-- **`httpx` is a dev-only dependency** but is imported by runtime code
-  (`packages/integrations/meta/sender.py`, `packages/integrations/daraja/client.py`).
-  Must be moved to runtime deps before any production deploy.
+- **Phase 4 remainder**: statement-based daily reconciliation vs provider settlement files,
+  refunds (provider currently raises `NotSupportedError`; human-approved runbook), aggregator
+  payment providers, and the pay-on-delivery trigger (Phase 7). The status-query fallback and
+  the `httpx` runtime-dependency fix are **done**.
 - **`evals/runner.py` is a stub** — `make eval` exits 0 but runs no assertions. The eval gate is
   therefore not yet meaningful; must be built with Phase 5.
 - **`apps/dashboard`** has no `node_modules` (not installed); `lint-js`/`typecheck-js` are not
@@ -123,13 +125,15 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
 - Tests are green on the current DB state; hermeticity (per-test reset) was improved but any
   future DB pollution could reintroduce flakiness. Treat "290 green" as measured, not guaranteed.
 - Callbacks are acknowledged on unknown checkout ids and uncredited on amount mismatch without
-  a retry; until the deferred reconciliation job exists, genuinely missing money has no backstop.
+  a retry. The status-query fallback now backstops missing callbacks for failures and
+  cancellations, but a provider-reported **success** without a callback has no verifiable
+  amount and is routed to human review rather than auto-credited — so genuinely missing money
+  still needs operator attention.
 - Full suite wall-clock is ~6 minutes; the shell/tooling default timeout can truncate a run
   (use ≥10 min when running `make check` locally).
 
 ## Next Steps
-1. Commit Phase 4b in a small, reviewable commit (this change set).
-2. Phase 4 finish: status-query fallback job + reconciliation job + `httpx` dependency fix.
-3. Build a real eval harness (Phase 5) so the eval gate asserts something.
-4. Reconcile docker-compose files; verify `make migrate`/`make run-api` from root; wire tenancy
+1. Phase 4 finish: statement-based reconciliation + refunds runbook + aggregator provider.
+2. Build a real eval harness (Phase 5) so the eval gate asserts something.
+3. Reconcile docker-compose files; verify `make migrate`/`make run-api` from root; wire tenancy
    middleware into `main.py`.

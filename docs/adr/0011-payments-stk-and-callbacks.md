@@ -62,19 +62,32 @@ first working slice (4a provider + 4b persistence/service/API).
    `awaiting_payment` so the customer can retry. Stock release on cancellation is
    owned by the reservation service and is **not** duplicated here.
 
-8. **Deferred to later Phase 4 slices (tracked, not faked).** Status-query fallback job
-   for missing/late callbacks, daily reconciliation vs provider statements, refunds
-   (provider raises `NotSupportedError`; human-approved runbook), aggregator providers,
-   and the pay-on-delivery trigger. `httpx` is currently a dev-only dependency but is
-   imported by runtime code — a packaging fix is required before production.
+8. **Status-query fallback never auto-credits on an unverified success.** Callbacks can
+   be late, duplicated or missing, so a background job
+   (`packages.core.payments.reconciliation.reconcile_all`, wired to the worker's
+   `reconcile_stale_payments` cron every 5 minutes) re-queries the provider for payments
+   still `initiated`/`pending` past a timeout (`DEFAULT_STALE_SECONDS`, 15 min). Applied
+   via `PaymentService.apply_query_result`, which shares `_apply_result` with the
+   callback path. The Daraja **status query does not return the amount**, so a
+   `COMPLETED` query result cannot be verified against the attempt: it is **not**
+   credited and instead writes an append-only `payment.reconciliation_review_required`
+   audit entry (status left `pending`). Failures and user cancellations are applied
+   directly. A provider error during a query leaves the payment stale for the next run.
+
+9. **Deferred to later Phase 4 slices (tracked, not faked).** Statement-based daily
+   reconciliation vs provider settlement files, refunds (provider raises
+   `NotSupportedError`; human-approved runbook), aggregator providers, and the
+   pay-on-delivery trigger. The `httpx` packaging gap (runtime import but dev-only
+   dependency) is now **fixed** — `httpx` is a runtime dependency in `pyproject.toml`.
 
 ## Consequences
 
 - The payments path is money-safe and test-covered: success, cancel, insufficient
   funds, pending, wrong amount, duplicate success, invalid signature, unknown checkout,
-  RLS cross-tenant read and blocked cross-tenant insert.
+  RLS cross-tenant read, blocked cross-tenant insert, and the status-query fallback
+  (failure applied, unverified success flagged for review, cancellation applied).
 - Because callbacks are acknowledged on unknown checkout ids and uncredited on amount
-  mismatch without retry, a real reconciliation job (deferred) is the backstop for
-  genuinely missing money.
+  mismatch without retry, the reconciliation job is the backstop for genuinely missing
+  money; success-without-callback remains a human-review case rather than an auto-credit.
 - The callback URL must carry the shared token; rotating it requires updating the URL
   registered with Daraja. Documented in `.env.example`.
