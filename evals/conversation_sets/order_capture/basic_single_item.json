@@ -1,0 +1,22 @@
+{
+  "id": "order_capture_001",
+  "capability": "order_capture",
+  "language": "en",
+  "tags": ["basic", "single_item"],
+  "turns": [
+    {"role": "customer", "content": "Hi, I want to order a black hoodie size M"},
+    {"role": "agent", "content": "Sure! We have black hoodies in size M for KES 2,500. How many would you like?"},
+    {"role": "customer", "content": "Just one, please deliver to Kilimani"},
+    {"role": "agent", "content": "Great! 1x Black Hoodie Size M = KES 2,500. Delivery to Kilimani is KES 200. Total KES 2,700. Confirm order?"},
+    {"role": "customer", "content": "Yes, confirm"},
+    {"role": "agent", "content": "Order confirmed! I'll send an M-Pesa STK Push to your phone. Please enter your PIN to pay."}
+  ],
+  "expected_outcome": {
+    "order_created": true,
+    "items": [{"sku": "HOODIE-BLK-M", "quantity": 1, "unit_price_cents": 250000}],
+    "delivery_area": "Kilimani",
+    "delivery_fee_cents": 20000,
+    "total_cents": 270000,
+    "payment_initiated": true
+  }
+}

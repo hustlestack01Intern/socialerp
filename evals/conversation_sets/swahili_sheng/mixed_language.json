@@ -1,0 +1,21 @@
+{
+  "id": "sheng_001",
+  "capability": "swahili_sheng",
+  "language": "sheng",
+  "tags": ["sheng", "mixed"],
+  "turns": [
+    {"role": "customer", "content": "Sasa, niko na pesa kidogo. Bei ya hoodie ni ngapi?"},
+    {"role": "agent", "content": "Poa! Hoodie ni KES 2,500. Unataka gani?"},
+    {"role": "customer", "content": "Nipe nyeusi M. Nitalipa kwa M-Pesa."},
+    {"role": "agent", "content": "Sawa boss! 1x Hoodie Nyeusi M = 2,500. Delivery wapi?"},
+    {"role": "customer", "content": "Kasarani. Haraka please."},
+    {"role": "agent", "content": "Kasarani ni 150 bob. Total 2,650. Nikuwekee STK?"}
+  ],
+  "expected_outcome": {
+    "language_matched": "sheng",
+    "order_created": true,
+    "items": [{"sku": "HOODIE-BLK-M", "quantity": 1}],
+    "delivery_area": "Kasarani",
+    "total_cents": 265000
+  }
+}

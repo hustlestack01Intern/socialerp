@@ -1,0 +1,298 @@
+[project]
+name = "socialerp-workspace"
+version = "0.1.0"
+description = "SocialERP - Agentic ERP for Kenyan Social Commerce Sellers"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.8,<3",
+    "pydantic-settings>=2.3,<3",
+    "sqlalchemy>=2.0,<3",
+    "alembic>=1.13,<2",
+    "asyncpg>=0.29,<1",
+    "redis>=5.0,<6",
+    "arq>=0.23,<1",
+    "phonenumbers>=8.13,<9",
+    "email-validator>=2.1,<3",
+    "cryptography>=42.0,<43",
+    "passlib[bcrypt]>=1.7,<2",
+    "python-jose>=3.3,<4",
+    "structlog>=24.1,<25",
+    "opentelemetry-api>=1.25,<2",
+    "opentelemetry-sdk>=1.25,<2",
+    "prometheus-client>=0.19,<1",
+    "tenacity>=8.2,<9",
+    "croniter>=2.0,<3",
+    "greenlet>=3.5.6",
+    "opentelemetry-exporter-otlp>=1.45.1",
+    "opentelemetry-instrumentation-fastapi>=0.66b1",
+    "opentelemetry-instrumentation-sqlalchemy>=0.66b1",
+    "opentelemetry-instrumentation-redis>=0.66b1",
+    "opentelemetry-instrumentation-httpx>=0.66b1",
+    "fastapi>=0.143.0",
+    "python-json-logger>=4.2.0",
+    "psycopg2-binary>=2.9.13",
+]
+
+# The `socialerp` public facade package lives in the workspace member
+# `packages/core` (dist name: socialerp-core). It is installed as a dev dependency
+# group so that a plain `pip install .` does not try to fetch it from PyPI, while
+# `uv sync` installs it from the workspace. CI must use `uv sync` (see plan).
+[dependency-groups]
+dev = [
+    "socialerp-core",
+    "ruff>=0.5,<1",
+    "mypy>=1.10,<2",
+    "pytest>=8.2,<9",
+    "pytest-asyncio>=0.23,<1",
+    "pytest-cov>=5.0,<6",
+    "pytest-mock>=3.12,<4",
+    "hypothesis>=6.98,<7",
+    "factory-boy>=3.3,<4",
+    "faker>=25.0,<26",
+    "pre-commit>=3.7,<4",
+    "httpx>=0.27,<1",
+    "uvicorn>=0.30,<1",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.5,<1",
+    "mypy>=1.10,<2",
+    "pytest>=8.2,<9",
+    "pytest-asyncio>=0.23,<1",
+    "pytest-cov>=5.0,<6",
+    "pytest-mock>=3.12,<4",
+    "hypothesis>=6.98,<7",
+    "factory-boy>=3.3,<4",
+    "faker>=25.0,<26",
+    "pre-commit>=3.7,<4",
+    "httpx>=0.27,<1",
+    "uvicorn>=0.30,<1",
+    "python-multipart>=0.0.9",
+]
+test = [
+    "pytest>=8.2,<9",
+    "pytest-asyncio>=0.23,<1",
+    "pytest-cov>=5.0,<6",
+    "pytest-mock>=3.12,<4",
+    "hypothesis>=6.98,<7",
+    "factory-boy>=3.3,<4",
+    "faker>=25.0,<26",
+    "httpx>=0.27,<1",
+    "uvicorn>=0.30,<1",
+    "python-multipart>=0.0.9",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+# Root installs the `packages.*` namespace (the canonical code). The top-level
+# `socialerp` shim is installed by `packages/core` (see packages/core/pyproject.toml).
+[tool.setuptools]
+package-dir = { "" = "." }
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["packages*"]
+exclude = ["packages.core.socialerp*", "*.tests*"]
+
+[tool.uv]
+package = true
+
+# Workspace members: `packages/core` builds the `socialerp` public facade package
+# (and the `packages.core.*` sources are shipped by the root distribution). This
+# ensures a single venv resolves BOTH import namespaces, matching the stated
+# intent in the comment above.
+[tool.uv.workspace]
+members = ["packages/core"]
+
+[tool.uv.sources]
+socialerp-core = { workspace = true }
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+preview = true
+extend-exclude = [
+    ".venv",
+    "**/.venv",
+    "alembic/versions",
+    "opencode-setup-pack-v2",
+    "build",
+    "dist",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "T20", # flake8-print
+    "PTH", # flake8-use-pathlib
+    "TRY", # tryceratops
+    "RUF", # ruff-specific
+    "ARG", # flake8-unused-arguments
+    "SIM", # flake8-simplify
+    "TD",  # flake8-todo
+]
+# B008: FastAPI dependency-injection (`Depends()`, `Query()`, `Header()` in
+#       defaults) is the framework's documented idiom, not a bug.
+# RUF029: FastAPI route handlers must be `async` even when they don't await.
+# ARG001/ARG002: signatures are dictated by frameworks/interfaces (FastAPI,
+#       SQLAlchemy event hooks, protocol/abstract methods).
+# TRY003: we intentionally raise exceptions with inline, contextual messages.
+# TD002/TD003: we use TODO comments without requiring author/issue links.
+# RUF067: `__init__.py` files here also wire FastAPI routers and define
+#       `__all__`; that is intended, not a violation.
+# UP042: `class X(str, enum.Enum)` is kept over `StrEnum` to preserve
+#       `__str__`/serialization behaviour expected by Pydantic and providers.
+ignore = [
+    "function-call-in-default-argument",
+    "unused-async",
+    "unused-function-argument",
+    "unused-method-argument",
+    "raise-vanilla-args",
+    "missing-todo-author",
+    "missing-todo-link",
+    "non-empty-init-module",
+    "replace-str-enum",
+    # TRY300/TRY301 are stylistic control-flow preferences ("move to else",
+    # "extract an inner function"); the flagged code is correct as written.
+    "try-consider-else",
+    "raise-within-try",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/**" = ["line-too-long"]
+"tests/**" = ["assert"]
+"evals/**" = ["assert", "print"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "lf"
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_any_generics = true
+disallow_subclassing_any = true
+no_implicit_optional = true
+no_implicit_reexport = true
+check_untyped_defs = true
+allow_untyped_globals = false
+enable_error_code = ["ignore-without-code"]
+# The repo uses a PEP 420 namespace (`packages`) alongside an installed
+# top-level shim (`socialerp`). The shim lives at packages/core/socialerp and
+# is exposed to mypy through the `typings/socialerp` symlink so that the shim
+# and the canonical `packages.core.*` tree each resolve from a single base
+# (putting packages/core on the path would also expose its siblings as
+# top-level modules and collide).
+mypy_path = ["typings", "."]
+namespace_packages = true
+explicit_package_bases = true
+exclude = [
+    "\\.venv",
+    "build",
+    "dist",
+    ".*/migrations/.*",
+    ".*/alembic/.*",
+    "opencode-setup-pack-v2",
+    # The shim is checked as `socialerp.*` (via typings/) and must not also be
+    # crawled as `packages.core.socialerp.*`.
+    "packages/core/socialerp",
+]
+
+[[tool.mypy.overrides]]
+module = [
+    "tests.*",
+    "evals.*",
+    "scripts.*",
+]
+strict = false
+warn_return_any = false
+
+# `python-jose` ships no type information and has no stub package on PyPI that
+# matches its public API; treat it as untyped rather than weakening `strict`
+# for the rest of the codebase.
+[[tool.mypy.overrides]]
+module = ["jose.*"]
+ignore_missing_imports = true
+
+# Local provider test doubles (fake Meta / Daraja servers). They are test
+# infrastructure run only in local/CI harnesses, so they are exempt from the
+# strict annotation requirements applied to shipped code.
+[[tool.mypy.overrides]]
+module = [
+    "packages.integrations.fake_meta.*",
+    "packages.integrations.fake_daraja.*",
+    "packages.integrations.meta.fakes.*",
+    "packages.integrations.daraja.fakes.*",
+]
+strict = false
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+disallow_untyped_calls = false
+disallow_any_generics = false
+check_untyped_defs = false
+warn_return_any = false
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "-ra",
+    "--tb=short",
+]
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests",
+    "contract: Contract tests",
+    "property: Property-based tests",
+    "slow: Slow tests",
+    "eval: Evaluation tests",
+]
+
+[tool.coverage.run]
+source = ["packages", "apps"]
+omit = [
+    "*/tests/*",
+    "*/migrations/*",
+    "*/alembic/*",
+    "*/scripts/*",
+]
+branch = true
+concurrency = ["thread", "gevent"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+precision = 2
+show_missing = true
+
+[tool.hypothesis]
+database = "none"
+suppress_health_check = ["too_slow", "data_too_large"]
+deadline = 5000
+max_examples = 1000

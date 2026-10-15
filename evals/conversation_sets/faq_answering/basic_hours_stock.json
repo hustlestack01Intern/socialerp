@@ -1,0 +1,18 @@
+{
+  "id": "faq_001",
+  "capability": "faq_answering",
+  "language": "en",
+  "tags": ["hours", "stock_check"],
+  "turns": [
+    {"role": "customer", "content": "What are your opening hours?"},
+    {"role": "agent", "content": "We're open 8am-8pm Monday to Saturday, 10am-6pm Sunday. You can order anytime on WhatsApp!"},
+    {"role": "customer", "content": "Do you have red t-shirts in size L?"},
+    {"role": "agent", "content": "Yes! Red t-shirts size L are in stock (12 units). KES 1,200 each. Want to order?"}
+  ],
+  "expected_outcome": {
+    "answered_hours": true,
+    "answered_stock": true,
+    "stock_accurate": true,
+    "price_accurate": true
+  }
+}

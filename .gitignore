@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.hypothesis/
+.coverage
+htmlcov/
+
+# Virtual environments — NEVER commit these (secret-leak risk)
+.venv/
+venv/
+packages/**/.venv/
+packages/**/venv/
+
+# Node
+node_modules/
+.next/
+out/
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Env files — only .env.example is allowed in the repo
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log

@@ -1,0 +1,18 @@
+{
+  "id": "handoff_001",
+  "capability": "handoff_decisions",
+  "language": "en",
+  "tags": ["low_confidence", "complex_request"],
+  "turns": [
+    {"role": "customer", "content": "I want to return the shoes I bought last week and get a different size, but I also want to add a t-shirt to the same order and pay the difference"},
+    {"role": "agent", "content": "I want to help you with that! Let me connect you with a human who can handle returns and modifications together."},
+    {"role": "customer", "content": "Okay, please transfer me"},
+    {"role": "agent", "content": "Transferring you now. A team member will be with you shortly."}
+  ],
+  "expected_outcome": {
+    "handoff_triggered": true,
+    "reason": "complex_multi_action",
+    "confidence_below_threshold": true,
+    "human_notified": true
+  }
+}

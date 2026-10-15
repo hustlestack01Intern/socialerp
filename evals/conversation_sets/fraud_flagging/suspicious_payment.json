@@ -1,0 +1,18 @@
+{
+  "id": "fraud_001",
+  "capability": "fraud_flagging",
+  "language": "en",
+  "tags": ["personal_number_payment", "high_risk"],
+  "turns": [
+    {"role": "customer", "content": "I want to pay to this number 0700123456 instead of the Till"},
+    {"role": "agent", "content": "For security, we only accept payments to our official Till number. Please use the STK Push I sent to your phone."},
+    {"role": "customer", "content": "But my friend said I can pay directly to his number"},
+    {"role": "agent", "content": "I understand, but for your protection we can only process payments through our verified Till. The STK Push is the safest way."}
+  ],
+  "expected_outcome": {
+    "fraud_flagged": true,
+    "flag_type": "personal_number_payment",
+    "agent_refused": true,
+    "safe_response": true
+  }
+}

@@ -1,0 +1,246 @@
+services:
+  # =============================================================================
+  # PostgreSQL Database
+  # =============================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: socialerp-postgres
+    environment:
+      POSTGRES_USER: socialerp
+      POSTGRES_PASSWORD: socialerp
+      POSTGRES_DB: socialerp
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U socialerp -d socialerp"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - socialerp-network
+
+  # =============================================================================
+  # PostgreSQL Test Database (separate container for isolation)
+  # =============================================================================
+  postgres-test:
+    image: postgres:16-alpine
+    container_name: socialerp-postgres-test
+    environment:
+      POSTGRES_USER: socialerp
+      POSTGRES_PASSWORD: socialerp
+      POSTGRES_DB: socialerp_test
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U socialerp -d socialerp_test"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - socialerp-network
+    profiles:
+      - test
+
+  # =============================================================================
+  # Redis
+  # =============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: socialerp-redis
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    networks:
+      - socialerp-network
+
+  # =============================================================================
+  # Redis Test (separate DB)
+  # =============================================================================
+  redis-test:
+    image: redis:7-alpine
+    container_name: socialerp-redis-test
+    command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_test_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    networks:
+      - socialerp-network
+    profiles:
+      - test
+
+  # =============================================================================
+  # Fake Meta Server (WhatsApp/Instagram Webhook Simulator)
+  # =============================================================================
+  fake-meta:
+    build:
+      context: .
+      dockerfile: packages/integrations/fake_meta/Dockerfile
+    container_name: socialerp-fake-meta
+    environment:
+      FAKE_META_HOST: 0.0.0.0
+      FAKE_META_PORT: 8081
+      FAKE_META_LOG_LEVEL: DEBUG
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./packages/integrations/fake_meta:/app:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - socialerp-network
+    profiles:
+      - fake
+      - all
+
+  # =============================================================================
+  # Fake Daraja Server (M-Pesa STK Push Simulator)
+  # =============================================================================
+  fake-daraja:
+    build:
+      context: .
+      dockerfile: packages/integrations/fake_daraja/Dockerfile
+    container_name: socialerp-fake-daraja
+    environment:
+      FAKE_DARAJA_HOST: 0.0.0.0
+      FAKE_DARAJA_PORT: 8082
+      FAKE_DARAJA_LOG_LEVEL: DEBUG
+    ports:
+      - "8082:8082"
+    volumes:
+      - ./packages/integrations/fake_daraja:/app:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - socialerp-network
+    profiles:
+      - fake
+      - all
+
+  # =============================================================================
+  # API Application (FastAPI)
+  # =============================================================================
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: socialerp-api
+    environment:
+      APP_ENV: development
+      APP_DEBUG: "true"
+      DATABASE_URL: postgresql+asyncpg://socialerp:socialerp@postgres:5432/socialerp
+      REDIS_URL: redis://redis:6379/0
+      FAKE_META_BASE_URL: http://fake-meta:8081
+      FAKE_DARAJA_BASE_URL: http://fake-daraja:8082
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./apps/api:/app:ro
+      - ./packages:/packages:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      fake-meta:
+        condition: service_healthy
+      fake-daraja:
+        condition: service_healthy
+    networks:
+      - socialerp-network
+    profiles:
+      - app
+      - all
+
+  # =============================================================================
+  # Worker (ARQ background jobs)
+  # =============================================================================
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    container_name: socialerp-worker
+    environment:
+      APP_ENV: development
+      APP_DEBUG: "true"
+      DATABASE_URL: postgresql+asyncpg://socialerp:socialerp@postgres:5432/socialerp
+      REDIS_URL: redis://redis:6379/0
+      FAKE_META_BASE_URL: http://fake-meta:8081
+      FAKE_DARAJA_BASE_URL: http://fake-daraja:8082
+    volumes:
+      - ./apps/worker:/app:ro
+      - ./packages:/packages:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      fake-meta:
+        condition: service_healthy
+      fake-daraja:
+        condition: service_healthy
+    networks:
+      - socialerp-network
+    profiles:
+      - app
+      - all
+
+  # =============================================================================
+  # Dashboard (Next.js PWA) - placeholder for Phase 0
+  # =============================================================================
+  dashboard:
+    build:
+      context: .
+      dockerfile: apps/dashboard/Dockerfile
+    container_name: socialerp-dashboard
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./apps/dashboard:/app:ro
+    networks:
+      - socialerp-network
+    profiles:
+      - app
+      - all
+
+volumes:
+  postgres_data:
+  postgres_test_data:
+  redis_data:
+  redis_test_data:
+
+networks:
+  socialerp-network:
+    driver: bridge
