@@ -4,9 +4,10 @@
 > gates green. If this contradicts MAP.md or the filesystem, check `git log` and `docs/plans/`.
 
 ## Current Phase
-**M3 (catalog/stock/orders) complete. Phase 4 (payments) done except the aggregator provider:
-direct Daraja STK Push, payments ledger, callbacks, status-query fallback, human-approved
-refunds, statement reconciliation and the manual pay-to-Till fallback. Phases 5–10 not started.**
+**M3 (catalog/stock/orders) complete. Phase 4 (payments) done except the aggregator provider.
+Phase 5 (agent) started: plan + ADR 0012 written, model-agnostic LLM gateway implemented
+(Ollama/OpenAI-compatible + scripted/CI backend). Intent, policy, agent loop and evals next.
+Phases 6–10 not started.**
 
 ## Measured Results (real output, 2026-10-15, after Phase 4 refunds + statement + manual)
 | Gate | Command | Result |
@@ -95,6 +96,14 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
 - **Phase 4 manual provider**: `packages/integrations/manual/ManualPaymentProvider`
   (pay-to-Till and confirm, fail-closed token), end-to-end through the payment service,
   9 tests. New settings `MANUAL_PAYMENT_TOKEN`/`MANUAL_PAYMENT_TILL`.
+- **Phase 5 plan + ADR**: `docs/plans/2026-10-15-phase-5-agent.md`,
+  `docs/adr/0012-agent-gateway-autonomy-policy.md` (gateway, autonomy L0–L3, policy,
+  `/evals` protected).
+- **Phase 5 LLM gateway (first slice)**: `packages/agent/` — model-agnostic `LLMGateway`
+  interface + `ScriptedGateway` (CI/tests) + `OpenAICompatibleGateway` (Ollama/OpenAI, mock
+  transport tests) + cross-cutting `RetryingGateway` (backoff), `SpendCapGateway`
+  (per-tenant/per-request, fails closed) and `CachingGateway`; `build_default_gateway` from
+  settings. 18 tests, no network.
 
 ## Corrected facts vs. earlier docs
 - Namespace/generation target decided and implemented: **ADR 0008** — `packages.core` is the
@@ -105,9 +114,12 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
   renumbered in a docs pass.
 
 ## Known Gaps / Not Yet Done
-- **Phases 5–10 are unimplemented**: agent L0–L3 + policy engine + evals, L2 end-to-end
-  transact, delivery/rider flow, CRM memory/segments/insights, Instagram, onboarding
-  wizard, TikTok assisted mode, billing, hardening/load/security review.
+- **Phases 6–10 are unimplemented**: L2 transact, delivery/rider flow, CRM
+  memory/segments/insights, Instagram, onboarding wizard, TikTok assisted mode, billing,
+  hardening/load/security review.
+- **Phase 5 remainder**: intent extraction, policy engine, agent L0/L1 loop, conversation
+  integration, and the real eval harness. `/evals` is a **protected zone** (constitution):
+  the harness and labeled sets require explicit human approval before editing.
 - **Phase 4 remainder**: a licensed **aggregator provider** (third `PaymentProvider`
   implementation) plus its settlement-statement feed, and the pay-on-delivery trigger
   (Phase 7). Status-query fallback, refunds, statement reconciliation, the manual
@@ -142,8 +154,8 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
   (use ≥10 min when running `make check` locally).
 
 ## Next Steps
-1. Phase 4 finish: aggregator provider + its statement feed.
-2. Phase 5: write the plan + acceptance tests, then build the model-agnostic LLM gateway
-   (Ollama-backed) + agent L0/L1 + policy engine + real eval harness.
-3. Reconcile docker-compose files; verify `make migrate`/`make run-api` from root; wire tenancy
+1. Phase 5: intent extraction → policy engine → agent L0/L1 loop (gateway is done).
+2. Phase 5 evals (needs human approval for the protected `/evals` zone).
+3. Phase 4 finish: aggregator provider + its statement feed.
+4. Reconcile docker-compose files; verify `make migrate`/`make run-api` from root; wire tenancy
    middleware into `main.py`.
