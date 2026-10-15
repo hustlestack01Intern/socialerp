@@ -38,6 +38,9 @@ from packages.core.domain.user import User, UserCreate, UserList, UserRole, User
 from packages.core.models import ApiKey as ApiKeyModel
 from packages.core.models import AuditLog as AuditLogModel
 from packages.core.models import Category as CategoryModel
+from packages.core.models import Customer as CustomerModel
+from packages.core.models import Order as OrderModel
+from packages.core.models import OrderItem as OrderItemModel
 from packages.core.models import Product as ProductModel
 from packages.core.models import ProductVariant as ProductVariantModel
 from packages.core.models import Tenant as TenantModel
@@ -771,3 +774,140 @@ class CategoryRepository:
             image_url=model.image_url,
             metadata=model.metadata_json or {},
         )
+
+
+class CustomerRepository:
+    """Repository for customer operations (tenant-scoped)."""
+
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def get(self, tenant_id: UUID, customer_id: UUID) -> CustomerModel | None:
+        """Get a customer by id within the tenant."""
+        result = await self.session.execute(
+            select(CustomerModel).where(
+                CustomerModel.id == customer_id,
+                CustomerModel.tenant_id == tenant_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def get_by_phone(self, tenant_id: UUID, phone: str) -> CustomerModel | None:
+        """Get a customer by normalized phone within the tenant."""
+        result = await self.session.execute(
+            select(CustomerModel).where(
+                CustomerModel.tenant_id == tenant_id,
+                CustomerModel.phone == phone,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def get_or_create(
+        self,
+        tenant_id: UUID,
+        phone: str,
+        name: str | None = None,
+        email: str | None = None,
+    ) -> CustomerModel:
+        """Find the customer for a phone or create one.
+
+        Identity is the normalized phone number per tenant; a name/email already
+        on file is not overwritten by a later, less complete message.
+        """
+        existing = await self.get_by_phone(tenant_id, phone)
+        if existing is not None:
+            if name and not existing.name:
+                existing.name = name
+            if email and not existing.email:
+                existing.email = email
+            await self.session.flush()
+            return existing
+
+        customer = CustomerModel(
+            tenant_id=tenant_id,
+            phone=phone,
+            name=name,
+            email=email,
+        )
+        self.session.add(customer)
+        await self.session.flush()
+        await self.session.refresh(customer)
+        return customer
+
+
+class OrderRepository:
+    """Repository for order operations (tenant-scoped)."""
+
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def add(self, order: OrderModel, items: list[OrderItemModel]) -> OrderModel:
+        """Persist an order and its line items."""
+        self.session.add(order)
+        await self.session.flush()
+        for item in items:
+            item.order_id = order.id
+            self.session.add(item)
+        await self.session.flush()
+        return order
+
+    async def get(self, tenant_id: UUID, order_id: UUID) -> OrderModel | None:
+        """Get an order by id within the tenant."""
+        result = await self.session.execute(
+            select(OrderModel).where(
+                OrderModel.id == order_id,
+                OrderModel.tenant_id == tenant_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def get_by_idempotency_key(
+        self, tenant_id: UUID, idempotency_key: str
+    ) -> OrderModel | None:
+        """Get an order previously created with the same idempotency key."""
+        result = await self.session.execute(
+            select(OrderModel).where(
+                OrderModel.tenant_id == tenant_id,
+                OrderModel.metadata_json["idempotency_key"].astext == idempotency_key,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def items_for(self, tenant_id: UUID, order_id: UUID) -> list[OrderItemModel]:
+        """Load the line items for an order."""
+        result = await self.session.execute(
+            select(OrderItemModel)
+            .where(
+                OrderItemModel.tenant_id == tenant_id,
+                OrderItemModel.order_id == order_id,
+            )
+            .order_by(OrderItemModel.created_at)
+        )
+        return list(result.scalars().all())
+
+    async def list(
+        self,
+        tenant_id: UUID,
+        status: str | None = None,
+        customer_id: UUID | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[list[OrderModel], int]:
+        """List orders in a tenant with filters; returns (rows, total)."""
+        query = select(OrderModel).where(OrderModel.tenant_id == tenant_id)
+        if status is not None:
+            query = query.where(OrderModel.status == status)
+        if customer_id is not None:
+            query = query.where(OrderModel.customer_id == customer_id)
+
+        count_query = select(func.count()).select_from(query.subquery())
+        total = int(await self.session.scalar(count_query) or 0)
+
+        query = (
+            query
+            .order_by(OrderModel.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+        result = await self.session.execute(query)
+        return list(result.scalars().all()), total

@@ -23,7 +23,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from packages.core.models.base import Base
+from packages.core.models.base import Base, enum_values
 
 # =============================================================================
 # Enums
@@ -85,7 +85,7 @@ class StockMovement(Base):
         index=True,
     )
     movement_type: Mapped[str] = mapped_column(
-        Enum(StockMovementType, native_enum=False),
+        Enum(StockMovementType, native_enum=False, values_callable=enum_values),
         nullable=False,
     )
     quantity_change: Mapped[int] = mapped_column(
@@ -93,7 +93,7 @@ class StockMovement(Base):
         nullable=False,
     )
     reason: Mapped[str] = mapped_column(
-        Enum(StockMovementReason, native_enum=False),
+        Enum(StockMovementReason, native_enum=False, values_callable=enum_values),
         nullable=False,
     )
     reference_id: Mapped[uuid.UUID | None] = mapped_column(

@@ -24,7 +24,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from packages.core.models.base import Base
+from packages.core.models.base import Base, enum_values
 
 # =============================================================================
 # Enums
@@ -81,13 +81,13 @@ class Reservation(Base):
         nullable=False,
     )
     status: Mapped[str] = mapped_column(
-        Enum(ReservationStatus, native_enum=False),
+        Enum(ReservationStatus, native_enum=False, values_callable=enum_values),
         nullable=False,
         default=ReservationStatus.ACTIVE,
         server_default="active",
     )
     reason: Mapped[str] = mapped_column(
-        Enum(ReservationReason, native_enum=False),
+        Enum(ReservationReason, native_enum=False, values_callable=enum_values),
         nullable=False,
         default=ReservationReason.ORDER_CREATED,
         server_default="order_created",

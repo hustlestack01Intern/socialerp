@@ -27,7 +27,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from packages.core.models.base import Base
+from packages.core.models.base import Base, enum_values
 
 # =============================================================================
 # Enums
@@ -174,7 +174,7 @@ class Product(Base):
         server_default="[]",
     )
     status: Mapped[str] = mapped_column(
-        Enum(ProductStatus, native_enum=False),
+        Enum(ProductStatus, native_enum=False, values_callable=enum_values),
         nullable=False,
         default=ProductStatus.DRAFT,
         server_default="draft",

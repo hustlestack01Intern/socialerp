@@ -49,7 +49,21 @@ _RLS_FUNCTION_SQL = """
 """
 
 # Tables that carry a tenant key and must enforce row-level security.
-_RLS_TENANT_TABLES = ("tenants", "audit_log", "outbox", "idempotency_keys", "payments")
+_RLS_TENANT_TABLES = (
+    "tenants",
+    "audit_log",
+    "outbox",
+    "idempotency_keys",
+    "payments",
+    "customers",
+    "orders",
+    "order_items",
+    "reservations",
+    "stock_movements",
+    "products",
+    "product_variants",
+    "categories",
+)
 
 
 @pytest.fixture(scope="session", autouse=True)

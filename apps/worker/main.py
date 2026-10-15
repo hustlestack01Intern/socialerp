@@ -57,6 +57,66 @@ async def reconcile_stale_payments(ctx: dict[str, Any]) -> None:
         logger.exception("Failed to reconcile payments", error=str(e))
 
 
+async def expire_reservations(ctx: dict[str, Any]) -> None:
+    """Release unpaid stock reservations past their TTL.
+
+    Reuses the orders service. In production the worker connects with a role
+    that can see all tenants; the job sweeps every tenant at once.
+    """
+    from socialerp.database import get_session_factory
+
+    from packages.core.orders import OrderService
+
+    try:
+        async with get_session_factory()() as session:
+            service = OrderService(session)
+            released = await service.expire_stale_reservations()
+            await session.commit()
+        logger.info("Expired stale reservations", released=released)
+    except Exception as e:
+        logger.exception("Failed to expire reservations", error=str(e))
+
+
+# =============================================================================
+# OUTBOX HANDLERS
+# =============================================================================
+
+
+async def _noop_handler(payload: dict[str, Any], tenant_id: Any) -> None:
+    """Acknowledge an event that has no side effect yet.
+
+    Registering a handler keeps the relay from marking the event FAILED; the
+    event stays recorded in the outbox for future consumers/observability.
+    """
+    logger.debug("outbox event acknowledged (no handler)", event=payload)
+
+
+async def handle_payment_completed(payload: dict[str, Any], tenant_id: Any) -> None:
+    """Record the sale (SELL movement) when a payment completes.
+
+    The payment service (protected zone) moves the order to ``paid`` and emits
+    ``payment.completed``; this handler performs the stock side effect via the
+    orders service, idempotently (a replayed event cannot double-count a sale).
+    """
+    from uuid import UUID
+
+    from socialerp.database import get_session_factory
+    from sqlalchemy import text
+
+    from packages.core.orders import OrderService
+
+    order_id = UUID(payload["order_id"])
+    async with get_session_factory()() as session:
+        await session.execute(
+            text("SELECT set_config('app.current_tenant_id', :tid, true)"),
+            {"tid": str(tenant_id)},
+        )
+        service = OrderService(session)
+        await service.record_sale_for_order(tenant_id=UUID(str(tenant_id)), order_id=order_id)
+        await session.commit()
+    logger.info("Recorded sale for paid order", order_id=str(order_id))
+
+
 # =============================================================================
 # ARQ SETTINGS
 # =============================================================================
@@ -74,12 +134,15 @@ class WorkerSettings:
         cleanup_idempotency_keys,
         process_outbox,
         reconcile_stale_payments,
+        expire_reservations,
     ]
     cron_jobs: ClassVar[list[Any]] = [
         # Cleanup every hour
         {"func": "cleanup_idempotency_keys", "cron": "0 * * * *"},
         # Status-query fallback for missing/late callbacks, every 5 minutes.
         {"func": "reconcile_stale_payments", "cron": "*/5 * * * *"},
+        # Release unpaid reservations past their TTL, every minute.
+        {"func": "expire_reservations", "cron": "* * * * *"},
     ]
     on_startup = None
     on_shutdown = None
@@ -97,11 +160,18 @@ async def run_outbox_relay() -> None:
     """Run the outbox relay continuously."""
     relay = OutboxRelay(batch_size=100, poll_interval=1.0)
 
-    # Register handlers (to be implemented as phases progress)
-    # relay.register_handler("order.created", handle_order_created)
-    # relay.register_handler("payment.confirmed", handle_payment_confirmed)
-    # relay.register_handler("message.send", handle_message_send)
-    # relay.register_handler("stock.changed", handle_stock_changed)
+    # Register handlers.
+    relay.register_handler("payment.completed", handle_payment_completed)
+    # Acknowledged events with no side effect yet (keeps them from being marked
+    # FAILED; these become real handlers in later phases).
+    for event_type in (
+        "order.created",
+        "order.cancelled",
+        "payment.initiated",
+        "payment.failed",
+        "payment.refunded",
+    ):
+        relay.register_handler(event_type, _noop_handler)
 
     logger.info("Starting outbox relay")
     await relay.start()
