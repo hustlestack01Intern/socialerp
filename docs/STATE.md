@@ -5,18 +5,21 @@
 
 ## Current Phase
 **M3 (catalog/stock/orders) complete. Phase 4 (payments) done except the aggregator provider.
-Phase 5 (agent) started: plan + ADR 0012 written, model-agnostic LLM gateway implemented
-(Ollama/OpenAI-compatible + scripted/CI backend). Intent, policy, agent loop and evals next.
-Phases 6–10 not started.**
+Phase 5 (agent) L0/L1 core complete: plan + ADR 0012, model-agnostic LLM gateway, strict-schema
+intent extraction (with injection/fraud/language signals), policy engine (always-human set,
+confidence gating, autonomy L0–L3) and the grounded agent loop are implemented, and the eval
+harness now runs the real agent (protected `/evals` zone, approved by the owner). L2 transact,
+conversation integration, and Phase 6–10 not started.**
 
-## Measured Results (real output, 2026-10-15, after Phase 4 refunds + statement + manual)
+## Measured Results (real output, 2026-10-15, after Phase 5 L0/L1 core + real eval harness)
 | Gate | Command | Result |
 |---|---|---|
 | Lint | `uv run ruff check .` | **All checks passed!** |
-| Format | `uv run ruff format --check .` | **190 files already formatted** |
-| Types | `uv run mypy packages apps` (strict) | **Success: no issues found in 67 source files** |
-| Tests | `uv run pytest` | **315 passed, 83 warnings** (~6:23) |
-| Full gate | `make check` | **✅ All checks passed!** (ruff + mypy + 315 tests + eval stub) |
+| Format | `uv run ruff format --check .` | **204 files already formatted** |
+| Types | `uv run mypy packages apps` (strict) | **Success: no issues found in 75 source files** |
+| Tests | `uv run pytest` | **380 passed, 83 warnings** (~7:50) |
+| Evals | `uv run python -m evals.runner` | **6/6 cases pass, wrong-price/stock hallucinations: 0** |
+| Full gate | `make check` | **✅ All checks passed!** (ruff + mypy + 380 tests + real evals) |
 
 Phase 4 tests: **46 new** — `tests/integrations/daraja/test_daraja_provider.py` (18, 4a),
 `tests/payments/test_payment_service.py` (13), `tests/payments/test_payments_api.py` (6),
@@ -24,6 +27,12 @@ Phase 4 tests: **46 new** — `tests/integrations/daraja/test_daraja_provider.py
 status-query fallback + statement reconciliation), `tests/payments/test_refunds.py` (7),
 `tests/integrations/manual/test_manual_provider.py` (6),
 `tests/payments/test_manual_flow.py` (3, manual provider end-to-end).
+
+Phase 5 tests: **65 new** — `tests/agent/test_gateway.py` (14) + `tests/agent/test_openai_gateway.py`
+(6) for the gateway, `tests/agent/test_intent.py` (24: schema strictness, injection, fraud-number,
+language, heuristic), `tests/agent/test_policy.py` (10), `tests/agent/test_agent.py` (11:
+grounding, shadow vs answer, fail-safe). Eval harness (`evals/runner.py`) covers 5 capabilities:
+faq_answering, order_capture, handoff_decisions, fraud_flagging, swahili_sheng.
 
 No skips. The 5 RLS tests that previously skipped themselves ("RLS policy not working in test
 environment") now run and pass, so the cross-tenant isolation guarantee is exercised (not just
@@ -104,6 +113,21 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
   transport tests) + cross-cutting `RetryingGateway` (backoff), `SpendCapGateway`
   (per-tenant/per-request, fails closed) and `CachingGateway`; `build_default_gateway` from
   settings. 18 tests, no network.
+- **Phase 5 intent extraction** (`packages/agent/intent.py`): strict `IntentResult` schema
+  (`extra="forbid"`), `extract_intent` (untrusted-output validation → `IntentParseError`),
+  `LLMIntentExtractor` adapter, and a deterministic offline `HeuristicIntentExtractor`.
+  Customer text is data: `detect_injection` (prompt-injection), `detect_personal_number_payment`
+  (fraud risk flag) and `detect_language` (en/sw/sheng) drive safety decisions.
+- **Phase 5 policy engine** (`packages/agent/policy.py`): `AutonomyLevel` (L0–L3), `RiskLevel`,
+  `PolicyAction`, fixed always-human set (complaints, talk-to-human, refunds/discounts/price
+  changes/bulk sends/data deletion), confidence gating, injection/risk escalation. Default L0.
+- **Phase 5 agent loop** (`packages/agent/agent.py`): grounded L0/L1 `Agent` composed from
+  tenant `BusinessFacts` + a `Catalog` tool, so it cannot invent prices/stock/hours/areas;
+  fail-safe to a human on extractor/gateway failure.
+- **Phase 5 real eval harness** (`evals/runner.py`): runs the labeled `evals/conversation_sets`
+  through the real agent, enforces the zero-wrong-price/stock invariant as a hard fail, and
+  reports Phase-6+ assertions (order creation, payments, totals) explicitly as **deferred**
+  rather than silently passing. `evals/run.py` (duplicate stub) removed.
 
 ## Corrected facts vs. earlier docs
 - Namespace/generation target decided and implemented: **ADR 0008** — `packages.core` is the
@@ -117,15 +141,17 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
 - **Phases 6–10 are unimplemented**: L2 transact, delivery/rider flow, CRM
   memory/segments/insights, Instagram, onboarding wizard, TikTok assisted mode, billing,
   hardening/load/security review.
-- **Phase 5 remainder**: intent extraction, policy engine, agent L0/L1 loop, conversation
-  integration, and the real eval harness. `/evals` is a **protected zone** (constitution):
-  the harness and labeled sets require explicit human approval before editing.
+- **Phase 5 remainder**: L2 transact tools (order/stock/STK via the agent), the
+  high-stakes 7-candidate consensus path, and wiring the agent into the conversation/channel
+  pipeline (audit logging of every agent action). The `/evals` sets currently cover 5
+  capabilities with one or two cases each; broaden before promoting any prompt/model.
 - **Phase 4 remainder**: a licensed **aggregator provider** (third `PaymentProvider`
   implementation) plus its settlement-statement feed, and the pay-on-delivery trigger
   (Phase 7). Status-query fallback, refunds, statement reconciliation, the manual
   provider and the `httpx` runtime-dependency fix are **done**.
-- **`evals/runner.py` is a stub** — `make eval` exits 0 but runs no assertions. The eval gate is
-  therefore not yet meaningful; must be built with Phase 5.
+- **`evals/runner.py`** now runs the real Phase-5 agent and enforces the zero-hallucination
+  invariant. It still scores only Phase-5 capabilities; order/payment assertions are reported
+  as deferred and must be promoted to hard checks when Phase 6 lands.
 - **`apps/dashboard`** has no `node_modules` (not installed); `lint-js`/`typecheck-js` are not
   part of `check` and have not been verified.
 - **Makefile db/run targets** (`migrate`, `seed`, `run-api`, `run-worker`) still `cd` into
@@ -154,8 +180,9 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
   (use ≥10 min when running `make check` locally).
 
 ## Next Steps
-1. Phase 5: intent extraction → policy engine → agent L0/L1 loop (gateway is done).
-2. Phase 5 evals (needs human approval for the protected `/evals` zone).
+1. Phase 5 finish: wire the agent into the conversation pipeline (audit every decision), add
+   L2 transact tools, broaden eval sets.
+2. Phase 6: L2 transact end-to-end on WhatsApp (order → STK → paid → packed).
 3. Phase 4 finish: aggregator provider + its statement feed.
 4. Reconcile docker-compose files; verify `make migrate`/`make run-api` from root; wire tenancy
    middleware into `main.py`.

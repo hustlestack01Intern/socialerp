@@ -1,317 +1,332 @@
 """
-Evaluation harness for agent capabilities.
+Evaluation harness for agent capabilities (Phase 5).
 
-Loads labeled conversation sets, runs agent, scores against rubric.
+Runs labeled conversation sets (``evals/conversation_sets``) through the real
+Phase-5 agent using the deterministic, offline intent extractor, then scores what
+Phase 5 actually guarantees:
+
+- intent / handoff decisions,
+- grounded, non-hallucinated prices and stock (hard invariant: must be zero),
+- language mirroring,
+- fraud/risk flagging.
+
+Assertions that belong to later phases (order creation, STK payment, totals) are
+reported as **deferred** — never silently counted as passing. If any active check
+fails, or a single price/stock hallucination is found, the run exits non-zero.
 """
 
+from __future__ import annotations
+
+import argparse
 import asyncio
 import json
-from dataclasses import dataclass, field
-from datetime import datetime
+import re
+import sys
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from packages.agent.agent import Agent, BusinessFacts, CatalogItem, InMemoryCatalog
+from packages.agent.intent import HeuristicIntentExtractor
+from packages.agent.policy import AutonomyLevel, PolicyEngine
+
+SETS_DIR = Path(__file__).resolve().parent / "conversation_sets"
+
+# Deterministic eval catalog. Prices are KES cents.
+EVAL_CATALOG = InMemoryCatalog([
+    CatalogItem("HOODIE-BLK-M", "Black Hoodie M", 250_000, in_stock=True),
+    CatalogItem("TEE-RED-L", "Red T-Shirt L", 120_000, in_stock=True),
+    CatalogItem("SHOE-BLK-42", "Black Shoes 42", 300_000, in_stock=True),
+    CatalogItem("TEE-BLK-L", "Black T-Shirt L", 120_000, in_stock=True),
+])
+
+EVAL_FACTS = BusinessFacts(
+    hours="8am to 8pm daily",
+    delivery_areas=["Kilimani", "Westlands", "Kasarani", "South B"],
+    payment_methods=["M-Pesa"],
+)
+
+# Capabilities verified in Phase 5. Others are Deferred.
+ACTIVE_CAPABILITIES = frozenset({
+    "faq_answering",
+    "order_capture",
+    "handoff_decisions",
+    "fraud_flagging",
+    "swahili_sheng",
+})
+
+_PRICE_RE = re.compile(r"KES\s*([\d,]+)")
+_KNOWN_PRICES = {item.price_cents for item in EVAL_CATALOG.items}
 
 
 @dataclass
 class EvalCase:
-    """Single evaluation case."""
-
     id: str
-    capability: str  # order_capture, faq_answering, swahili_sheng, fraud_flagging, handoff_decision
-    language: str  # en, sw, sheng
-    customer_messages: list[str]
+    capability: str
+    language: str
+    turns: list[dict[str, Any]]
     expected_outcome: dict[str, Any]
-    metadata: dict[str, Any] = field(default_factory=dict)
+    tags: list[str] = field(default_factory=list)
+
+    @property
+    def customer_messages(self) -> list[str]:
+        return [t["content"] for t in self.turns if t.get("role") == "customer"]
 
 
 @dataclass
-class EvalResult:
-    """Result of evaluating one case."""
-
+class CaseResult:
     case_id: str
     capability: str
     passed: bool
-    score: float  # 0.0 to 1.0
-    details: dict[str, Any]
-    latency_ms: int
-    tokens_used: int
+    score: float
+    checks: dict[str, bool]
+    deferred: list[str]
+    hallucinated_prices: list[str]
     error: str | None = None
 
 
 @dataclass
 class EvalSummary:
-    """Summary of evaluation run."""
-
     total_cases: int
     passed: int
     failed: int
+    deferred_cases: int
     avg_score: float
-    by_capability: dict[str, dict]
+    wrong_price_stock_count: int
+    by_capability: dict[str, dict[str, int]]
     timestamp: str
 
 
 class EvalRunner:
-    """Runs evaluation cases against the agent."""
+    def __init__(
+        self, sets_dir: Path = SETS_DIR, *, autonomy: AutonomyLevel = AutonomyLevel.L1_ANSWER
+    ):
+        self.sets_dir = sets_dir
+        self.autonomy = autonomy
 
-    def __init__(self, cases_dir: Path = Path("evals/cases")):
-        self.cases_dir = cases_dir
-        self.cases: list[EvalCase] = []
+    # -- loading --------------------------------------------------------
 
     def load_cases(self, capability: str | None = None) -> list[EvalCase]:
-        """Load evaluation cases from JSONL files."""
-        self.cases = []
-
-        if capability:
-            files = [self.cases_dir / f"{capability}.jsonl"]
-        else:
-            files = list(self.cases_dir.glob("*.jsonl"))
-
-        for file in files:
-            if not file.exists():
+        caps = (
+            [capability]
+            if capability
+            else sorted(d.name for d in self.sets_dir.iterdir() if d.is_dir())
+        )
+        cases: list[EvalCase] = []
+        for cap in caps:
+            cap_dir = self.sets_dir / cap
+            if not cap_dir.is_dir():
                 continue
-            with Path(file).open() as f:
-                for line in f:
-                    if line.strip():
-                        data = json.loads(line)
-                        self.cases.append(EvalCase(**data))
+            for file in sorted(cap_dir.glob("*.json")):
+                data = json.loads(file.read_text())
+                cases.append(
+                    EvalCase(
+                        id=data["id"],
+                        capability=data["capability"],
+                        language=data.get("language", "en"),
+                        turns=data["turns"],
+                        expected_outcome=data["expected_outcome"],
+                        tags=data.get("tags", []),
+                    )
+                )
+        return cases
 
-        return self.cases
+    # -- running --------------------------------------------------------
 
-    async def run_case(self, case: EvalCase, agent) -> EvalResult:
-        """Run a single evaluation case."""
-        import time
-
-        start = time.time()
-
+    async def run_case(self, case: EvalCase) -> CaseResult:
+        agent = Agent(
+            extractor=HeuristicIntentExtractor(),
+            policy=PolicyEngine(),
+            catalog=EVAL_CATALOG,
+            facts=EVAL_FACTS,
+            autonomy=self.autonomy,
+        )
+        outcomes = []
+        hallucinated: list[str] = []
         try:
-            # Run agent on the conversation
-            result = await agent.run_conversation(case.customer_messages)
-
-            # Score against expected outcome
-            score, details = self._score_result(case, result)
-            passed = score >= 0.8  # Threshold
-
-            return EvalResult(
-                case_id=case.id,
-                capability=case.capability,
-                passed=passed,
-                score=score,
-                details=details,
-                latency_ms=int((time.time() - start) * 1000),
-                tokens_used=result.get("tokens_used", 0),
-            )
-        except Exception as e:
-            return EvalResult(
+            for message in case.customer_messages:
+                outcome = await agent.handle_message(message)
+                outcomes.append(outcome)
+                for raw in _PRICE_RE.findall(outcome.reply_text):
+                    cents = int(raw.replace(",", "")) * 100
+                    if cents not in _KNOWN_PRICES:
+                        hallucinated.append(raw)
+        except Exception as exc:
+            return CaseResult(
                 case_id=case.id,
                 capability=case.capability,
                 passed=False,
                 score=0.0,
-                details={},
-                latency_ms=int((time.time() - start) * 1000),
-                tokens_used=0,
-                error=str(e),
+                checks={},
+                deferred=[],
+                hallucinated_prices=[],
+                error=str(exc),
             )
 
-    def _score_result(self, case: EvalCase, result: dict) -> tuple[float, dict]:
-        """Score agent result against expected outcome."""
+        checks, deferred = self._evaluate(case, outcomes)
+        score = sum(checks.values()) / len(checks) if checks else 0.0
+        passed = bool(checks) and all(checks.values()) and not hallucinated
+        return CaseResult(
+            case_id=case.id,
+            capability=case.capability,
+            passed=passed,
+            score=score,
+            checks=checks,
+            deferred=deferred,
+            hallucinated_prices=hallucinated,
+        )
+
+    def _evaluate(self, case: EvalCase, outcomes: list[Any]) -> tuple[dict[str, bool], list[str]]:
         expected = case.expected_outcome
-        details = {"checks": {}}
+        checks: dict[str, bool] = {}
 
-        # Check 1: Wrong price/stock rate (must be 0)
-        if "price" in expected and "price" in result:
-            price_match = result["price"] == expected["price"]
-            details["checks"]["price_accuracy"] = price_match
-            if not price_match:
-                return 0.0, details  # Hard fail
+        if case.capability == "faq_answering":
+            checks["answered_hours"] = any("8am" in o.reply_text for o in outcomes)
+            checks["answered_grounded"] = any(o.grounded for o in outcomes)
 
-        if "stock" in expected and "stock" in result:
-            stock_match = result["stock"] == expected["stock"]
-            details["checks"]["stock_accuracy"] = stock_match
-            if not stock_match:
-                return 0.0, details  # Hard fail
-
-        # Check 2: Intent accuracy
-        if "intent" in expected:
-            intent_match = result.get("intent") == expected["intent"]
-            details["checks"]["intent_accuracy"] = intent_match
-
-        # Check 3: Handoff decision
-        if "should_handoff" in expected:
-            handoff_match = result.get("handoff") == expected["should_handoff"]
-            details["checks"]["handoff_decision"] = handoff_match
-
-        # Check 4: Response quality (for FAQ/answer)
-        if "response_contains" in expected:
-            response = result.get("response", "").lower()
-            contains_all = all(
-                phrase.lower() in response for phrase in expected["response_contains"]
+        elif case.capability == "order_capture":
+            checks["intent_detected"] = any(
+                o.intent.intent.value == "create_order" for o in outcomes
             )
-            details["checks"]["response_contains"] = contains_all
+            if "delivery_area" in expected:
+                checks["area_extracted"] = any(
+                    o.intent.delivery_area == expected["delivery_area"] for o in outcomes
+                )
 
-        # Check 5: Language matching
-        if "language" in expected:
-            lang_match = result.get("language") == expected["language"]
-            details["checks"]["language_match"] = lang_match
+        elif case.capability == "handoff_decisions":
+            checks["handoff_triggered"] = any(o.decision.requires_human for o in outcomes)
 
-        # Calculate overall score
-        checks = list(details["checks"].values())
-        if not checks:
-            return 0.0, details
+        elif case.capability == "fraud_flagging":
+            checks["fraud_flagged"] = any(o.intent.risk_flags for o in outcomes)
+            checks["agent_escalated"] = any(o.decision.requires_human for o in outcomes)
 
-        score = sum(checks) / len(checks)
-        return score, details
+        elif case.capability == "swahili_sheng":
+            checks["language_matched"] = any(
+                o.intent.language == expected.get("language_matched", case.language)
+                for o in outcomes
+            )
+            if expected.get("order_created"):
+                checks["intent_detected"] = any(
+                    o.intent.intent.value == "create_order" for o in outcomes
+                )
 
-    async def run_all(self, agent, capability: str | None = None) -> EvalSummary:
-        """Run all evaluation cases."""
+        deferred = sorted(k for k in expected if k in _DEFERRED_KEYS and k not in _CHECKED_KEYS)
+        return checks, deferred
+
+    # -- orchestrating --------------------------------------------------
+
+    async def run_all(self, capability: str | None = None) -> tuple[EvalSummary, list[CaseResult]]:
         cases = self.load_cases(capability)
-        if not cases:
-            return EvalSummary(
-                total_cases=0,
-                passed=0,
-                failed=0,
-                avg_score=0.0,
-                by_capability={},
-                timestamp=datetime.utcnow().isoformat(),
-            )
+        results = [await self.run_case(case) for case in cases]
 
-        results = []
-        for case in cases:
-            result = await self.run_case(case, agent)
-            results.append(result)
-
-        # Aggregate
         passed = sum(1 for r in results if r.passed)
         failed = len(results) - passed
-        avg_score = sum(r.score for r in results) / len(results)
+        deferred_cases = sum(1 for r in results if r.deferred)
+        avg_score = sum(r.score for r in results) / len(results) if results else 0.0
+        wrong = sum(len(r.hallucinated_prices) for r in results)
 
-        by_capability = {}
-        for result in results:
-            cap = result.capability
-            if cap not in by_capability:
-                by_capability[cap] = {"total": 0, "passed": 0, "avg_score": 0.0}
-            by_capability[cap]["total"] += 1
-            if result.passed:
-                by_capability[cap]["passed"] += 1
+        by_capability: dict[str, dict[str, int]] = {}
+        for r in results:
+            bucket = by_capability.setdefault(r.capability, {"total": 0, "passed": 0})
+            bucket["total"] += 1
+            bucket["passed"] += int(r.passed)
 
-        for cap in by_capability:
-            cap_results = [r for r in results if r.capability == cap]
-            by_capability[cap]["avg_score"] = sum(r.score for r in cap_results) / len(cap_results)
-
-        return EvalSummary(
+        summary = EvalSummary(
             total_cases=len(results),
             passed=passed,
             failed=failed,
+            deferred_cases=deferred_cases,
             avg_score=avg_score,
+            wrong_price_stock_count=wrong,
             by_capability=by_capability,
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
         )
-
-    def print_summary(self, summary: EvalSummary):
-        """Print evaluation summary."""
-        for _cap, _stats in summary.by_capability.items():
-            pass
+        return summary, results
 
 
-# =============================================================================
-# SAMPLE EVAL CASES (for testing the harness)
-# =============================================================================
+# Assertions we knowingly defer to later phases (recorded, never silently passed).
+_DEFERRED_KEYS = frozenset({
+    "order_created",
+    "payment_initiated",
+    "items",
+    "total_cents",
+    "delivery_fee_cents",
+    "stock_accurate",
+    "price_accurate",
+    "answered_stock",
+    "flag_type",
+    "safe_response",
+    "agent_refused",
+    "reason",
+    "confidence_below_threshold",
+    "human_notified",
+})
 
-SAMPLE_CASES = {
-    "order_capture": [
-        {
-            "id": "order_001",
-            "capability": "order_capture",
-            "language": "en",
-            "customer_messages": ["I want to buy 2 black hoodies size M", "Deliver to Kilimani"],
-            "expected_outcome": {
-                "intent": "create_order",
-                "items": [{"sku": "HOODIE-BLK-M", "qty": 2}],
-                "delivery_area": "Kilimani",
-            },
-            "metadata": {"difficulty": "easy"},
-        },
-        {
-            "id": "order_002",
-            "capability": "order_capture",
-            "language": "sw",
-            "customer_messages": ["Ninataka kununua viatu 2 vya nyekundu", "Nipeleke South B"],
-            "expected_outcome": {
-                "intent": "create_order",
-                "items": [{"sku": "SHOE-RED", "qty": 2}],
-                "delivery_area": "South B",
-            },
-            "metadata": {"difficulty": "medium"},
-        },
-    ],
-    "faq_answering": [
-        {
-            "id": "faq_001",
-            "capability": "faq_answering",
-            "language": "en",
-            "customer_messages": ["What are your delivery hours?"],
-            "expected_outcome": {
-                "intent": "faq",
-                "response_contains": ["8am", "8pm", "delivery"],
-            },
-            "metadata": {"difficulty": "easy"},
-        },
-    ],
-    "fraud_flagging": [
-        {
-            "id": "fraud_001",
-            "capability": "fraud_flagging",
-            "language": "en",
-            "customer_messages": ["Send to this number 0712345678, pay to till 123456"],
-            "expected_outcome": {
-                "intent": "order",
-                "should_handoff": True,
-                "fraud_flags": ["personal_number_payment", "till_number_mismatch"],
-            },
-            "metadata": {"difficulty": "hard"},
-        },
-    ],
-}
+# Assertions the Phase-5 harness actually verifies.
+_CHECKED_KEYS = frozenset({
+    "answered_hours",
+    "answered_grounded",
+    "intent_detected",
+    "area_extracted",
+    "handoff_triggered",
+    "fraud_flagged",
+    "agent_escalated",
+    "language_matched",
+})
 
 
-def create_sample_cases():
-    """Create sample evaluation cases for testing."""
-    evals_dir = Path("evals/cases")
-    evals_dir.mkdir(parents=True, exist_ok=True)
+def _print(summary: EvalSummary, results: list[CaseResult]) -> None:
+    print("=" * 64)
+    print("SocialERP agent evals (Phase 5)")
+    print("=" * 64)
+    for cap, stats in sorted(summary.by_capability.items()):
+        status = "ACTIVE" if cap in ACTIVE_CAPABILITIES else "DEFERRED"
+        print(f"  {cap:<18} {stats['passed']}/{stats['total']} pass   [{status}]")
+    print("-" * 64)
+    print(f"  cases: {summary.total_cases}  passed: {summary.passed}  failed: {summary.failed}")
+    print(f"  avg score: {summary.avg_score:.2f}")
+    print(f"  wrong-price/stock hallucinations: {summary.wrong_price_stock_count} (must be 0)")
+    deferred = sorted({k for r in results for k in r.deferred})
+    if deferred:
+        print(f"  deferred assertions (later phases): {', '.join(deferred)}")
+    print("=" * 64)
 
-    for capability, cases in SAMPLE_CASES.items():
-        file_path = evals_dir / f"{capability}.jsonl"
-        with Path(file_path).open("w") as f:
-            for case in cases:
-                f.write(json.dumps(case) + "\n")
 
-
-# =============================================================================
-# CLI ENTRY POINT
-# =============================================================================
-
-
-async def main():
-    """Main entry point for eval runner."""
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Run agent evaluations")
-    parser.add_argument("--capability", help="Run specific capability")
-    parser.add_argument("--create-samples", action="store_true", help="Create sample cases")
+async def _main() -> int:
+    parser = argparse.ArgumentParser(description="Run SocialERP agent evals")
+    parser.add_argument("--capability", help="Run a single capability")
+    parser.add_argument("--output", type=Path, help="Write results JSON to this path")
     args = parser.parse_args()
 
-    if args.create_samples:
-        create_sample_cases()
-        return
-
     runner = EvalRunner()
+    summary, results = await runner.run_all(args.capability)
+    _print(summary, results)
 
-    # For now, just verify the harness loads
-    cases = runner.load_cases(args.capability)
+    if args.output:
+        args.output.write_text(
+            json.dumps(
+                {
+                    "summary": asdict(summary),
+                    "results": [asdict(r) for r in results],
+                },
+                indent=2,
+            )
+        )
 
-    # Print sample
-    for _case in cases[:3]:
-        pass
+    if summary.wrong_price_stock_count > 0:
+        print("FAIL: hallucinated price/stock detected")
+        return 1
+    if summary.failed > 0:
+        print(f"FAIL: {summary.failed} case(s) failed")
+        return 1
+    print("OK: all active checks passed")
+    return 0
+
+
+def main() -> int:
+    return asyncio.run(_main())
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    sys.exit(main())

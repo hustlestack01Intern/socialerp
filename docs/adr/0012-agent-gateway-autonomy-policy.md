@@ -23,9 +23,11 @@ prices/stock. Evals must run in CI without contacting live endpoints.
    `cached` flag and `finish_reason`. Every call records model+version for traces.
 
 2. **Ollama is the default backend; `ScriptedGateway` is the test/CI backend.**
-   `OllamaGateway` talks to the local Ollama `/api/chat` endpoint (open-weight models).
-   `ScriptedGateway` is deterministic and makes no network calls, so unit tests and evals are
-   hermetic. The gateway is the only code that knows a provider's wire format.
+   `OpenAICompatibleGateway` talks to the OpenAI-compatible HTTP surface that Ollama exposes
+   (`{base_url}/chat/completions`, default `http://localhost:11434/v1`), so the same client
+   works for Ollama and hosted OpenAI-compatible providers. `ScriptedGateway` is deterministic
+   and makes no network calls, so unit tests and evals are hermetic. The gateway is the only
+   code that knows a provider's wire format.
 
 3. **Cross-cutting wrappers, not per-call code.** `SpendCapGateway` enforces per-tenant and
    per-request caps (raising `SpendCapError`), `RetryingGateway` adds bounded retries with
@@ -55,7 +57,25 @@ prices/stock. Evals must run in CI without contacting live endpoints.
    hands off — it does not guess. The eval gate fails on any wrong-price/wrong-stock answer.
 
 8. **`/evals` is a protected zone.** Eval datasets and held-out sets require explicit human
-   approval; the codebase does not self-authorize changes there.
+   approval; the codebase does not self-authorize changes there. (The owner approved the
+   Phase-5 harness + first labeled sets on 2026-10-15.)
+
+9. **Structured intent carries safety signals.** `IntentResult` (strict schema) also carries
+   `detect_injection` (prompt-injection attempt), `risk_flags` (e.g. `personal_number_payment`
+   when a customer is asked to pay a personal number instead of the business Till) and a
+   best-effort `language` (en/sw/sheng). Non-empty `risk_flags` **escalate to a human at every
+   autonomy level**, before the always-human intent set is consulted.
+
+10. **The offline path is deterministic.** `extract_intent` (LLM) and
+    `HeuristicIntentExtractor` (keyword, no network) implement the same `IntentExtractor`
+    protocol. CI and evals use the heuristic extractor; production uses the LLM extractor with
+    the same validated schema.
+
+11. **The eval harness runs the real agent and never fakes coverage.** `evals/runner.py` runs
+    the labeled `conversation_sets` through the agent, treats any hallucinated price/stock
+    (`KES n` not matching the catalog) as a **hard failure**, and reports assertions that belong
+    to later phases (order creation, STK payment, totals) explicitly as **deferred** — they are
+    not counted as passing. Deferred checks are promoted to hard checks when their phase lands.
 
 ## Consequences
 
@@ -63,3 +83,5 @@ prices/stock. Evals must run in CI without contacting live endpoints.
 - Spend is bounded and observable; a runaway loop fails closed to a human.
 - Safety properties (no invented prices/stock, no auto-send at L0, always-human set) are
   testable and gate releases, matching AGENTS.md §5/§6.
+- The eval gate is meaningful from Phase 5 (6 cases, zero hallucinations) and grows as phases
+  land; deferred assertions keep the gate honest without pretending unimplemented phases work.

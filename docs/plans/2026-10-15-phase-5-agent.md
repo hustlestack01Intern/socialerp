@@ -1,6 +1,7 @@
 # PLAN: Phase 5 — Agent L0/L1, policy engine and the LLM gateway
 
-Date: 2026-10-15 · Author: Chief Engineer · Status: **in progress (gateway first slice)**
+Date: 2026-10-15 · Author: Chief Engineer · Status: **L0/L1 core complete** (gateway, intent,
+policy, agent loop, real eval harness); conversation integration + L2 deferred to Phase 6.
 
 ## Goal and non-goals
 - Goal: a model-agnostic LLM gateway and an agent that can (a) **L0 shadow** — draft replies
@@ -58,12 +59,13 @@ Date: 2026-10-15 · Author: Chief Engineer · Status: **in progress (gateway fir
 - Evals: `make eval` runs the sets and fails on wrong-price/stock > 0 or a safety regression.
 
 ## Sequencing
-1. Plan + ADR 0012/0013 (this doc).
-2. Gateway interface + `ScriptedGateway` + `OllamaGateway` + tests. **← first slice**
-3. Intent extraction + tests.
-4. Policy engine + tests.
-5. Agent L0/L1 loop + conversation integration + tests.
-6. Eval harness (**needs human approval for `/evals`**).
+1. Plan + ADR 0012/0013 (this doc). ✅
+2. Gateway interface + `ScriptedGateway` + `OllamaGateway` + tests. ✅
+3. Intent extraction + tests. ✅
+4. Policy engine + tests. ✅
+5. Agent L0/L1 loop + conversation integration + tests. ✅ (loop done; conversation wiring deferred)
+6. Eval harness. ✅ (approved by the owner; runs the real agent, reports Phase-6 assertions as deferred)
 
-## Open questions (for the human)
+## Open questions — resolved
 - Q1: Approve editing `/evals` (protected) to build the harness and the first labeled sets?
+  **Yes — approved by the owner (2026-10-15).**
