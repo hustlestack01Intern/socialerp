@@ -18,7 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.main import app
-from apps.api.routes.payments import get_payment_provider
+from apps.api.routes.payments import get_tenant_payment_provider
 from packages.core.auth.dependencies import get_current_tenant_id, get_db
 from packages.core.domain.order import OrderStatus
 from packages.core.domain.payment import (
@@ -83,9 +83,12 @@ async def payments_client(
         async with session_factory() as session:
             yield session
 
+    async def override_get_tenant_payment_provider() -> FakeProvider:
+        return provider
+
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_current_tenant_id] = lambda: tenant.id
-    app.dependency_overrides[get_payment_provider] = lambda: provider
+    app.dependency_overrides[get_tenant_payment_provider] = override_get_tenant_payment_provider
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -218,3 +221,70 @@ async def test_callback_wrong_path_token_rejected(
         json={"Body": {"stkCallback": {"CheckoutRequestID": "x", "ResultCode": 0}}},
     )
     assert resp.status_code == 403
+
+
+# =============================================================================
+# Per-tenant provider selection
+# =============================================================================
+
+
+async def _set_tenant_providers(
+    session_factory: Any, tenant_id: UUID, providers: list[str]
+) -> None:
+    from socialerp.tenancy import Tenant
+
+    async with session_factory() as session, session.begin():
+        tenant = (await session.execute(select(Tenant).where(Tenant.id == tenant_id))).scalar_one()
+        tenant.settings = {**tenant.settings, "payment_providers": providers}
+
+
+async def test_provider_selection_defaults_to_daraja(tenant, session_factory, monkeypatch) -> None:
+    # The Daraja provider fail-closes without credentials; the settings
+    # singleton is patched the same way the callback-token test does it.
+    from socialerp.settings import get_settings
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "DARAJA_CONSUMER_KEY", "ck")
+    monkeypatch.setattr(settings, "DARAJA_CONSUMER_SECRET", "cs")
+    monkeypatch.setattr(settings, "DARAJA_PASSKEY", "pk")
+    monkeypatch.setattr(settings, "DARAJA_SHORTCODE", "174379")
+    async with session_factory() as session:
+        provider = await get_tenant_payment_provider(tenant.id, session)
+    from packages.integrations.daraja.client import DirectDarajaProvider
+
+    assert isinstance(provider, DirectDarajaProvider)
+
+
+async def test_provider_selection_manual(tenant, session_factory) -> None:
+    await _set_tenant_providers(session_factory, tenant.id, ["manual"])
+    async with session_factory() as session:
+        provider = await get_tenant_payment_provider(tenant.id, session)
+    from packages.integrations.manual import ManualPaymentProvider
+
+    assert isinstance(provider, ManualPaymentProvider)
+
+
+async def test_provider_selection_aggregator(tenant, session_factory, monkeypatch) -> None:
+    from packages.core.config import get_settings
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "aggregator_api_key", "ak")
+    monkeypatch.setattr(settings, "aggregator_api_secret", "as")
+    monkeypatch.delenv("AGGREGATOR_BASE_URL", raising=False)
+    await _set_tenant_providers(session_factory, tenant.id, ["aggregator"])
+    async with session_factory() as session:
+        provider = await get_tenant_payment_provider(tenant.id, session)
+    from packages.integrations.aggregator.client import AggregatorPaymentProvider
+
+    assert isinstance(provider, AggregatorPaymentProvider)
+
+
+async def test_provider_selection_skips_unknown_and_caches(tenant, session_factory) -> None:
+    await _set_tenant_providers(session_factory, tenant.id, ["unknown", "manual"])
+    async with session_factory() as session:
+        first = await get_tenant_payment_provider(tenant.id, session)
+        second = await get_tenant_payment_provider(tenant.id, session)
+    from packages.integrations.manual import ManualPaymentProvider
+
+    assert isinstance(first, ManualPaymentProvider)
+    assert first is second  # cached per (tenant_id, provider list)

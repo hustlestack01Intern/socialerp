@@ -119,6 +119,11 @@ def create_app() -> FastAPI:
 
     app.include_router(whatsapp_webhook_router, tags=["WhatsApp Webhooks"])
 
+    # Phase 4: Aggregator webhooks
+    from packages.integrations.aggregator.webhook import router as aggregator_webhook_router
+
+    app.include_router(aggregator_webhook_router, tags=["Aggregator Webhooks"])
+
     # Phase 3: Catalog, Inventory, Orders
     # NOTE: these routers carry their own "/api/v1/<section>" prefix, so we do
     # NOT pass a prefix here (doing both produced doubled paths).

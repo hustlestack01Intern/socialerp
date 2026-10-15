@@ -9,16 +9,21 @@ Thin HTTP layer over :class:`packages.core.payments.PaymentService`:
   for an order.
 - ``POST /api/v1/payments/stk/callback/{tenant_id}/{callback_token}``
   (unauthenticated): Safaricom Daraja result callback.
+- ``POST /api/v1/webhooks/aggregator/{tenant_id}/{callback_token}``
+  (unauthenticated): Aggregator (Pesapal/IntaSend) result callback.
 
 Tenant resolution for the callback: the path carries the tenant id plus a
 shared secret, so the handler can set the RLS tenant context before looking the
 payment up. This keeps every tenant table under RLS with no un-scoped lookup
 table (ADR 0010).
+
+Provider selection: the tenant's ``payment_providers`` setting determines which
+provider is used (daraja, aggregator, manual). The first enabled provider is
+used for STK push initiation.
 """
 
 from __future__ import annotations
 
-from functools import lru_cache
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -39,6 +44,7 @@ from packages.core.domain.payment import (
     PaymentProviderError,
 )
 from packages.core.domain.user import User
+from packages.core.models.core import Tenant
 from packages.core.models.payment import Payment
 from packages.core.payments import (
     OrderNotFoundError,
@@ -49,25 +55,71 @@ from packages.core.payments import (
     RefundNotAllowedError,
     RefundNotApprovedError,
 )
+from packages.integrations.aggregator import build_aggregator_provider
 from packages.integrations.daraja import build_direct_daraja_provider
+from packages.integrations.manual import ManualPaymentProvider
 
 router = APIRouter(prefix="/api/v1/payments", tags=["payments"])
 
 
 # =============================================================================
-# Provider dependency
+# Per-tenant provider selection
 # =============================================================================
 
+# Providers own HTTP clients, so they are built once per tenant (and per
+# provider list) and reused. The 100-tenant initial load target keeps this
+# bounded; a settings change re-keys the cache automatically.
+_provider_cache: dict[tuple[UUID, tuple[str, ...]], PaymentProvider] = {}
 
-@lru_cache(maxsize=1)
-def get_payment_provider() -> PaymentProvider:
-    """Build the configured M-Pesa provider (cached per process)."""
+
+async def get_tenant_payment_provider(
+    tenant_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> PaymentProvider:
+    """Resolve the tenant's first enabled payment provider.
+
+    Selection comes from the tenant's ``payment_providers`` setting, in order:
+    ``daraja`` (tenant's own Daraja credentials via the platform config),
+    ``aggregator`` (Pesapal/IntaSend-style), ``manual`` (pay-to-Till). Unknown
+    entries are skipped; an empty selection falls back to direct Daraja, the
+    historical default. Falls back to direct Daraja if the tenant row is
+    missing (defense in depth — auth normally guarantees it exists).
+    """
+    tenant = (await db.execute(select(Tenant).where(Tenant.id == tenant_id))).scalar_one_or_none()
+    providers: tuple[str, ...] = ()
+    if tenant is not None:
+        raw = tenant.settings.get("payment_providers", []) if tenant.settings else []
+        providers = tuple(p for p in raw if isinstance(p, str))
+
+    key = (tenant_id, providers)
+    cached = _provider_cache.get(key)
+    if cached is not None:
+        return cached
+
+    provider = _build_provider(providers, tenant)
+    _provider_cache[key] = provider
+    return provider
+
+
+def _build_provider(providers: tuple[str, ...], tenant: Tenant | None) -> PaymentProvider:
+    """Instantiate the first enabled provider for a tenant."""
+    for name in providers:
+        if name == "daraja":
+            return build_direct_daraja_provider()
+        if name == "aggregator":
+            return build_aggregator_provider()
+        if name == "manual":
+            from socialerp.settings import get_settings as _get_settings
+
+            settings = _get_settings()
+            till = (
+                tenant.settings.get("mpesa_till_number", "") if tenant and tenant.settings else ""
+            )
+            return ManualPaymentProvider(
+                callback_token=settings.MANUAL_PAYMENT_TOKEN,
+                till=till,
+            )
     return build_direct_daraja_provider()
-
-
-# =============================================================================
-# Schemas
-# =============================================================================
 
 
 class STKPushBody(BaseModel):
@@ -139,7 +191,7 @@ async def initiate_stk(
     request: Request,
     tenant_id: Annotated[UUID, Depends(get_current_tenant_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
-    provider: Annotated[PaymentProvider, Depends(get_payment_provider)],
+    provider: Annotated[PaymentProvider, Depends(get_tenant_payment_provider)],
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> STKPushResult:
     """Send an STK push for a payable order."""
@@ -198,7 +250,7 @@ async def refund_payment(
     tenant_id: Annotated[UUID, Depends(get_current_tenant_id)],
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-    provider: Annotated[PaymentProvider, Depends(get_payment_provider)],
+    provider: Annotated[PaymentProvider, Depends(get_tenant_payment_provider)],
 ) -> RefundView:
     """Refund a completed payment. Always human-approved and audited."""
     service = PaymentService(db, provider)
@@ -229,7 +281,7 @@ async def stk_callback(
     callback_token: str,
     payload: dict[str, Any],
     db: Annotated[AsyncSession, Depends(get_db)],
-    provider: Annotated[PaymentProvider, Depends(get_payment_provider)],
+    provider: Annotated[PaymentProvider, Depends(get_tenant_payment_provider)],
     x_callback_token: Annotated[str | None, Header(alias="x-callback-token")] = None,
 ) -> dict[str, object]:
     """Receive a Daraja STK result callback (unauthenticated, token-guarded)."""

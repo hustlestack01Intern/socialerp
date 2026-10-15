@@ -4,24 +4,43 @@
 > gates green. If this contradicts MAP.md or the filesystem, check `git log` and `docs/plans/`.
 
 ## Current Phase
-**M3 (catalog/stock/orders) complete. Phase 4 (payments) done except the aggregator provider.
-Phase 5 (agent) L0/L1 core complete. Phase 6 (orders) landed: deterministic `OrderService`
-(catalog-price authority, reservation on creation, release on cancel/expiry, the
-`payment.completed` sale side effect, idempotency, concurrent last-item race), tenant-scoped
-orders API, migration `0009` (`metadata` → `metadata_json`), enum storage alignment, and the
-**agent L2 `create_order` tool** wired into the agent loop with policy gating and active L2
-evals. Conversation-pipeline wiring (persisting agent actions, sending replies) and Phase 7–10
-not started.**
+**Phase 4 remainder DONE (aggregator provider + per-tenant provider selection); gate restored
+to GREEN (448 tests). Phases 7–10 + owner dashboard planned in
+`docs/plans/2026-10-15-program-phases-7-10-dashboard.md`, not yet started. Previously:
+M3 (catalog/stock/orders) complete; Phase 4 (payments) complete; Phase 5 (agent) L0/L1 core
+complete; Phase 6 (orders) landed: deterministic `OrderService` (catalog-price authority,
+reservation on creation, release on cancel/expiry, the `payment.completed` sale side effect,
+idempotency, concurrent last-item race), tenant-scoped orders API, migration `0009`
+(`metadata` → `metadata_json`), enum storage alignment, and the **agent L2 `create_order` tool**
+wired into the agent loop with policy gating and active L2 evals, plus the Phase 6b
+conversation pipeline (webhook → outbox → worker → agent → reply, idempotent).**
 
-## Measured Results (real output, 2026-10-15, after Phase 6 order core + agent L2 tool)
+## Measured Results (real output, 2026-10-15, after Slice 0 — aggregator + provider selection)
 | Gate | Command | Result |
 |---|---|---|
 | Lint | `uv run ruff check .` | **All checks passed!** |
-| Format | `uv run ruff format --check .` | **215 files already formatted** |
-| Types | `uv run mypy packages apps` (strict) | **Success: no issues found in 79 source files** |
-| Tests | `uv run pytest` | **417 passed, 100 warnings** (~8:12 in `make check`) |
+| Format | `uv run ruff format --check .` | **227 files already formatted** |
+| Types | `uv run mypy packages apps` (strict) | **Success: no issues found in 84 source files** |
+| Tests | `uv run pytest` | **448 passed, 114 warnings in 558.94s** |
 | Evals | `uv run python -m evals.runner` | **8/8 cases pass (6 capabilities incl. `order_transaction`), wrong-price/stock hallucinations: 0** |
-| Full gate | `make check` | **✅ All checks passed!** (ruff + mypy + 417 tests + real evals) |
+| Full gate | the four `make check` commands | **✅ all green** (run individually, same commands as `make check`) |
+
+Slice 0 tests: **20 new** — `tests/integrations/aggregator/test_aggregator_provider.py` (16:
+STK normalize/reject/sub-shilling/HTTP-wrap, status mapping incl. 404→pending, HMAC
+pass/fail/missing, IP allowlist, parse normalization, refund, factory) and
+`tests/payments/test_payments_api.py` +4 (default→daraja, manual selection, aggregator
+selection, unknown-skip + caching). The payments API callback route now injects the
+per-tenant provider (`Depends(get_tenant_payment_provider)`) instead of constructing
+Daraja directly — callbacks for aggregator/manual tenants route correctly and the
+FakeProvider test injection is preserved.
+
+**Settings singleton hazard (found this session, must not regress):** `socialerp.settings`
+(typings-symlink identity) and `packages.core.socialerp.settings` (workspace identity)
+are TWO module objects over the SAME file with TWO lru_cache singletons. Code that
+imports one and tests that patch the other silently disagree (this broke the
+callback-token test mid-refactor). App code standardizes on `socialerp.settings`
+except the aggregator factory (`packages.core.config.Settings`, env-driven).
+Rule going forward: never mix the two identities in feature + test code.
 
 Phase 6 tests: **53 in `tests/orders` + `tests/agent`** — `tests/orders/test_order_service.py`
 (16: reservation + totals, catalog-price authority, price mismatch, unknown/inactive variant,

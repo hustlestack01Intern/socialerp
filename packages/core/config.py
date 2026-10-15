@@ -65,6 +65,12 @@ class Settings(BaseSettings):
     aggregator_api_key: str = Field(default="", alias="AGGREGATOR_API_KEY")
     aggregator_api_secret: str = Field(default="", alias="AGGREGATOR_API_SECRET")
     aggregator_webhook_secret: str = Field(default="", alias="AGGREGATOR_WEBHOOK_SECRET")
+    aggregator_base_url: str = Field(default="", alias="AGGREGATOR_BASE_URL")
+    aggregator_callback_url: str = Field(default="", alias="AGGREGATOR_CALLBACK_URL")
+    aggregator_name: str = Field(default="generic", alias="AGGREGATOR_NAME")
+    aggregator_allowed_callback_ips: str = Field(
+        default="", alias="AGGREGATOR_ALLOWED_CALLBACK_IPS"
+    )
 
     # LLM Gateway
     llm_provider: str = Field(default="local", alias="LLM_PROVIDER")

@@ -105,11 +105,22 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
     # Payment Aggregators
     # -------------------------------------------------------------------------
+    # Generic aggregator settings (for Pesapal, IntaSend, etc.)
+    AGGREGATOR_API_KEY: str = ""
+    AGGREGATOR_API_SECRET: str = ""
+    AGGREGATOR_WEBHOOK_SECRET: str = ""
+    AGGREGATOR_BASE_URL: str = ""
+    AGGREGATOR_CALLBACK_URL: str = ""
+    AGGREGATOR_NAME: str = "generic"
+    AGGREGATOR_ALLOWED_CALLBACK_IPS: str = ""
+
+    # Pesapal-specific
     PESAPAL_CONSUMER_KEY: str = ""
     PESAPAL_CONSUMER_SECRET: str = ""
     PESAPAL_IPN_URL: str = ""
     PESAPAL_ENVIRONMENT: Literal["sandbox", "production"] = "sandbox"
 
+    # IntaSend-specific
     INTASEND_PUBLIC_KEY: str = ""
     INTASEND_SECRET_KEY: str = ""
     INTASEND_WEBHOOK_URL: str = ""
