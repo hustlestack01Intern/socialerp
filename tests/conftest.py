@@ -63,6 +63,9 @@ _RLS_TENANT_TABLES = (
     "products",
     "product_variants",
     "categories",
+    "delivery_zones",
+    "riders",
+    "deliveries",
 )
 
 

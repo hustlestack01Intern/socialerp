@@ -23,6 +23,11 @@ from packages.core.models.core import (
     User,
     UserRole,
 )
+from packages.core.models.delivery import (
+    Delivery,
+    DeliveryZone,
+    Rider,
+)
 from packages.core.models.order import (
     Customer,
     Order,
@@ -67,6 +72,8 @@ __all__ = [
     "Base",
     "Category",
     "Customer",
+    "Delivery",
+    "DeliveryZone",
     "Location",
     "Order",
     "OrderItem",
@@ -84,6 +91,7 @@ __all__ = [
     "Reservation",
     "ReservationReason",
     "ReservationStatus",
+    "Rider",
     "StockMovement",
     "StockMovementReason",
     "StockMovementType",
