@@ -6,6 +6,8 @@ from packages.core.delivery.service import (
     DeliveryError,
     DeliveryService,
     OrderNotDispatchableError,
+    PaymentNotCollectedError,
+    ProofOfDeliveryRequiredError,
     RiderNotFoundError,
     ZoneNotFoundError,
 )
@@ -16,6 +18,8 @@ __all__ = [
     "DeliveryRepository",
     "DeliveryService",
     "OrderNotDispatchableError",
+    "PaymentNotCollectedError",
+    "ProofOfDeliveryRequiredError",
     "RiderNotFoundError",
     "ZoneNotFoundError",
 ]

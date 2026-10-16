@@ -55,6 +55,14 @@ class ActiveDeliveryExistsError(DeliveryError):
     """The order already has an in-flight delivery (idempotent dispatch guard)"""
 
 
+class PaymentNotCollectedError(DeliveryError):
+    """A pay-on-delivery order was marked delivered before payment was collected."""
+
+
+class ProofOfDeliveryRequiredError(DeliveryError):
+    """A pay-on-delivery delivery was marked delivered without a proof photo."""
+
+
 # =============================================================================
 # Service
 # =============================================================================
@@ -267,6 +275,23 @@ class DeliveryService:
         notes: str | None = None,
     ) -> Delivery:
         delivery = await self._get_delivery(tenant_id, delivery_id)
+        order = await self._get_order(tenant_id, delivery.order_id)
+
+        # B4: a pay-on-delivery order is delivered only after payment is
+        # collected and evidenced. Marking it delivered unpaid would close the
+        # sale without money and prevent the sale side effect from running.
+        # Prepay orders are already paid before dispatch, so they are unaffected.
+        if order.payment_method == PaymentMethod.MPESA_PAY_ON_DELIVERY.value:
+            if order.payment_status != "completed":
+                raise PaymentNotCollectedError(
+                    f"Order {order.id} is pay-on-delivery and not yet collected "
+                    f"(payment_status={order.payment_status!r})"
+                )
+            if proof_photo is None:
+                raise ProofOfDeliveryRequiredError(
+                    f"Order {order.id} is pay-on-delivery; a proof photo is required"
+                )
+
         self._transition_delivery(delivery, DeliveryStatus.DELIVERED)
         delivery.delivered_at = datetime.now(UTC)
         if proof_photo is not None:
@@ -274,7 +299,6 @@ class DeliveryService:
         if notes is not None:
             delivery.notes = notes
 
-        order = await self._get_order(tenant_id, delivery.order_id)
         apply_order_transition(order, OrderStatus.DELIVERED)
 
         await self.audit.log_action(

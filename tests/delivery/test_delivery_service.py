@@ -20,6 +20,8 @@ from sqlalchemy import select
 from packages.core.delivery import (
     DeliveryService,
     OrderNotDispatchableError,
+    PaymentNotCollectedError,
+    ProofOfDeliveryRequiredError,
     RiderNotFoundError,
     ZoneNotFoundError,
 )
@@ -362,6 +364,72 @@ class _PodFakeProvider:
 
 
 class TestPayOnDelivery:
+    async def _arrived_pod(self, session_factory, tenant) -> tuple[UUID, UUID]:
+        order_id = await _seed_packed_order(
+            session_factory,
+            tenant.id,
+            status=OrderStatus.PACKED,
+            payment_method=PaymentMethod.MPESA_PAY_ON_DELIVERY,
+        )
+        async with session_factory() as session, session.begin():
+            service = DeliveryService(session)
+            zone = await service.create_zone(tenant.id, name="Kilimani", fee_cents=2000)
+            rider = await service.create_rider(tenant.id, phone=TENANT_PHONE, name="Rider One")
+            delivery = await service.dispatch(
+                tenant.id, order_id=order_id, rider_id=rider.id, zone_id=zone.id
+            )
+            await service.mark_picked_up(tenant.id, delivery.id)
+            await service.mark_arrived(tenant.id, delivery.id)
+        return delivery.id, order_id
+
+    async def _mark_order_paid(self, session_factory, order_id: UUID) -> None:
+        async with session_factory() as session, session.begin():
+            order = await session.get(Order, order_id)
+            assert order is not None
+            order.payment_status = "completed"
+
+    async def test_pod_delivered_before_payment_raises(self, tenant, session_factory) -> None:
+        delivery_id, order_id = await self._arrived_pod(session_factory, tenant)
+        async with session_factory() as session:
+            service = DeliveryService(session)
+            with pytest.raises(PaymentNotCollectedError):
+                await service.mark_delivered(
+                    tenant.id, delivery_id, proof_photo="https://cdn.example.test/pod.jpg"
+                )
+            assert (
+                await session.get(Delivery, delivery_id)
+            ).status == DeliveryStatus.ARRIVED.value
+            assert (
+                await session.get(Order, order_id)
+            ).status == OrderStatus.OUT_FOR_DELIVERY.value
+
+    async def test_pod_delivered_without_proof_raises(self, tenant, session_factory) -> None:
+        delivery_id, order_id = await self._arrived_pod(session_factory, tenant)
+        await self._mark_order_paid(session_factory, order_id)
+
+        async with session_factory() as session:
+            service = DeliveryService(session)
+            with pytest.raises(ProofOfDeliveryRequiredError):
+                await service.mark_delivered(tenant.id, delivery_id)
+            assert (
+                await session.get(Delivery, delivery_id)
+            ).status == DeliveryStatus.ARRIVED.value
+
+    async def test_pod_delivered_after_payment_with_proof_succeeds(
+        self, tenant, session_factory
+    ) -> None:
+        delivery_id, order_id = await self._arrived_pod(session_factory, tenant)
+        await self._mark_order_paid(session_factory, order_id)
+        async with session_factory() as session:
+            service = DeliveryService(session)
+            await service.mark_delivered(
+                tenant.id, delivery_id, proof_photo="https://cdn.example.test/pod.jpg"
+            )
+            assert (
+                await session.get(Delivery, delivery_id)
+            ).status == DeliveryStatus.DELIVERED.value
+            assert (await session.get(Order, order_id)).status == OrderStatus.DELIVERED.value
+
     async def test_pod_order_in_transit_is_payable_and_completion_skips_paid_status(
         self, tenant, session_factory
     ) -> None:
