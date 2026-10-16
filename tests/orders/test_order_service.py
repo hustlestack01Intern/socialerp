@@ -9,6 +9,7 @@ payment, idempotency and the concurrent last-item race.
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
@@ -412,9 +413,7 @@ async def test_mark_packed_from_awaiting_payment_is_legal_for_pod(tenant_session
     assert packed.status == OrderStatus.PACKED.value
 
 
-async def test_mark_packed_from_awaiting_payment_raises_for_prepay(
-    tenant_session, tenant
-) -> None:
+async def test_mark_packed_from_awaiting_payment_raises_for_prepay(tenant_session, tenant) -> None:
     """B3: prepay orders must be PAID before packing (no awaiting_payment -> packed)."""
     variant = await seed_variant(tenant_session, tenant.id, qty=10)
     service = OrderService(tenant_session)
@@ -446,6 +445,48 @@ async def test_expire_stale_reservations_releases(tenant_session, tenant) -> Non
     assert await available(tenant_session, tenant.id, variant.product_id, variant.id) == 10
     reservation = await reservation_for(tenant_session, order.id)
     assert reservation.status == ReservationStatus.EXPIRED.value
+
+
+async def test_expire_skips_reservation_fulfilled_concurrently(session_factory, tenant) -> None:
+    """The expiry job must not overwrite a reservation a concurrent sale closed.
+
+    Deterministic interleaving via the injectable delivery lookup: expiry scans
+    ACTIVE rows, then -- before it locks the reservation -- a concurrent sale
+    commits the row to FULFILLED. The re-read under the row lock must see
+    FULFILLED and leave it alone (released == 0), never stale-writing EXPIRED.
+    """
+    async with session_factory() as session, session.begin():
+        variant = await seed_variant(session, tenant.id, qty=10)
+        service = OrderService(session, reservation_ttl_minutes=0)
+        order = await service.create_order(
+            tenant.id,
+            CreateOrderCommand(
+                customer_phone=PHONE, lines=(OrderLine(quantity=3, variant_id=variant.id),)
+            ),
+        )
+        order_id = order.id
+
+    async def fulfill_concurrently() -> None:
+        async with session_factory() as other, other.begin():
+            reservation = (
+                await other.execute(select(Reservation).where(Reservation.reference_id == order_id))
+            ).scalar_one()
+            reservation.status = ReservationStatus.FULFILLED.value
+            reservation.fulfilled_at = datetime.now(UTC)
+
+    async def lookup(_tenant_id: UUID, _order_id: UUID) -> bool:
+        # Expiry has already scanned the ACTIVE row; close it out from another
+        # committed transaction before expiry reaches its row lock.
+        await fulfill_concurrently()
+        return False
+
+    async with session_factory() as session, session.begin():
+        service = OrderService(session, reservation_ttl_minutes=0, active_delivery_lookup=lookup)
+        assert await service.expire_stale_reservations(tenant.id) == 0
+
+    async with session_factory() as session:
+        reservation = await reservation_for(session, order_id)
+        assert reservation.status == ReservationStatus.FULFILLED.value
 
 
 async def test_concurrent_last_item_race(session_factory, tenant) -> None:

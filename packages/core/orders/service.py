@@ -39,6 +39,7 @@ from packages.core.domain.order import (
     IllegalTransitionError,
     OrderStatus,
     PaymentMethod,
+    PaymentStatus,
     is_legal_transition,
 )
 from packages.core.domain.stock import (
@@ -86,6 +87,19 @@ def is_pod_in_transit(order: Order) -> bool:
         OrderStatus(order.status) is OrderStatus.OUT_FOR_DELIVERY
         and order.payment_method == PaymentMethod.MPESA_PAY_ON_DELIVERY.value
     )
+
+
+def is_order_paid(order: Order) -> bool:
+    """True once any payment attempt has completed (paid) the order.
+
+    Both signals are checked deliberately (B5): ``payment_status`` is what the
+    payment service writes, and ``paid_at`` is a durable timestamp. A stale
+    failure/cancel callback for a *different* STK attempt must never downgrade a
+    paid order, so every writer/reader of "is this paid?" uses this predicate.
+    """
+    status = order.payment_status
+    status_value = getattr(status, "value", status)
+    return status_value == PaymentStatus.COMPLETED.value or order.paid_at is not None
 
 
 # =============================================================================
@@ -596,6 +610,18 @@ class OrderService:
             ):
                 continue
             await self._lock_variant(reservation.tenant_id, reservation.variant_id)
+            # Re-read the row under a lock: a concurrent sale/cancel may have
+            # already closed it since the initial scan. Never overwrite a
+            # FULFILLED/RELEASED reservation with EXPIRED or count it as released.
+            current_status = (
+                await self.session.execute(
+                    select(Reservation.status)
+                    .where(Reservation.id == reservation.id)
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+            if current_status != ReservationStatusModel.ACTIVE.value:
+                continue
             ledger = await self._load_ledger(
                 reservation.tenant_id, reservation.product_id, reservation.variant_id
             )

@@ -91,6 +91,23 @@ async def _noop_handler(payload: dict[str, Any], tenant_id: Any) -> None:
     logger.debug("outbox event acknowledged (no handler)", event=payload)
 
 
+async def handle_payment_collected_after_terminal(payload: dict[str, Any], tenant_id: Any) -> None:
+    """Alert: money was collected for an order that could not be marked paid.
+
+    This must NOT be silently swallowed (that is the whole point of the event):
+    a human must decide refund vs manual honour. Alert loudly; no automatic
+    stock or order side effect here.
+    """
+    logger.warning(
+        "payment collected on a non-collectable order -- needs refund/review",
+        order_id=payload.get("order_id"),
+        order_status=payload.get("order_status"),
+        mpesa_receipt_number=payload.get("mpesa_receipt_number"),
+        amount_cents=payload.get("amount_cents"),
+        tenant_id=str(tenant_id),
+    )
+
+
 async def handle_payment_completed(payload: dict[str, Any], tenant_id: Any) -> None:
     """Record the sale (SELL movement) when a payment completes.
 
@@ -220,6 +237,9 @@ async def run_outbox_relay() -> None:
 
     # Register handlers.
     relay.register_handler("payment.completed", handle_payment_completed)
+    relay.register_handler(
+        "payment.collected_after_terminal", handle_payment_collected_after_terminal
+    )
     relay.register_handler("inbound_message", handle_inbound_message)
     # Acknowledged events with no side effect yet (keeps them from being marked
     # FAILED; these become real handlers in later phases).

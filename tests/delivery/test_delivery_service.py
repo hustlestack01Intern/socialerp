@@ -396,12 +396,24 @@ class TestPayOnDelivery:
                 await service.mark_delivered(
                     tenant.id, delivery_id, proof_photo="https://cdn.example.test/pod.jpg"
                 )
-            assert (
-                await session.get(Delivery, delivery_id)
-            ).status == DeliveryStatus.ARRIVED.value
-            assert (
-                await session.get(Order, order_id)
-            ).status == OrderStatus.OUT_FOR_DELIVERY.value
+            assert (await session.get(Delivery, delivery_id)).status == DeliveryStatus.ARRIVED.value
+            assert (await session.get(Order, order_id)).status == OrderStatus.OUT_FOR_DELIVERY.value
+
+    async def test_pod_delivered_for_refunded_order_raises(self, tenant, session_factory) -> None:
+        """A refunded POD order keeps paid_at but is not 'currently collected'."""
+        delivery_id, order_id = await self._arrived_pod(session_factory, tenant)
+        async with session_factory() as session, session.begin():
+            order = await session.get(Order, order_id)
+            assert order is not None
+            order.payment_status = "refunded"
+            order.paid_at = datetime.now(UTC)
+
+        async with session_factory() as session:
+            service = DeliveryService(session)
+            with pytest.raises(PaymentNotCollectedError):
+                await service.mark_delivered(
+                    tenant.id, delivery_id, proof_photo="https://cdn.example.test/pod.jpg"
+                )
 
     async def test_pod_delivered_without_proof_raises(self, tenant, session_factory) -> None:
         delivery_id, order_id = await self._arrived_pod(session_factory, tenant)
@@ -411,9 +423,7 @@ class TestPayOnDelivery:
             service = DeliveryService(session)
             with pytest.raises(ProofOfDeliveryRequiredError):
                 await service.mark_delivered(tenant.id, delivery_id)
-            assert (
-                await session.get(Delivery, delivery_id)
-            ).status == DeliveryStatus.ARRIVED.value
+            assert (await session.get(Delivery, delivery_id)).status == DeliveryStatus.ARRIVED.value
 
     async def test_pod_delivered_after_payment_with_proof_succeeds(
         self, tenant, session_factory

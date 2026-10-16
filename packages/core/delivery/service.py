@@ -23,7 +23,7 @@ from packages.core.domain.delivery import (
     IllegalDeliveryTransitionError,
     is_legal_delivery_transition,
 )
-from packages.core.domain.order import OrderStatus, PaymentMethod
+from packages.core.domain.order import OrderStatus, PaymentMethod, PaymentStatus
 from packages.core.models.delivery import Delivery, DeliveryZone, Rider
 from packages.core.models.order import Order
 from packages.core.orders.service import OrderNotFoundError
@@ -282,7 +282,10 @@ class DeliveryService:
         # sale without money and prevent the sale side effect from running.
         # Prepay orders are already paid before dispatch, so they are unaffected.
         if order.payment_method == PaymentMethod.MPESA_PAY_ON_DELIVERY.value:
-            if order.payment_status != "completed":
+            # "Currently collected" -- not merely "ever paid": a refunded order
+            # keeps paid_at, so is_order_paid() would wrongly let it be delivered.
+            collected = getattr(order.payment_status, "value", order.payment_status)
+            if collected != PaymentStatus.COMPLETED.value:
                 raise PaymentNotCollectedError(
                     f"Order {order.id} is pay-on-delivery and not yet collected "
                     f"(payment_status={order.payment_status!r})"

@@ -43,7 +43,7 @@ from packages.core.domain.payment import (
 )
 from packages.core.models.order import Order
 from packages.core.models.payment import Payment, PaymentRecordStatus
-from packages.core.orders.service import is_pod_in_transit
+from packages.core.orders.service import is_order_paid, is_pod_in_transit
 from packages.core.orders.transitions import apply_order_transition
 
 
@@ -113,8 +113,18 @@ class PaymentService:
 
     # -- helpers -----------------------------------------------------------
 
-    async def _get_order(self, tenant_id: UUID, order_id: UUID) -> Order:
+    async def _get_order(
+        self, tenant_id: UUID, order_id: UUID, *, for_update: bool = False
+    ) -> Order:
         stmt = select(Order).where(Order.id == order_id, Order.tenant_id == tenant_id)
+        if for_update:
+            # B5: guard-and-write on the order must be atomic. Without this lock
+            # a success callback and a failure/cancel callback for two attempts
+            # of the same order can interleave (each locks only its own Payment
+            # row) and downgrade a paid order. Lock order is payment -> order,
+            # matching _load_payment_for_update. Lock only the orders table:
+            # Order eagerly joins customers, which cannot be locked.
+            stmt = stmt.with_for_update(of=Order)
         order = (await self.session.execute(stmt)).scalar_one_or_none()
         if order is None:
             raise OrderNotFoundError(f"Order {order_id} not found")
@@ -123,6 +133,15 @@ class PaymentService:
     @staticmethod
     def _transition(order: Order, new_status: OrderStatus) -> None:
         apply_order_transition(order, new_status)
+
+    @staticmethod
+    def _record_order_collection(
+        order: Order, reference: str | None, amount_cents: int, now: datetime
+    ) -> None:
+        order.payment_status = "completed"
+        order.payment_reference = reference
+        order.payment_amount_cents = amount_cents
+        order.payment_paid_at = now
 
     # -- initiate ----------------------------------------------------------
 
@@ -136,12 +155,19 @@ class PaymentService:
         idempotency_key: str,
     ) -> Payment:
         """Create an STK push attempt for a payable order."""
+        # Deliberately NO order row lock here: this method awaits the provider's
+        # network call below, and holding FOR UPDATE across network I/O would
+        # block concurrent callbacks for the order. The double-charge this guard
+        # protects against is the callback path's job (order lock + duplicate
+        # detection); a concurrent initiation that slips past only creates an
+        # extra attempt whose outcome the duplicate guard handles.
         order = await self._get_order(tenant_id, order_id)
         # B5: an order is charged at most once. Refuse a fresh STK push for an
         # order that is already paid -- this is especially reachable for
         # pay-on-delivery, where the order stays out_for_delivery after payment
-        # and would otherwise accept another (double-charging) push.
-        if order.payment_status == "completed":
+        # and would otherwise accept another (double-charging) push. Checks both
+        # payment_status and paid_at so a stale failure callback cannot reopen it.
+        if is_order_paid(order):
             raise OrderNotPayableError(
                 f"Order {order_id} is already paid; refusing another STK push"
             )
@@ -273,7 +299,7 @@ class PaymentService:
         if PaymentRecordStatus(payment.status) in _TERMINAL_STATES:
             return payment
 
-        order = await self._get_order(tenant_id, payment.order_id)
+        order = await self._get_order(tenant_id, payment.order_id, for_update=True)
         await self._apply_result(payment, order, result, trusted_amount=True)
         await self.session.flush()
         return payment
@@ -299,7 +325,7 @@ class PaymentService:
         if PaymentRecordStatus(payment.status) in _TERMINAL_STATES:
             return payment
 
-        order = await self._get_order(tenant_id, payment.order_id)
+        order = await self._get_order(tenant_id, payment.order_id, for_update=True)
         await self._apply_result(payment, order, result, trusted_amount=False)
         await self.session.flush()
         return payment
@@ -376,7 +402,7 @@ class PaymentService:
         # already completed this order, this second successful callback must not
         # credit it again (double revenue, double sale side effect). Record this
         # attempt truthfully and flag it for reconciliation/refund instead.
-        if order.payment_status == "completed" or order.paid_at is not None:
+        if is_order_paid(order):
             payment.status = PaymentRecordStatus.COMPLETED
             payment.mpesa_receipt_number = mpesa_receipt_number
             payment.completed_at = now
@@ -401,18 +427,60 @@ class PaymentService:
         payment.mpesa_receipt_number = mpesa_receipt_number
         payment.completed_at = now
 
-        order.payment_status = "completed"
-        order.payment_reference = mpesa_receipt_number
-        order.payment_amount_cents = amount_cents
-        order.payment_paid_at = now
         # Prepay: awaiting_payment -> paid. Pay-on-delivery orders are already
-        # out_for_delivery (goods moving before payment) and must NOT
-        # transition to 'paid' (illegal FSM edge); they proceed to delivered on
-        # rider confirmation. paid_at is still recorded for reconciliation.
-        if not is_pod_in_transit(order):
+        # out_for_delivery (goods moving before payment) and must NOT transition
+        # to 'paid' (illegal FSM edge); they proceed to delivered on rider
+        # confirmation. paid_at is still recorded for reconciliation.
+        if is_pod_in_transit(order):
+            self._record_order_collection(order, mpesa_receipt_number, amount_cents, now)
+            order.paid_at = now
+        elif OrderStatus(order.status) is OrderStatus.AWAITING_PAYMENT:
+            self._record_order_collection(order, mpesa_receipt_number, amount_cents, now)
             self._transition(order, OrderStatus.PAID)
         else:
-            order.paid_at = now
+            # The customer's money WAS collected, but this order is not in a
+            # state that can be marked collected. This branch is reached only
+            # when is_order_paid() is False, i.e. cancelled / failed_delivery,
+            # or a POD order whose goods are not yet out for delivery (packed).
+            # (A refunded/delivered order keeps paid_at, so it took the
+            # duplicate_payment branch above.) Raising here would roll the
+            # callback back (500) and lose the collection to retries forever.
+            # So: record the collection truthfully on the Payment, leave the
+            # order untouched (the POD delivery gate then blocks until a human
+            # resolves it), and raise a review signal.
+            payment.metadata_json = {
+                **(payment.metadata_json or {}),
+                "collected_after_terminal": True,
+            }
+            await add_outbox_event(
+                event_type="payment.collected_after_terminal",
+                payload={
+                    "payment_id": str(payment.id),
+                    "order_id": str(order.id),
+                    "order_status": str(order.status),
+                    "checkout_request_id": payment.checkout_request_id,
+                    "mpesa_receipt_number": mpesa_receipt_number,
+                    "amount_cents": amount_cents,
+                },
+                idempotency_key=f"payment_collected_after_terminal:{order.id}",
+                tenant_id=payment.tenant_id,
+                session=self.session,
+            )
+            await self.audit.log_action(
+                tenant_id=payment.tenant_id,
+                user_id=None,
+                action="payment.collected_after_terminal",
+                resource="payment",
+                resource_id=payment.id,
+                after={
+                    "order_id": str(order.id),
+                    "order_status": order.status,
+                    "mpesa_receipt_number": mpesa_receipt_number,
+                    "amount_cents": amount_cents,
+                    "reason": "funds collected on an order that cannot be marked paid",
+                },
+            )
+            return
 
         await add_outbox_event(
             event_type="payment.completed",
@@ -444,17 +512,73 @@ class PaymentService:
 
     async def _cancel_payment(self, payment: Payment, order: Order, reason: str | None) -> None:
         payment.status = PaymentRecordStatus.CANCELLED
+        # B5: a stale cancel for one attempt must never downgrade an order that
+        # another attempt already paid (late callback after success).
+        if is_order_paid(order):
+            await self._audit_stale_failure(payment, order, "cancelled")
+            return
+        # B5/atomicity: a retry attempt's cancel must not cancel the whole order
+        # while another attempt can still succeed -- otherwise a late success on
+        # that other attempt finds a cancelled order (money collected, sale
+        # lost). Leave the order payable; the in-flight attempt decides its fate.
+        if await self._has_other_in_flight_attempt(payment, order):
+            await self.audit.log_action(
+                tenant_id=payment.tenant_id,
+                user_id=None,
+                action="payment.cancel_deferred",
+                resource="payment",
+                resource_id=payment.id,
+                metadata={
+                    "order_id": str(order.id),
+                    "checkout_request_id": payment.checkout_request_id,
+                    "reason": "another payment attempt is still in flight",
+                },
+            )
+            return
         order.payment_status = "failed"
         if OrderStatus(order.status) is OrderStatus.AWAITING_PAYMENT:
             self._transition(order, OrderStatus.CANCELLED)
             order.cancelled_reason = "payment cancelled by customer"
         await self._emit_failure(payment, order, FailureReason.CANCELLED_BY_USER.value)
 
+    async def _has_other_in_flight_attempt(self, payment: Payment, order: Order) -> bool:
+        """Whether the order has a second attempt still open (INITIATED/PENDING)."""
+        stmt = select(Payment.id).where(
+            Payment.tenant_id == order.tenant_id,
+            Payment.order_id == order.id,
+            Payment.id != payment.id,
+            Payment.status.in_([
+                PaymentRecordStatus.INITIATED.value,
+                PaymentRecordStatus.PENDING.value,
+            ]),
+        )
+        return (await self.session.execute(stmt)).first() is not None
+
     async def _fail_payment(self, payment: Payment, order: Order, reason: str | None) -> None:
         payment.status = PaymentRecordStatus.FAILED
+        # B5: see _cancel_payment -- never downgrade a paid order.
+        if is_order_paid(order):
+            await self._audit_stale_failure(payment, order, "failed")
+            return
         order.payment_status = "failed"
         await self._emit_failure(
             payment, order, payment.failure_reason or FailureReason.UNKNOWN.value
+        )
+
+    async def _audit_stale_failure(self, payment: Payment, order: Order, outcome: str) -> None:
+        """Record (but do not apply) a failure for an attempt on a paid order."""
+        await self.audit.log_action(
+            tenant_id=payment.tenant_id,
+            user_id=None,
+            action="payment.stale_failure_ignored",
+            resource="payment",
+            resource_id=payment.id,
+            metadata={
+                "order_id": str(order.id),
+                "checkout_request_id": payment.checkout_request_id,
+                "attempt_outcome": outcome,
+                "reason": "order already paid by another attempt; failure not applied",
+            },
         )
 
     async def _emit_failure(self, payment: Payment, order: Order, reason: str) -> None:
