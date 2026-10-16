@@ -323,6 +323,7 @@ class DeliveryService:
         notes: str | None = None,
     ) -> Delivery:
         delivery = await self._get_delivery(tenant_id, delivery_id)
+        previous = DeliveryStatus(delivery.status)
         self._transition_delivery(delivery, DeliveryStatus.FAILED)
         reason_value = reason.value if isinstance(reason, DeliveryFailureReason) else reason
         delivery.failure_reason = reason_value
@@ -330,7 +331,13 @@ class DeliveryService:
             delivery.notes = notes
 
         order = await self._get_order(tenant_id, delivery.order_id)
-        apply_order_transition(order, OrderStatus.FAILED_DELIVERY)
+        if previous is DeliveryStatus.ASSIGNED:
+            # The rider never picked the goods up, so the order stays 'packed'
+            # (the order FSM has no packed -> failed_delivery edge). Retrying
+            # snaps the order straight to out_for_delivery via the packed edge.
+            pass
+        else:
+            apply_order_transition(order, OrderStatus.FAILED_DELIVERY)
 
         await self.audit.log_action(
             tenant_id=tenant_id,

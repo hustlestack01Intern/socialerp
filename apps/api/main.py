@@ -138,6 +138,11 @@ def create_app() -> FastAPI:
 
     app.include_router(payments.router, tags=["payments"])
 
+    # Phase 7b: Delivery (router carries its own "/api/v1/delivery" prefix)
+    from apps.api.routes import delivery
+
+    app.include_router(delivery.router, tags=["delivery"])
+
     # Phase 5: Agent
     # from apps.api.routes import agent
     # app.include_router(agent.router, prefix="/api/v1/agent", tags=["agent"])
