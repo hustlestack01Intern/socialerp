@@ -1,9 +1,10 @@
 # UNCERTAINTY LEDGER
 
 Updated 2026-10-16 by the scribe after the money-path hardening session (7 files, uncommitted,
-`make check` green — see STATE.md). Anything marked OPEN is a STOP condition if it affects
-money, stock, security or privacy. Older rows (U1–U12) are kept for the record; statuses were
-re-verified against the tree on 2026-10-16 where noted.
+`make check` green — see STATE.md), and again after the Phase 7b increment (delivery API +
+POD arrival→STK trigger, uncommitted; adds U19–U24). Anything marked OPEN is a STOP condition
+if it affects money, stock, security or privacy. Older rows (U1–U12) are kept for the record;
+statuses were re-verified against the tree on 2026-10-16 where noted.
 
 | # | Assumption | Confidence 0-1 | Why | How to Verify | Status |
 |---|---|---|---|---|---|
@@ -25,6 +26,12 @@ re-verified against the tree on 2026-10-16 where noted.
 | U16 | Chosen fail-safe policy: POD money captured while the order is `packed`/`failed_delivery` is recorded on the Payment and flagged, but the ORDER is not marked collected, so the B4 delivery gate BLOCKS delivery until a human resolves refund vs manual honour | 0.95 | Deliberate decision in the 2026-10-16 pass — block on ambiguity rather than auto-mark paid; may strand a deliverable order until reviewed | Owner policy review; test that `mark_delivered` raises while the payment is captured-not-collectable | **DECISION (fail-safe) — revisit with owner's policy** |
 | U17 | No stock SELL is recorded for captured-after-non-collectable money (by design) | 0.95 | The sale side effect hangs off `payment.completed`, which is deliberately not emitted in that path; a human must reconcile the sale manually | Daily reconciliation (or an operator runbook step) must flag captured payments with no matching SELL | NOTE — human reconciliation required |
 | U18 | The B5 single-completion guard is application-level only: a DB partial unique index `UNIQUE(order_id) WHERE status='completed'` was deferred to avoid a migration in the stabilization pass | 0.7 | Plan `docs/plans/2026-10-16-stabilize-phase7-pod.md` assumption 5 (copied here as the plan required, at C6); sequential + single-transaction cases are tested, concurrency proof deferred | Add the partial unique index migration + a true concurrent-double-complete test | OPEN (deferred by plan; correctness currently rests on the service guard + row lock) |
+| U19 | (Phase 7b) POD STK trigger concurrency: `mark_arrived` + `initiate_stk_payment` are not atomic; no unique constraint on the delivery idempotency key in payment metadata; two concurrent arrivals could push STK twice (double-credit prevented by duplicate_payment, severity duplicate prompt/manual refund, not double-sale) | 0.9 | DeliveryService.mark_arrived commits the transition before/around provider call; idempotency key `delivery:{delivery_id}:arrived` is only passed at payment initiation — nothing enforces uniqueness of that key on the delivery side. No cross-attempt uniqueness test for concurrent arrivals. | Add uniqueness guard (DB or advisory lock on (delivery_id, "arrived")) + a true concurrent test; ensure the idempotency key is recorded and checked. | OPEN (MED) |
+| U20 | (Phase 7b) Delivery routes return 500 on duplicate zone name / rider phone (IntegrityError), not 409 | 0.8 | API routes let DB unique constraints bubble as 500. Needs mapping to 409 (or client-side pre-check with appropriate error). | Add tests asserting 409 on duplicates; map IntegrityError in route/service layer. | OPEN (MED) |
+| U21 | (Phase 7b) Rider phone not normalized to 2547XXXXXXXX / 2541XXXXXXXX | 0.8 | Rider creation stores phone as provided; rider WhatsApp matcher will miss local-format numbers. | Normalize at create/update using the same phone normalization as customers/orders/payments; add tests. | OPEN (MED) |
+| U22 | (Phase 7b) Re-arrival after a failed attempt reuses the same idempotency key `delivery:{delivery_id}:arrived`; if the first attempt is still in-flight, the customer gets no new prompt | 0.7 | The key is fixed per delivery_id for the arrived action. A retry-after-failure takes the delivery back to in-flight states, but a subsequent `mark_arrived` reuses the same idempotency key — payment initiation will be treated as idempotent replay of the prior attempt (no new STK prompt) until the prior attempt expires/clears. | Consider a per-attempt key (e.g. include attempt index/timestamp) or explicitly allow re-issuing after a failed POD attempt with a new key; document the behavior and test. | OPEN (LOW) |
+| U23 | (Phase 7b) No cross-tenant test for delivery routes; test client runs as DB superuser and `get_current_tenant_id` is stubbed; `TenantContextMiddleware` not registered in main.py so RLS is inert on the API path (delivery queries are explicitly tenant_id-scoped) | 0.9 | The spec requires cross-tenant tests to fail closed. Current delivery tests only exercise within-tenant behavior under the test setup. | Add cross-tenant delivery tests (attempt to access another tenant's zone/rider/delivery/order-dispatch endpoints/actions) and fail closed; also plan tenancy middleware wiring so RLS is active on API path. | OPEN (LOW) |
+| U24 | (Phase 7b) Duplicate/invalid path UUIDs and unauthenticated access are not explicitly tested for these routes | 0.6 | Routes exist and tests cover happy paths + key transitions; negative cases (bad UUIDs, missing auth, malformed ids) not asserted. | Add API negative tests and document expected status codes. | OPEN (LOW) |
 
 ## Action required
 - U7: align `requires-python`/mypy target with the CI pin (human choice: 3.12 or 3.13).
@@ -36,3 +43,12 @@ re-verified against the tree on 2026-10-16 where noted.
 - U16/U17 (design decision): owner to confirm the fail-safe POD policy (block delivery vs
   auto-honour) and who reconciles captured-but-unsold money.
 - U18: add the partial unique index migration + concurrency proof (deferred by plan C3).
+- U19 (MED, from Phase 7b): POD arrival/STK atomicity — make the arrived→STK trigger
+  concurrency-safe and enforce one prompt per arrival attempt.
+- U20 (MED): map duplicate zone name / rider phone to 409 (not 500).
+- U21 (MED): normalize rider phone to 2547/2541 before storage and matching.
+- U22 (LOW): re-arrival idempotency-key reuse after a failed attempt — no new prompt if the
+  prior attempt is in flight; decide per-attempt keys.
+- U23 (LOW): add cross-tenant delivery tests (fail closed) and wire `TenantContextMiddleware`
+  so RLS is active on the API path.
+- U24 (LOW): add negative API tests (bad/duplicate path UUIDs, unauthenticated access).

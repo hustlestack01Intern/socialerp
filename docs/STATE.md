@@ -1,23 +1,31 @@
 # Project State
 
-> State of record. Updated 2026-10-16 by the scribe after the money-path hardening session
-> (uncommitted working tree). If this contradicts MAP.md or the filesystem, check `git log`
-> and `docs/plans/`.
+> State of record. Updated 2026-10-16 by the scribe after the Phase 7b increment (delivery API
+> + POD arrival→STK trigger), on top of the same-day money-path hardening session (all
+> uncommitted). If this contradicts MAP.md or the filesystem, check `git log` and `docs/plans/`.
 
 ## Current Phase
-**Money-path hardening pass (2026-10-16, UNCOMMITTED): stale/late STK callbacks can no
-longer downgrade a paid order, a success callback on a terminal order is captured on the
-Payment (money never lost, order never wrongly marked collected), the POD delivery gate
-requires `payment_status == completed`, and reservation expiry re-reads under row lock.
-Gate measured GREEN below (493 tests, evals 8/8, 0 wrong-price/stock hallucinations).
-The FSM edges it depends on are recorded in ADR 0015 (new) + ADR 0006 (amended); the
-money-path pass itself is recorded in the session section below and in UNCERTAINTY U13–U18
-(no ADR yet — the collect-after-terminal fail-safe decision should get one). It builds on the
-committed Phase 7a +
+**Phase 7b delivery API + POD arrival→STK trigger (2026-10-16, UNCOMMITTED).** `apps/api/routes/delivery.py`
+is registered in `apps/api/main.py` and exposes tenant-scoped zone/rider CRUD, dispatch,
+delivery transitions and list/get. `POST /deliveries/{id}/arrived` fires an STK Push for the
+order total when the order is POD and unpaid (idempotency key `delivery:{delivery_id}:arrived`);
+the provider is resolved lazily in that branch only, and provider failures are reported as
+`stk_error` while the arrival commits. `DeliveryService.mark_failed` now guards the ORDER
+transition on the PREVIOUS delivery status (an `assigned` failure leaves the order `packed`;
+`picked_up`/`arrived` failures move it to `failed_delivery`). Tests: `tests/delivery/test_delivery_api.py`
+(8 collected, all pass) + `tests/property/test_delivery_fsm.py` (4 pass). Residual review findings
+are tracked in UNCERTAINTY U19–U24 (do not hide them).
+
+This sits on the same-day **money-path hardening pass (2026-10-16, UNCOMMITTED): the gate is
+measured GREEN below (493 tests as of the money-path pass; the 7b suite was not re-measured as a
+full run — see the 7b measurement note). The FSM edges it depends on are recorded in ADR 0015
+(new) + ADR 0006 (amended); the money-path pass itself is recorded in the session section below
+and in UNCERTAINTY U13–U18 (no ADR yet — the collect-after-terminal fail-safe decision should get
+one). It builds on the committed Phase 7a +
 B1–B7 stabilization (`docs/plans/2026-10-16-stabilize-phase7-pod.md`, commits `83be9ef`…
-`22fafc6`). Phase 7 remainder (rider WhatsApp flow, tracking page) + Phases 8–10 + owner
-dashboard planned in `docs/plans/2026-10-15-program-phases-7-10-dashboard.md`, not yet
-started. Previously: Phase 4 remainder DONE (aggregator provider + per-tenant provider
+`22fafc6`). Phase 7 remainder (rider WhatsApp flow, tracking page, owner alerting) + Phases 8–10 +
+owner dashboard planned in `docs/plans/2026-10-15-program-phases-7-10-dashboard.md`. Previously:
+Phase 4 remainder DONE (aggregator provider + per-tenant provider
 selection); gate restored to GREEN (448 tests) on 2026-10-15; M3 (catalog/stock/orders)
 complete; Phase 4 (payments) complete; Phase 5 (agent) L0/L1 core
 complete; Phase 6 (orders) landed: deterministic `OrderService` (catalog-price authority,
@@ -31,11 +39,20 @@ conversation pipeline (webhook → outbox → worker → agent → reply, idempo
 | Gate | Command | Result |
 |---|---|---|
 | Lint | `uv run ruff check .` | **All checks passed!** |
-| Format | `uv run ruff format --check .` | **236 files already formatted; 4 would be reformatted** (the four uncommitted money-path files — `payments/service.py` + 3 test files; format is NOT part of `make check`, so the gate is still green; run `uv run ruff format .` before committing) |
+| Format | `uv run ruff format --check .` | (was 4 files; `uv run ruff format .` applied before commit — re-check is expected clean) |
 | Types | `uv run mypy packages apps` (strict) | **Success: no issues found in 90 source files** |
 | Tests | `uv run pytest` | **493 passed, 142 warnings in 769.06s** |
 | Evals | `uv run python -m evals.runner` | **8/8 cases pass (6 capabilities incl. `order_transaction`), wrong-price/stock hallucinations: 0** |
 | Full gate | the four `make check` commands | **✅ all green** (run individually, same commands as `make check`) |
+
+**Phase 7b measurement note (2026-10-16, UNCOMMITTED):** the first full `make check` after the
+Phase 7b routes failed one pre-existing property test
+(`tests/property/test_delivery_fsm.py::test_failed_always_reachable_from_active_states`), because
+`mark_failed` previously let an `assigned` delivery fall through to an unmapped order transition.
+That is now fixed in `DeliveryService.mark_failed` (previous-status guard) and the suite is green
+again. Final gates: `ruff check .` **All checks passed**; `mypy packages apps` **Success: no issues
+found in 91 source files**; `make check` **✅ all green** (ruff + mypy + pytest + evals 8/8). An
+earlier transient scribe note that pytest was "not re-run" was wrong — it WAS re-run via `make check`.
 
 Prior measurement (2026-10-15, after Slice 0 — aggregator + provider selection): ruff clean,
 227 files formatted, mypy 84 files, 448 tests, evals 8/8 / 0 hallucinations.
@@ -276,6 +293,22 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
   `domain.order.OrderStatus` identity, `Reservation.reference_id` in expiry); ADR 0015 new,
   ADR 0006 amended (guarded `awaiting_payment → packed` POD edge).
 
+- **Phase 7b delivery API + POD trigger (UNCOMMITTED, 2026-10-16)**: `apps/api/routes/delivery.py`
+  — tenant-scoped FastAPI routes over `DeliveryService`, registered in `apps/api/main.py`
+  (`/api/v1/delivery/*` including zones, riders, dispatch, delivery transitions, list/get).
+  `POST /deliveries/{id}/arrived` fires an STK Push for the order total when the order is
+  `mpesa_pod` and unpaid (idempotency key `delivery:{delivery_id}:arrived`); the provider is
+  resolved lazily inside the handler so prepay arrival never needs a configured provider and
+  provider errors are reported as `stk_error` while arrival still commits. `DeliveryService.mark_failed`
+  checks the previous delivery status: if it was `assigned` (goods never picked up), the order
+  is not touched (order stays `packed`); for `picked_up`/`arrived` failures the order transitions
+  to `failed_delivery`. `retry_after_failure` moves delivery `failed→picked_up` and order
+  `packed→out_for_delivery`. Tests: `tests/delivery/test_delivery_api.py` (8 passed) cover zone/rider
+  CRUD, dispatch-requires-packed, full prepay lifecycle, illegal transition 409, POD arrival triggers
+  exactly one STK + delivered blocked until paid, failed-on-assigned keeps order packed + retry moves
+  to out_for_delivery, prepay arrival works with no provider override; `tests/property/test_delivery_fsm.py`
+  (4 passed) validate delivery FSM invariants.
+
 ## Corrected facts vs. earlier docs
 - Namespace/generation target decided and implemented: **ADR 0008** — `packages.core` is the
   system of record; `socialerp` is a thin facade; one `Base` (`packages.core.models.base`).
@@ -285,11 +318,22 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
   renumbered in a docs pass.
 
 ## Known Gaps / Not Yet Done
-- **Phases 7–10 are largely unimplemented**: Phase 7a (delivery domain/service) is committed,
-  but the rider WhatsApp flow, delivery API routes (the include is commented out in
-  `apps/api/main.py`; there is no `routes/delivery.py` yet), the POD pay-at-arrival STK
-  trigger and the tracking page are not; then CRM memory/segments/insights, Instagram,
-  onboarding wizard, TikTok assisted mode, billing, hardening/load/security review.
+- **Phase 7b in tree (UNCOMMITTED):** delivery API routes + POD trigger (lazy provider resolution,
+  idempotent arrived→STK) are implemented. Known residual review findings (do NOT hide): (MED)
+  `mark_arrived` + `initiate_stk_payment` are not atomic; no unique constraint on the delivery
+  idempotency key in payment metadata, so two concurrent arrivals could push STK twice (double-credit
+  is prevented by duplicate_payment guard, so severity is duplicate prompt/manual refund, not double-sale);
+  (MED) duplicate zone name/rider phone return 500 (IntegrityError) not 409; (MED) rider phone not
+  normalized to 2547/2541 (WhatsApp matcher will miss local formats); (LOW) re-arrival after a failed
+  attempt reuses the same idempotency key (if first still in-flight, customer gets no new prompt);
+  (LOW) no cross-tenant test for delivery routes (test client runs as DB superuser, `get_current_tenant_id`
+  stubbed, `TenantContextMiddleware` not registered in main.py so RLS is inert on API path; delivery
+  queries are tenant_id-scoped but spec requires a cross-tenant test); (LOW) duplicate/invalid path UUIDs
+  and unauthenticated access are not explicitly tested for these routes. (See UNCERTAINTY.md)
+- **Phases 7–10 remainder:** rider WhatsApp flow (quick replies + location/photo proof), tracking page,
+  owner alerting; then CRM memory/segments/insights, Instagram, onboarding wizard, TikTok assisted mode,
+  billing, hardening/load/security review. (POD trigger is DONE in 7b; pay-on-delivery completion gates
+  still rely on existing payment callback path.)
 - **Phase 6 remainder — conversation pipeline: DONE** (Phase 6b landed 2026-10-15, commit
   `782c04e`; see the Phase 6b section below). L2 order creation is idempotent end-to-end from
   the webhook to the tool.
@@ -299,8 +343,8 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
   direct release hook from the payment-cancel path would be cleaner but touches the protected
   zone.
 - **Phase 4 remainder**: the aggregator provider + per-tenant provider selection are **done**
-  (commit `38d0bdc`); the aggregator's settlement-statement feed and the pay-on-delivery
-  trigger (Phase 7) are still open. Status-query fallback, refunds, statement reconciliation
+  (commit `38d0bdc`); the pay-on-delivery trigger is **done in Phase 7b (UNCOMMITTED)**; the
+  aggregator's settlement-statement feed is still open. Status-query fallback, refunds, statement reconciliation
   and the manual provider are **done**.
 - **Money-path hardening gaps (2026-10-16, details in `docs/UNCERTAINTY.md` U13–U17)**: no
   auto-cancel/expiry bound when a deferred cancel leaves an order `awaiting_payment` with
@@ -325,8 +369,10 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
   `DatabaseSessionMiddleware` exist but are not added in `main.py`; the payments callback
   route sets `app.current_tenant_id` manually. Authenticated routes still rely on the DB
   connection role. To be addressed with a tenancy middleware pass.
-- The tree is fully tracked (321 files, 19 commits as of 2026-10-16). The only dirty files are
-  the 7-file money-path pass + this docs update (STATE/MAP/UNCERTAINTY), all uncommitted.
+- Working tree as of 2026-10-16 (all UNCOMMITTED): the 7-file money-path pass, **plus the Phase 7b
+  files** — modified `apps/api/main.py` (registers the delivery router) + `packages/core/delivery/service.py`
+  (`mark_failed` previous-status guard), new `apps/api/routes/delivery.py` + `tests/delivery/test_delivery_api.py`,
+  plus this docs update (STATE/MAP/GLOSSARY/UNCERTAINTY). Do not commit until reviewed.
 
 ## Risks
 - Two-generation duplication can silently ship wrong tenant/schema behaviour until fully retired
@@ -350,9 +396,9 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
 ## Next Steps
 1. Land the 2026-10-16 money-path hardening: run `uv run ruff format .` (4 files drifted),
    skeptic review, then commit the 7 changed files; keep UNCERTAINTY U13–U17 honest.
-2. Phase 7 remainder: rider WhatsApp flow (quick replies + location/photo proof), delivery API
-   routes, the POD pay-at-arrival STK trigger, tracking page; then Phases 8–10 per
-   `docs/plans/2026-10-15-program-phases-7-10-dashboard.md`.
+2. Phase 7 remainder: rider WhatsApp flow (quick replies + location/photo proof), tracking page,
+   owner alerting; then Phases 8–10 per `docs/plans/2026-10-15-program-phases-7-10-dashboard.md`
+   (delivery API + POD trigger are DONE as 7b; address the 7b residual gaps).
 3. Money-path liveness/observability gaps: auto-cancel or expiry bound for orders left
    `awaiting_payment` by a deferred cancel; idempotent replay for concurrent initiate;
    page a human on `payment.collected_after_terminal`.

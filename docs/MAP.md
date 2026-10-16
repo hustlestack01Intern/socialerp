@@ -19,7 +19,7 @@ socialerp/
 │   │   ├── security/  # HMAC, encryption, injection defense, PII redaction
 │   │   ├── orders/    # OrderService (reserve/sell/cancel/expiry), FSM transitions, `is_order_paid`
 │   │   ├── payments/  # PaymentService (protected zone): STK flows, callbacks, reconciliation
-│   │   └── delivery/  # DeliveryService: zones, riders, dispatch FSM, POD payment/proof gates
+│   │   └── delivery/  # DeliveryService: zones, riders, dispatch FSM, POD gates (API: routes/delivery.py; arrived→STK)
 │   ├── integrations/  # External API clients and fakes
 │   │   ├── meta/      # WhatsApp/Instagram Graph API client
 │   │   │   ├── webhook.py        # Webhook receiver + signature verification
@@ -139,6 +139,30 @@ apps/api: Order created → outbox `order.created` + ACTIVE reservation rows
     → Reservation fulfilled (closed by the sale, not released)
 ```
 
+### Delivery + Pay-on-Delivery (arrive → STK Push)
+```
+apps/api: POST /api/v1/delivery/orders/{order_id}/dispatch  (idempotent; order packed)
+    → DeliveryService.dispatch → Delivery row status=assigned
+    → POST .../deliveries/{id}/picked-up   assigned → picked_up
+    → POST .../deliveries/{id}/arrived     picked_up → arrived, then:
+        → order is mpesa_pod AND unpaid?
+            → resolve PaymentProvider LAZILY (only in this branch; prepay never needs one)
+            → PaymentService.initiate_stk_payment(
+                  idempotency_key = "delivery:{delivery_id}:arrived")
+            → STK sent (stk in response); provider error → stk_error, arrival still commits
+        → else (prepay / already paid): no provider resolution, no STK
+        → single db.commit() at the end (arrival + initiation in one transaction;
+          NOT atomic against a concurrent arrival — see UNCERTAINTY U19)
+    → Daraja callback → PaymentService.handle_callback → order paid (POD)
+    → POST .../deliveries/{id}/delivered  (requires payment collected + proof)
+    → order delivered (sale side effect from payment.completed)
+
+Failure: POST .../deliveries/{id}/failed
+    → previous status assigned?  → order untouched (stays packed; no packed→failed_delivery edge)
+    → previous picked_up/arrived? → order → failed_delivery
+    → POST .../deliveries/{id}/retry → delivery failed→picked_up, order packed→out_for_delivery
+```
+
 ### Stock Movement (Event Sourcing)
 ```
 Any stock change → StockMovementRecorded event (immutable)
@@ -184,8 +208,9 @@ Inbound → Webhook → MessageReceived → ConversationManager
 13. **docs/adr/0013-order-creation-reservation-and-sale.md** - Ledger + reservation + sale
 14. **docs/adr/0006 + 0015** - Order FSM (amended) + transition helper + POD edges
 15. **packages/core/payments/service.py** - PaymentService and the money-path guards
+16. **apps/api/routes/delivery.py** - delivery/zones/riders routes + the arrive→STK POD trigger
 
-## Current Phase: Phase 7a done; money-path hardening in tree (uncommitted)
+## Current Phase: Phase 7b done in tree; money-path hardening + delivery API/POD trigger (uncommitted)
 - M0: Scaffold, tooling, CI, docs, fake Meta/Daraja servers ✓
 - M1: Multi-tenant core, auth, RLS, audit log, isolation tests ✓
 - M2: WhatsApp channel (webhooks, signature verification, 24h window, inbox, handoff) ✓
@@ -194,7 +219,6 @@ Inbound → Webhook → MessageReceived → ConversationManager
 - M5: Agent L0/L1, evals, policy, injection defenses ✓
 - M6: L2 transact end-to-end ✓ (conversation pipeline ADR 0014; gate green: 493 tests, evals 8/8);
   pilot checklist ☐
-- Phase 7: delivery domain/service + POD FSM edges ✓ (ADR 0015, migration 0010);
-  rider WhatsApp flow, delivery API routes, POD pay-at-arrival STK trigger, tracking page ☐
+- Phase 7: delivery domain/service + POD FSM edges ✓ (ADR 0015, migration 0010); delivery API routes + POD pay-at-arrival STK trigger ✓ (Phase 7b, UNCOMMITTED); rider WhatsApp flow, tracking page, owner alerting ☐
 - Phases 8–10 (CRM, Instagram, onboarding, TikTok, billing, hardening) ☐
 - GATE G1: Human decision
