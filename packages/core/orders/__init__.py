@@ -21,6 +21,7 @@ from packages.core.orders.service import (
     OrderService,
     OrderValidationError,
     PriceMismatchError,
+    ReservationLostError,
 )
 
 __all__ = [
@@ -35,4 +36,5 @@ __all__ = [
     "OrderService",
     "OrderValidationError",
     "PriceMismatchError",
+    "ReservationLostError",
 ]

@@ -28,6 +28,7 @@ from packages.core.orders import (
     OrderLine,
     OrderService,
     PriceMismatchError,
+    ReservationLostError,
 )
 from packages.core.orders.service import _movement_model_to_domain
 
@@ -325,6 +326,72 @@ async def test_record_sale_for_paid_order_is_idempotent(tenant_session, tenant) 
         .all()
     )
     assert len(sells_again) == 1
+
+
+async def test_record_sale_after_reservation_expired_re_reserves(tenant_session, tenant) -> None:
+    variant = await seed_variant(tenant_session, tenant.id, qty=10)
+    service = OrderService(tenant_session, reservation_ttl_minutes=0)
+    order = await service.create_order(
+        tenant.id,
+        CreateOrderCommand(
+            customer_phone=PHONE, lines=(OrderLine(quantity=3, variant_id=variant.id),)
+        ),
+    )
+    assert await available(tenant_session, tenant.id, variant.product_id, variant.id) == 7
+
+    # The TTL elapses and the expiry job releases the reservation.
+    assert await service.expire_stale_reservations(tenant.id) == 1
+    assert await available(tenant_session, tenant.id, variant.product_id, variant.id) == 10
+
+    # The customer's (late) payment then completes. The sale must still be
+    # honoured exactly once: re-reserve under the order, then sell.
+    order.status = "paid"
+    await tenant_session.flush()
+    await service.record_sale_for_order(tenant.id, order.id)
+
+    assert await available(tenant_session, tenant.id, variant.product_id, variant.id) == 7
+    sells = (
+        (
+            await tenant_session.execute(
+                select(StockMovement).where(
+                    StockMovement.movement_type == "sell",
+                    StockMovement.reference_id == order.id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(sells) == 1
+    reservation = await reservation_for(tenant_session, order.id)
+    assert reservation.status == ReservationStatus.FULFILLED.value
+
+
+async def test_record_sale_when_reservation_lost_raises(tenant_session, tenant) -> None:
+    variant = await seed_variant(tenant_session, tenant.id, qty=3)
+    service = OrderService(tenant_session, reservation_ttl_minutes=0)
+    order_a = await service.create_order(
+        tenant.id,
+        CreateOrderCommand(
+            customer_phone=PHONE, lines=(OrderLine(quantity=3, variant_id=variant.id),)
+        ),
+    )
+    # A's TTL releases the stock; a second order then takes all of it.
+    assert await service.expire_stale_reservations(tenant.id) == 1
+    await service.create_order(
+        tenant.id,
+        CreateOrderCommand(
+            customer_phone="254700000002",
+            lines=(OrderLine(quantity=3, variant_id=variant.id),),
+        ),
+    )
+    order_a.status = "paid"
+    await tenant_session.flush()
+
+    # A's late payment cannot be honoured without double-selling to B, so the
+    # sale is refused loudly for reconciliation instead of silently overselling.
+    with pytest.raises(ReservationLostError):
+        await service.record_sale_for_order(tenant.id, order_a.id)
 
 
 async def test_expire_stale_reservations_releases(tenant_session, tenant) -> None:

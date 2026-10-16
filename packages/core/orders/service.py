@@ -125,6 +125,17 @@ class InvalidReservationError(OrderError):
     """A reservation could not be created/released consistently."""
 
 
+class ReservationLostError(OrderError):
+    """A paid order's reservation was released and cannot be re-established.
+
+    Raised when payment arrives after the reservation TTL expired (or a cancel)
+    and there is no longer enough available stock to re-reserve the line. Selling
+    anyway would double-count the unit for whichever order reserved it next, so
+    the sale is refused and surfaced for reconciliation (refund or manual
+    re-order).
+    """
+
+
 # =============================================================================
 # Request value objects
 # =============================================================================
@@ -480,6 +491,34 @@ class OrderService:
             )
             if already_sold:
                 continue
+
+            # A SELL closes the reservation for this order. If the reservation
+            # TTL released it while payment was in flight, the unit is available
+            # to other orders again: selling here without re-reserving would
+            # double-count it for whichever order holds it next (oversell with
+            # no negative-availability signal). Under the variant lock, either
+            # re-establish the reservation (honouring the payment) or refuse.
+            reserved = ledger.reserved_quantity_for(order_id)
+            if reserved < item.quantity:
+                deficit = item.quantity - reserved
+                if ledger.available < deficit:
+                    raise ReservationLostError(
+                        f"Order {order_id} line variant={item.variant_id}: "
+                        f"reservation was released while payment was in flight "
+                        f"and only {ledger.available} unit(s) are available to "
+                        f"re-reserve (need {deficit}); refusing to oversell"
+                    )
+                re_reserve = ledger.reserve(
+                    quantity=deficit,
+                    reference_id=order_id,
+                    reference_type="order",
+                    reason=StockMovementReason.ORDER_CREATED,
+                )
+                await self._movements.add(re_reserve)
+                await self._reopen_released_reservations(
+                    tenant_id, order_id, item.product_id, item.variant_id
+                )
+
             movement = ledger.sell(
                 quantity=item.quantity,
                 reference_id=order_id,
@@ -664,6 +703,33 @@ class OrderService:
         ledger = StockLedger(tenant_id=tenant_id, product_id=product_id, variant_id=variant_id)
         ledger.load(movements)
         return ledger
+
+    async def _reopen_released_reservations(
+        self,
+        tenant_id: UUID,
+        order_id: UUID,
+        product_id: UUID,
+        variant_id: UUID | None,
+    ) -> None:
+        """Re-activate reservations the expiry job released for a paid order.
+
+        Called after re-reserving a line whose reservation TTL had expired, so
+        that the subsequent ``_set_reservations_status(..., FULFILLED)`` sees an
+        active row and the projection stays consistent with the ledger.
+        """
+        query = select(Reservation).where(
+            Reservation.tenant_id == tenant_id,
+            Reservation.reference_id == order_id,
+            Reservation.product_id == product_id,
+            Reservation.status == ReservationStatusModel.EXPIRED.value,
+        )
+        if variant_id is None:
+            query = query.where(Reservation.variant_id.is_(None))
+        else:
+            query = query.where(Reservation.variant_id == variant_id)
+        for reservation in (await self.session.execute(query)).scalars().all():
+            reservation.status = ReservationStatusModel.ACTIVE.value
+            reservation.released_at = None
 
     async def _set_reservations_status(
         self,
