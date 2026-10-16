@@ -548,8 +548,15 @@ class OrderService:
     # -- packed -----------------------------------------------------------
 
     async def mark_packed(self, tenant_id: UUID, order_id: UUID) -> Order:
-        """Move a paid order to packed."""
+        """Move an order to packed."""
         order = await self.get_order(tenant_id, order_id)
+        # B3: guard in mark_packed (POD only; prepay still requires PAID).
+        current = OrderStatus(order.status)
+        is_pod = order.payment_method == PaymentMethod.MPESA_PAY_ON_DELIVERY.value
+        if not is_pod and current is OrderStatus.AWAITING_PAYMENT:
+            raise IllegalTransitionError(
+                f"Illegal transition: {current.value} -> packed (prepay must be PAID first)"
+            )
         apply_order_transition(order, OrderStatus.PACKED)
         await self.session.flush()
         await self.audit.log_action(

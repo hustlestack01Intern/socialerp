@@ -170,7 +170,11 @@ class TestFsmMatchesAdr0006:
     def test_exact_transition_table(self) -> None:
         expected = {
             OrderStatus.DRAFT: {OrderStatus.AWAITING_PAYMENT, OrderStatus.CANCELLED},
-            OrderStatus.AWAITING_PAYMENT: {OrderStatus.PAID, OrderStatus.CANCELLED},
+            OrderStatus.AWAITING_PAYMENT: {
+                OrderStatus.PAID,
+                OrderStatus.PACKED,
+                OrderStatus.CANCELLED,
+            },
             OrderStatus.PAID: {OrderStatus.PACKED, OrderStatus.REFUNDED},
             OrderStatus.PACKED: {OrderStatus.OUT_FOR_DELIVERY},
             OrderStatus.OUT_FOR_DELIVERY: {OrderStatus.DELIVERED, OrderStatus.FAILED_DELIVERY},

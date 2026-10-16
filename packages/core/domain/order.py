@@ -71,7 +71,7 @@ class PaymentStatus(str, Enum):
 # retried (out_for_delivery) or refunded.
 LEGAL_TRANSITIONS: dict[OrderStatus, set[OrderStatus]] = {
     OrderStatus.DRAFT: {OrderStatus.AWAITING_PAYMENT, OrderStatus.CANCELLED},
-    OrderStatus.AWAITING_PAYMENT: {OrderStatus.PAID, OrderStatus.CANCELLED},
+    OrderStatus.AWAITING_PAYMENT: {OrderStatus.PAID, OrderStatus.PACKED, OrderStatus.CANCELLED},
     OrderStatus.PAID: {OrderStatus.PACKED, OrderStatus.REFUNDED},
     OrderStatus.PACKED: {OrderStatus.OUT_FOR_DELIVERY},
     OrderStatus.OUT_FOR_DELIVERY: {OrderStatus.DELIVERED, OrderStatus.FAILED_DELIVERY},

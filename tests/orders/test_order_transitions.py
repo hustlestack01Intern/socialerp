@@ -58,3 +58,10 @@ def test_illegal_transition_raises() -> None:
     order = _order(OrderStatus.DRAFT)
     with pytest.raises(IllegalTransitionError):
         apply_order_transition(order, OrderStatus.PAID)
+
+
+def test_pod_pack_edge_is_legal_in_the_table() -> None:
+    """ADR 0015 added awaiting_payment -> packed (service-guarded for POD)."""
+    order = _order(OrderStatus.AWAITING_PAYMENT)
+    apply_order_transition(order, OrderStatus.PACKED)
+    assert order.status == OrderStatus.PACKED.value

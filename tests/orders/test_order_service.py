@@ -14,7 +14,7 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy import func, select
 
-from packages.core.domain.order import IllegalTransitionError
+from packages.core.domain.order import IllegalTransitionError, OrderStatus, PaymentMethod
 from packages.core.domain.stock import StockLedger, StockMovementRepository
 from packages.core.models.catalog import Product, ProductStatus, ProductVariant
 from packages.core.models.order import Customer, Order
@@ -392,6 +392,42 @@ async def test_record_sale_when_reservation_lost_raises(tenant_session, tenant) 
     # sale is refused loudly for reconciliation instead of silently overselling.
     with pytest.raises(ReservationLostError):
         await service.record_sale_for_order(tenant.id, order_a.id)
+
+
+async def test_mark_packed_from_awaiting_payment_is_legal_for_pod(tenant_session, tenant) -> None:
+    """B3: awaiting_payment -> packed is a legal (POD-only) edge (ADR 0015)."""
+    variant = await seed_variant(tenant_session, tenant.id, qty=10)
+    service = OrderService(tenant_session)
+    order = await service.create_order(
+        tenant.id,
+        CreateOrderCommand(
+            customer_phone=PHONE,
+            lines=(OrderLine(quantity=1, variant_id=variant.id),),
+            payment_method=PaymentMethod.MPESA_PAY_ON_DELIVERY,
+        ),
+    )
+    assert order.status == OrderStatus.AWAITING_PAYMENT.value
+
+    packed = await service.mark_packed(tenant.id, order.id)
+    assert packed.status == OrderStatus.PACKED.value
+
+
+async def test_mark_packed_from_awaiting_payment_raises_for_prepay(
+    tenant_session, tenant
+) -> None:
+    """B3: prepay orders must be PAID before packing (no awaiting_payment -> packed)."""
+    variant = await seed_variant(tenant_session, tenant.id, qty=10)
+    service = OrderService(tenant_session)
+    order = await service.create_order(
+        tenant.id,
+        CreateOrderCommand(
+            customer_phone=PHONE, lines=(OrderLine(quantity=1, variant_id=variant.id),)
+        ),
+    )
+    assert order.status == OrderStatus.AWAITING_PAYMENT.value
+
+    with pytest.raises(IllegalTransitionError):
+        await service.mark_packed(tenant.id, order.id)
 
 
 async def test_expire_stale_reservations_releases(tenant_session, tenant) -> None:
