@@ -358,20 +358,6 @@ class SKU:
 # =============================================================================
 
 
-class OrderStatus(str, Enum):
-    """Order state machine statuses."""
-
-    DRAFT = "draft"
-    AWAITING_PAYMENT = "awaiting_payment"
-    PAID = "paid"
-    PACKED = "packed"
-    OUT_FOR_DELIVERY = "out_for_delivery"
-    DELIVERED = "delivered"
-    CANCELLED = "cancelled"
-    REFUNDED = "refunded"
-    FAILED_DELIVERY = "failed_delivery"
-
-
 class PaymentStatus(str, Enum):
     """Payment statuses."""
 

@@ -23,6 +23,7 @@ decremented here (ADR 0013).
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -53,7 +54,39 @@ from packages.core.models.reservation import Reservation
 from packages.core.models.reservation import ReservationReason as ReservationReasonModel
 from packages.core.models.reservation import ReservationStatus as ReservationStatusModel
 from packages.core.models.stock import StockMovement as StockMovementModel
+from packages.core.orders.transitions import apply_order_transition
 from packages.core.repositories import CustomerRepository, OrderRepository
+
+# =============================================================================
+# Ports
+# =============================================================================
+
+# Does this order have a delivery in flight? Injected so the orders package does
+# not import the delivery package at module scope (dependency direction
+# delivery -> orders; ADR 0015). The default is a deferred import.
+ActiveDeliveryLookup = Callable[[UUID, UUID], Awaitable[bool]]
+
+# =============================================================================
+# Shared predicates
+# =============================================================================
+
+
+def is_pod_in_transit(order: Order) -> bool:
+    """True for a pay-on-delivery order that is already out_for_delivery.
+
+    For POD the physical lifecycle precedes payment: the order leaves
+    'packed' at rider pickup (packed -> out_for_delivery, a legal prepay edge
+    too) and the STK Push fires at rider arrival. Payment completion must
+    still turn reservations into sales even though the order status never
+    passes through 'paid'. Used by the payment service (payable check,
+    completion path) and by reservation expiry (never release stock that is
+    moving toward a paying customer).
+    """
+    return (
+        OrderStatus(order.status) is OrderStatus.OUT_FOR_DELIVERY
+        and order.payment_method == PaymentMethod.MPESA_PAY_ON_DELIVERY.value
+    )
+
 
 # =============================================================================
 # Errors
@@ -198,6 +231,7 @@ class OrderService:
         session: AsyncSession,
         *,
         reservation_ttl_minutes: int = 15,
+        active_delivery_lookup: ActiveDeliveryLookup | None = None,
     ) -> None:
         self.session = session
         self.audit = AuditLogger(session)
@@ -205,6 +239,7 @@ class OrderService:
         self.customers = CustomerRepository(session)
         self._movements = StockMovementRepository(session)
         self.reservation_ttl_minutes = reservation_ttl_minutes
+        self._active_delivery_lookup = active_delivery_lookup
 
     # -- public read helpers ----------------------------------------------
 
@@ -354,7 +389,7 @@ class OrderService:
                 )
             )
 
-        self._transition(order, OrderStatus.AWAITING_PAYMENT)
+        apply_order_transition(order, OrderStatus.AWAITING_PAYMENT)
         await self.session.flush()
 
         await add_outbox_event(
@@ -399,7 +434,7 @@ class OrderService:
             raise IllegalTransitionError(f"Illegal transition: {current.value} -> cancelled")
 
         released = await self._release_order_reservations(tenant_id, order_id)
-        self._transition(order, OrderStatus.CANCELLED)
+        apply_order_transition(order, OrderStatus.CANCELLED)
         order.cancelled_reason = reason
         await self.session.flush()
 
@@ -430,8 +465,9 @@ class OrderService:
         skipped.
         """
         order = await self.get_order(tenant_id, order_id)
-        if OrderStatus(order.status) is not OrderStatus.PAID:
+        if OrderStatus(order.status) is not OrderStatus.PAID and not is_pod_in_transit(order):
             # Nothing to sell yet (or a terminal state) -- not an error.
+            # POD orders in transit are the exception: sale records at payment.
             return order
 
         items = await self.orders.items_for(tenant_id, order_id)
@@ -475,7 +511,7 @@ class OrderService:
     async def mark_packed(self, tenant_id: UUID, order_id: UUID) -> Order:
         """Move a paid order to packed."""
         order = await self.get_order(tenant_id, order_id)
-        self._transition(order, OrderStatus.PACKED)
+        apply_order_transition(order, OrderStatus.PACKED)
         await self.session.flush()
         await self.audit.log_action(
             tenant_id=tenant_id,
@@ -505,11 +541,18 @@ class OrderService:
 
         released = 0
         for reservation in rows:
+            # A pay-on-delivery order with an in-flight delivery keeps its
+            # reservation: the goods are moving and payment completes at
+            # delivery. Releasing here would sell the same unit twice.
+            reference_id = reservation.reference_id
+            if reference_id is not None and await self._has_active_delivery(
+                reservation.tenant_id, reference_id
+            ):
+                continue
             await self._lock_variant(reservation.tenant_id, reservation.variant_id)
             ledger = await self._load_ledger(
                 reservation.tenant_id, reservation.product_id, reservation.variant_id
             )
-            reference_id = reservation.reference_id
             if reference_id is not None:
                 remaining = ledger.reserved_quantity_for(reference_id)
                 if remaining >= reservation.quantity:
@@ -530,28 +573,22 @@ class OrderService:
 
     # -- internals --------------------------------------------------------
 
-    @staticmethod
-    def _transition(order: Order, new_status: OrderStatus) -> None:
-        current = OrderStatus(order.status)
-        if not is_legal_transition(current, new_status):
-            raise IllegalTransitionError(
-                f"Illegal transition: {current.value} -> {new_status.value}"
-            )
-        now = datetime.now(UTC)
-        order.status = new_status.value
-        order.updated_at = now
-        if new_status is OrderStatus.AWAITING_PAYMENT:
-            order.confirmed_at = now
-        elif new_status is OrderStatus.PAID:
-            order.paid_at = now
-        elif new_status is OrderStatus.PACKED:
-            order.packed_at = now
-        elif new_status is OrderStatus.OUT_FOR_DELIVERY:
-            order.shipped_at = now
-        elif new_status is OrderStatus.DELIVERED:
-            order.delivered_at = now
-        elif new_status is OrderStatus.CANCELLED:
-            order.cancelled_at = now
+    async def _has_active_delivery(self, tenant_id: UUID, order_id: UUID) -> bool:
+        """Whether an order has a delivery in flight.
+
+        Uses the injected lookup when provided (tests / composition root).
+        Otherwise imports the delivery repository lazily: ``orders`` must not
+        import ``delivery`` at module scope (the dependency direction is
+        delivery -> orders; ADR 0015), and the deferred import breaks the cycle.
+        """
+        if self._active_delivery_lookup is not None:
+            return await self._active_delivery_lookup(tenant_id, order_id)
+        from packages.core.delivery.repository import DeliveryRepository
+
+        delivery = await DeliveryRepository(self.session).active_delivery_for_order(
+            tenant_id, order_id
+        )
+        return delivery is not None
 
     async def _lock_variant(self, tenant_id: UUID, variant_id: UUID | None) -> None:
         """Serialize concurrent order creation for the same variant.

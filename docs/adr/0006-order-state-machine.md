@@ -1,8 +1,17 @@
 # ADR 0006: Order State Machine
 
-**Status**: Accepted
+**Status**: Accepted (amended 2026-10-16 by ADR 0015)
 **Date**: 2024-01-15
 **Deciders**: Chief Engineer
+
+> **Amendment (ADR 0015, 2026-10-16).** One legal edge was added:
+> `awaiting_payment -> packed`, used only for pay-on-delivery orders (goods pack
+> before payment). It is guarded at the service layer (`OrderService.mark_packed`):
+> non-POD `awaiting_payment` orders still require `paid` first. The canonical
+> transition table now lives in `packages/core/domain/order.py::LEGAL_TRANSITIONS`
+> and the single mutation helper is
+> `packages/core/orders/transitions.py::apply_order_transition`. The table below
+> is updated accordingly.
 
 ---
 
@@ -73,6 +82,7 @@ REFUNDED
 | `draft` | `awaiting_payment` | Customer confirms order | Reserve stock, send STK Push |
 | `draft` | `cancelled` | Customer/owner cancels | Release any reservations |
 | `awaiting_payment` | `paid` | STK Push callback success | Release reservation → sell movement |
+| `awaiting_payment` | `packed` | POD order packed before payment (ADR 0015, POD only, service-guarded) | - |
 | `awaiting_payment` | `cancelled` | STK Push failed/timeout/cancelled | Release reservation |
 | `paid` | `packed` | Owner/staff marks packed | - |
 | `packed` | `out_for_delivery` | Rider picks up | Notify customer, start tracking |
@@ -116,7 +126,7 @@ INSERT INTO order_valid_transitions VALUES
 class OrderStateMachine:
     VALID_TRANSITIONS: dict[OrderStatus, set[OrderStatus]] = {
         OrderStatus.DRAFT: {OrderStatus.AWAITING_PAYMENT, OrderStatus.CANCELLED},
-        OrderStatus.AWAITING_PAYMENT: {OrderStatus.PAID, OrderStatus.CANCELLED},
+        OrderStatus.AWAITING_PAYMENT: {OrderStatus.PAID, OrderStatus.PACKED, OrderStatus.CANCELLED},
         OrderStatus.PAID: {OrderStatus.PACKED, OrderStatus.REFUNDED},
         OrderStatus.PACKED: {OrderStatus.OUT_FOR_DELIVERY},
         OrderStatus.OUT_FOR_DELIVERY: {OrderStatus.DELIVERED, OrderStatus.FAILED_DELIVERY},

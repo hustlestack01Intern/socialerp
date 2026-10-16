@@ -37,9 +37,9 @@ class TestDeliveryFSM:
         self, from_status: DeliveryStatus, to_status: DeliveryStatus
     ) -> None:
         """Same input always yields the same verdict."""
-        assert is_legal_delivery_transition(
+        assert is_legal_delivery_transition(from_status, to_status) is is_legal_delivery_transition(
             from_status, to_status
-        ) is is_legal_delivery_transition(from_status, to_status)
+        )
 
     @given(st.sampled_from(list(DeliveryStatus)))
     def test_no_self_transitions(self, status: DeliveryStatus) -> None:
@@ -47,9 +47,7 @@ class TestDeliveryFSM:
         assert not is_legal_delivery_transition(status, status)
 
     @given(st.sampled_from(list(DeliveryStatus)))
-    def test_failed_always_reachable_from_active_states(
-        self, status: DeliveryStatus
-    ) -> None:
+    def test_failed_always_reachable_from_active_states(self, status: DeliveryStatus) -> None:
         """Any in-flight delivery can fail — the owner always has a path to
         handle a failed delivery (retry or human-approved refund)."""
         if status in (DeliveryStatus.ASSIGNED, DeliveryStatus.PICKED_UP, DeliveryStatus.ARRIVED):

@@ -28,7 +28,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from packages.core.audit.logger import AuditLogger
 from packages.core.domain.order import (
-    IllegalTransitionError,
     OrderStatus,
     is_legal_transition,
 )
@@ -44,6 +43,8 @@ from packages.core.domain.payment import (
 )
 from packages.core.models.order import Order
 from packages.core.models.payment import Payment, PaymentRecordStatus
+from packages.core.orders.service import is_pod_in_transit
+from packages.core.orders.transitions import apply_order_transition
 
 
 class PaymentError(Exception):
@@ -121,17 +122,7 @@ class PaymentService:
 
     @staticmethod
     def _transition(order: Order, new_status: OrderStatus) -> None:
-        current = OrderStatus(order.status)
-        if not is_legal_transition(current, new_status):
-            raise IllegalTransitionError(
-                f"Illegal transition: {current.value} -> {new_status.value}"
-            )
-        now = datetime.now(UTC)
-        order.status = new_status.value
-        if new_status is OrderStatus.PAID:
-            order.paid_at = now
-        elif new_status is OrderStatus.CANCELLED:
-            order.cancelled_at = now
+        apply_order_transition(order, new_status)
 
     # -- initiate ----------------------------------------------------------
 
@@ -146,9 +137,12 @@ class PaymentService:
     ) -> Payment:
         """Create an STK push attempt for a payable order."""
         order = await self._get_order(tenant_id, order_id)
-        if order.status != OrderStatus.AWAITING_PAYMENT.value:
+        # Payable: awaiting_payment (prepay) or a pay-on-delivery order already
+        # out_for_delivery (STK fires at rider arrival; see is_pod_in_transit).
+        if order.status != OrderStatus.AWAITING_PAYMENT.value and not is_pod_in_transit(order):
             raise OrderNotPayableError(
-                f"Order {order_id} is {order.status!r}, expected 'awaiting_payment'"
+                f"Order {order_id} is {order.status!r}, expected 'awaiting_payment' "
+                "or pay-on-delivery in transit"
             )
 
         # Reuse an in-flight attempt for the same idempotency key (double-tap
@@ -377,7 +371,14 @@ class PaymentService:
         order.payment_reference = mpesa_receipt_number
         order.payment_amount_cents = amount_cents
         order.payment_paid_at = now
-        self._transition(order, OrderStatus.PAID)
+        # Prepay: awaiting_payment -> paid. Pay-on-delivery orders are already
+        # out_for_delivery (goods moving before payment) and must NOT
+        # transition to 'paid' (illegal FSM edge); they proceed to delivered on
+        # rider confirmation. paid_at is still recorded for reconciliation.
+        if not is_pod_in_transit(order):
+            self._transition(order, OrderStatus.PAID)
+        else:
+            order.paid_at = now
 
         await add_outbox_event(
             event_type="payment.completed",
