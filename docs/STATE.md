@@ -1,13 +1,25 @@
 # Project State
 
-> State of record. Updated 2026-10-15 by the Chief Engineer after driving the build
-> gates green. If this contradicts MAP.md or the filesystem, check `git log` and `docs/plans/`.
+> State of record. Updated 2026-10-16 by the scribe after the money-path hardening session
+> (uncommitted working tree). If this contradicts MAP.md or the filesystem, check `git log`
+> and `docs/plans/`.
 
 ## Current Phase
-**Phase 4 remainder DONE (aggregator provider + per-tenant provider selection); gate restored
-to GREEN (448 tests). Phases 7–10 + owner dashboard planned in
-`docs/plans/2026-10-15-program-phases-7-10-dashboard.md`, not yet started. Previously:
-M3 (catalog/stock/orders) complete; Phase 4 (payments) complete; Phase 5 (agent) L0/L1 core
+**Money-path hardening pass (2026-10-16, UNCOMMITTED): stale/late STK callbacks can no
+longer downgrade a paid order, a success callback on a terminal order is captured on the
+Payment (money never lost, order never wrongly marked collected), the POD delivery gate
+requires `payment_status == completed`, and reservation expiry re-reads under row lock.
+Gate measured GREEN below (493 tests, evals 8/8, 0 wrong-price/stock hallucinations).
+The FSM edges it depends on are recorded in ADR 0015 (new) + ADR 0006 (amended); the
+money-path pass itself is recorded in the session section below and in UNCERTAINTY U13–U18
+(no ADR yet — the collect-after-terminal fail-safe decision should get one). It builds on the
+committed Phase 7a +
+B1–B7 stabilization (`docs/plans/2026-10-16-stabilize-phase7-pod.md`, commits `83be9ef`…
+`22fafc6`). Phase 7 remainder (rider WhatsApp flow, tracking page) + Phases 8–10 + owner
+dashboard planned in `docs/plans/2026-10-15-program-phases-7-10-dashboard.md`, not yet
+started. Previously: Phase 4 remainder DONE (aggregator provider + per-tenant provider
+selection); gate restored to GREEN (448 tests) on 2026-10-15; M3 (catalog/stock/orders)
+complete; Phase 4 (payments) complete; Phase 5 (agent) L0/L1 core
 complete; Phase 6 (orders) landed: deterministic `OrderService` (catalog-price authority,
 reservation on creation, release on cancel/expiry, the `payment.completed` sale side effect,
 idempotency, concurrent last-item race), tenant-scoped orders API, migration `0009`
@@ -15,15 +27,18 @@ idempotency, concurrent last-item race), tenant-scoped orders API, migration `00
 wired into the agent loop with policy gating and active L2 evals, plus the Phase 6b
 conversation pipeline (webhook → outbox → worker → agent → reply, idempotent).**
 
-## Measured Results (real output, 2026-10-15, after Slice 0 — aggregator + provider selection)
+## Measured Results (real output, 2026-10-16, after the money-path hardening pass — UNCOMMITTED)
 | Gate | Command | Result |
 |---|---|---|
 | Lint | `uv run ruff check .` | **All checks passed!** |
-| Format | `uv run ruff format --check .` | **227 files already formatted** |
-| Types | `uv run mypy packages apps` (strict) | **Success: no issues found in 84 source files** |
-| Tests | `uv run pytest` | **448 passed, 114 warnings in 558.94s** |
+| Format | `uv run ruff format --check .` | **236 files already formatted; 4 would be reformatted** (the four uncommitted money-path files — `payments/service.py` + 3 test files; format is NOT part of `make check`, so the gate is still green; run `uv run ruff format .` before committing) |
+| Types | `uv run mypy packages apps` (strict) | **Success: no issues found in 90 source files** |
+| Tests | `uv run pytest` | **493 passed, 142 warnings in 769.06s** |
 | Evals | `uv run python -m evals.runner` | **8/8 cases pass (6 capabilities incl. `order_transaction`), wrong-price/stock hallucinations: 0** |
 | Full gate | the four `make check` commands | **✅ all green** (run individually, same commands as `make check`) |
+
+Prior measurement (2026-10-15, after Slice 0 — aggregator + provider selection): ruff clean,
+227 files formatted, mypy 84 files, 448 tests, evals 8/8 / 0 hallucinations.
 
 Slice 0 tests: **20 new** — `tests/integrations/aggregator/test_aggregator_provider.py` (16:
 STK normalize/reject/sub-shilling/HTTP-wrap, status mapping incl. 404→pending, HMAC
@@ -34,7 +49,7 @@ per-tenant provider (`Depends(get_tenant_payment_provider)`) instead of construc
 Daraja directly — callbacks for aggregator/manual tenants route correctly and the
 FakeProvider test injection is preserved.
 
-**Settings singleton hazard (found this session, must not regress):** `socialerp.settings`
+**Settings singleton hazard (found 2026-10-15, must not regress):** `socialerp.settings`
 (typings-symlink identity) and `packages.core.socialerp.settings` (workspace identity)
 are TWO module objects over the SAME file with TWO lru_cache singletons. Code that
 imports one and tests that patch the other silently disagree (this broke the
@@ -74,7 +89,63 @@ asserted). The `Money.from_kes` truncation bug is fixed and covered by
 The earlier blockers recorded on 2026-10-14 (namespace fork, `Money.from_kes` truncation,
 skipped RLS tests, non-hermetic suite) are **resolved in tree**.
 
-## Fixed this session (2026-10-15)
+## Fixed this session (2026-10-16, money-path hardening — UNCOMMITTED)
+7 modified files (+539/−18): `packages/core/payments/service.py`,
+`packages/core/orders/service.py`, `packages/core/delivery/service.py`,
+`apps/worker/main.py`, plus 3 test files. Goal: a late, stale or mis-timed STK callback can
+never downgrade, lose or double-spend an order. Guards in the protected payment service
+(surgical, tests-first):
+
+1. **Shared predicate `is_order_paid(order)`** (`packages/core/orders/service.py`): True iff
+   `payment_status == "completed"` OR `paid_at` is set. Used by `initiate_stk_payment`,
+   `_complete_payment`, `_cancel_payment`, `_fail_payment` (payments). Delivery deliberately
+   does NOT use it (see 6).
+2. **Order row lock on the guard+write paths**: `_get_order(..., for_update=True)` uses
+   `with_for_update(of=Order)` inside `handle_callback` and `apply_query_result`, so the
+   paid-check and the write are atomic. `initiate_stk_payment` deliberately does NOT lock —
+   it must not hold a row lock across the provider network call (that would block a
+   concurrent callback); the callback paths do lock.
+3. **Stale/deferred cancels** (`_cancel_payment`): a cancel for an order already paid is
+   ignored (audit `payment.stale_failure_ignored`, attempt outcome `cancelled`); a cancel is
+   DEFERRED (audit `payment.cancel_deferred`) if another payment attempt for the order is
+   still INITIATED/PENDING — a retry's cancel can neither kill the order nor strand a late
+   success on the other attempt.
+4. **Stale failures** (`_fail_payment`): same paid-order guard, same
+   `payment.stale_failure_ignored` audit, failure not applied to the order.
+5. **Collect-after-terminal capture** (`_complete_payment`): a success callback whose order
+   is neither `awaiting_payment` (prepay) nor POD `out_for_delivery` no longer raises
+   `IllegalTransitionError` (previously 500 + rollback + stranded money). The collection is
+   captured on the Payment (status COMPLETED, receipt, `metadata_json["collected_after_terminal"] = True`),
+   the ORDER is left untouched (NOT marked collected), outbox `payment.collected_after_terminal`
+   + audit emitted, return. Refunded/delivered orders keep `paid_at`, so they take the
+   pre-existing duplicate-payment branch instead.
+6. **POD delivery gate tightened** (`DeliveryService.mark_delivered`): requires
+   `payment_status == completed` (was `is_order_paid`), so a refunded order — which keeps
+   `paid_at` — cannot be delivered.
+7. **Reservation expiry hardening** (`OrderService.expire_stale_reservations`): re-reads
+   `Reservation.status` under `with_for_update()` after the ACTIVE scan and skips rows no
+   longer ACTIVE (no stale EXPIRED overwrite / miscount).
+8. **Worker alert handler** (`apps/worker/main.py`): registers
+   `handle_payment_collected_after_terminal` — logs a WARNING (money on a non-collectable
+   order needs a refund-vs-manual-honour decision), no automatic stock/order side effect,
+   and the event is not marked FAILED.
+
+Tests added this session (9 cases across 8 new functions, all passing; each mutation-verified
+to fail without its fix): `tests/payments/test_payment_service.py` —
+`test_stale_cancel_callback_does_not_downgrade_paid_order`,
+`test_stale_failure_callback_does_not_downgrade_paid_order`,
+`test_cancel_of_retry_attempt_does_not_cancel_order_with_other_in_flight`,
+`test_concurrent_success_and_cancel_callbacks_cannot_downgrade_paid_order`,
+`test_success_callback_on_terminal_order_is_captured_not_lost` (parametrized
+cancelled/failed_delivery), `test_pod_packed_late_success_is_captured_and_not_collected`;
+`tests/orders/test_order_service.py` — `test_expire_skips_reservation_fulfilled_concurrently`;
+`tests/delivery/test_delivery_service.py` — `test_pod_delivered_for_refunded_order_raises`.
+
+Remaining gaps from this pass are recorded in `docs/UNCERTAINTY.md` (U13–U17): deferred-cancel
+liveness bound, idempotent initiate replay, alert paging, the fail-safe "captured but not
+collectable" POD policy, and no SELL recorded for captured-after-non-collectable money.
+
+## Fixed 2026-10-15 (build-gate code fixes)
 Build-gate code fixes (all under the root `pyproject.toml` configuration):
 
 1. **`packages/core/events/whatsapp/`** — an empty directory was shadowing the
@@ -195,6 +266,15 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
 - **Phase 6 evals promoted**: new `order_transaction` capability (L2, `FakeOrderCreator`) is
   **active**, checking `order_created` and exact `total_cents`; the harness now reports every
   expected-but-unchecked assertion as deferred (no silent drops). 8 cases / 6 capabilities.
+- **Phase 7a delivery + POD stabilization (committed, 2026-10-16, `3b52fc3`…`22fafc6`)**:
+  delivery domain/models + migration `0010_delivery` (RLS); `DeliveryService`
+  (`packages/core/delivery/service.py`) with zones, riders, dispatch, picked-up, arrived,
+  delivered (payment+proof gated), failed and retry-after-failure; B1–B7 fixed per
+  `docs/plans/2026-10-16-stabilize-phase7-pod.md` (import cycle broken via the shared
+  `orders/transitions.py::apply_order_transition` helper + injectable `active_delivery_lookup`,
+  SELL requires an open reservation, single-completion/already-paid guards, canonical
+  `domain.order.OrderStatus` identity, `Reservation.reference_id` in expiry); ADR 0015 new,
+  ADR 0006 amended (guarded `awaiting_payment → packed` POD edge).
 
 ## Corrected facts vs. earlier docs
 - Namespace/generation target decided and implemented: **ADR 0008** — `packages.core` is the
@@ -205,26 +285,35 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
   renumbered in a docs pass.
 
 ## Known Gaps / Not Yet Done
-- **Phases 7–10 are unimplemented**: delivery/rider flow, CRM memory/segments/insights,
-  Instagram, onboarding wizard, TikTok assisted mode, billing, hardening/load/security review.
-  **Phase 6 core + L2 tool are done**; the conversation wiring is not (see below).
-- **Phase 6 remainder — conversation pipeline**: persist each agent action and its
-  policy decision to the audit log, thread `customer_phone` and the provider message id (as the
-  tool's idempotency key) through the channel → agent → tool path, send the reply through the
-  channel sender respecting the 24h window, and surface `EXECUTE_ORDER` outcomes to the inbox.
-  This is the "L2 transact end-to-end on WhatsApp" acceptance item from the roadmap.
+- **Phases 7–10 are largely unimplemented**: Phase 7a (delivery domain/service) is committed,
+  but the rider WhatsApp flow, delivery API routes (the include is commented out in
+  `apps/api/main.py`; there is no `routes/delivery.py` yet), the POD pay-at-arrival STK
+  trigger and the tracking page are not; then CRM memory/segments/insights, Instagram,
+  onboarding wizard, TikTok assisted mode, billing, hardening/load/security review.
+- **Phase 6 remainder — conversation pipeline: DONE** (Phase 6b landed 2026-10-15, commit
+  `782c04e`; see the Phase 6b section below). L2 order creation is idempotent end-to-end from
+  the webhook to the tool.
 - **Known gap from the payment flow**: when a customer cancels the STK push, the protected
   payment service cancels the order directly and does **not** release the stock reservation.
   The reservation TTL job backstops it (released after expiry) rather than immediately; a
   direct release hook from the payment-cancel path would be cleaner but touches the protected
   zone.
-- **Phase 4 remainder**: a licensed **aggregator provider** (third `PaymentProvider`
-  implementation) plus its settlement-statement feed, and the pay-on-delivery trigger
-  (Phase 7). Status-query fallback, refunds, statement reconciliation, the manual
-  provider and the `httpx` runtime-dependency fix are **done**.
-- **`evals/runner.py`** now runs the real Phase-5 agent and enforces the zero-hallucination
-  invariant. It still scores only Phase-5 capabilities; order/payment assertions are reported
-  as deferred and must be promoted to hard checks when Phase 6 lands.
+- **Phase 4 remainder**: the aggregator provider + per-tenant provider selection are **done**
+  (commit `38d0bdc`); the aggregator's settlement-statement feed and the pay-on-delivery
+  trigger (Phase 7) are still open. Status-query fallback, refunds, statement reconciliation
+  and the manual provider are **done**.
+- **Money-path hardening gaps (2026-10-16, details in `docs/UNCERTAINTY.md` U13–U17)**: no
+  auto-cancel/expiry bound when a deferred cancel leaves an order `awaiting_payment` with
+  `payment_status == failed` indefinitely; a concurrent same-idempotency-key initiate can
+  surface a raw `IntegrityError` 500 (correctness saved by the unique index, but it should be
+  an idempotent replay); the `payment.collected_after_terminal` alert is a log WARNING only
+  (no paging); POD money captured while the order is packed/failed_delivery blocks delivery
+  until a human resolves refund-vs-manual-honour (fail-safe by design) and records **no SELL**
+  (human must reconcile).
+- **`evals/runner.py`** now runs the real agent and enforces the zero-hallucination invariant
+  across **6 active capabilities** (8 cases) including `order_transaction`. Assertions for
+  not-yet-built features (delivery area/fee, `payment_initiated`, …) are still reported as
+  deferred and must be promoted when those features land.
 - **`apps/dashboard`** has no `node_modules` (not installed); `lint-js`/`typecheck-js` are not
   part of `check` and have not been verified.
 - **Makefile db/run targets** (`migrate`, `seed`, `run-api`, `run-worker`) still `cd` into
@@ -236,27 +325,37 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
   `DatabaseSessionMiddleware` exist but are not added in `main.py`; the payments callback
   route sets `app.current_tenant_id` manually. Authenticated routes still rely on the DB
   connection role. To be addressed with a tenancy middleware pass.
-- The whole tree is still largely untracked beyond the few phase commits.
+- The tree is fully tracked (321 files, 19 commits as of 2026-10-16). The only dirty files are
+  the 7-file money-path pass + this docs update (STATE/MAP/UNCERTAINTY), all uncommitted.
 
 ## Risks
 - Two-generation duplication can silently ship wrong tenant/schema behaviour until fully retired
   (ADR 0008 chose the direction; the duplicate Alembic tree still exists under
   `packages/core/alembic/`).
 - Tests are green on the current DB state; hermeticity (per-test reset) was improved but any
-  future DB pollution could reintroduce flakiness. Treat "290 green" as measured, not guaranteed.
+  future DB pollution could reintroduce flakiness. Treat "green" as measured on the day, not
+  guaranteed.
 - Callbacks are acknowledged on unknown checkout ids and uncredited on amount mismatch without
   a retry. The status-query fallback now backstops missing callbacks for failures and
   cancellations, but a provider-reported **success** without a callback has no verifiable
   amount and is routed to human review rather than auto-credited — so genuinely missing money
   still needs operator attention.
-- Full suite wall-clock is ~6 minutes; the shell/tooling default timeout can truncate a run
-  (use ≥10 min when running `make check` locally).
+- A success callback on a terminal order (cancelled/failed_delivery) is captured on the
+  Payment and alerted, but deliberately **not** applied to the order and **not** sold — if the
+  `payment.collected_after_terminal` WARNING is missed (log-only alerting, see UNCERTAINTY),
+  that money sits unreconciled until a human notices.
+- Full suite wall-clock is ~13 minutes (769s measured 2026-10-16); the shell/tooling default
+  timeout can truncate a run (use ≥15 min when running `make check` locally).
 
 ## Next Steps
-1. Phase 6 finish: wire the L2 tool into the conversation pipeline (audit every agent action,
-   pass the provider message id as the idempotency key, send the reply within the 24h window).
-2. Phase 4 finish: aggregator provider + its statement feed.
-3. Phase 7: delivery zones/fees, rider WhatsApp flow, pay-on-delivery trigger, tracking page.
+1. Land the 2026-10-16 money-path hardening: run `uv run ruff format .` (4 files drifted),
+   skeptic review, then commit the 7 changed files; keep UNCERTAINTY U13–U17 honest.
+2. Phase 7 remainder: rider WhatsApp flow (quick replies + location/photo proof), delivery API
+   routes, the POD pay-at-arrival STK trigger, tracking page; then Phases 8–10 per
+   `docs/plans/2026-10-15-program-phases-7-10-dashboard.md`.
+3. Money-path liveness/observability gaps: auto-cancel or expiry bound for orders left
+   `awaiting_payment` by a deferred cancel; idempotent replay for concurrent initiate;
+   page a human on `payment.collected_after_terminal`.
 4. Reconcile docker-compose files; verify `make migrate`/`make run-api` from root; wire tenancy
    middleware into `main.py`.
 ## Phase 6b — conversation pipeline wiring (agent on inbound WhatsApp) (2026-10-15)
