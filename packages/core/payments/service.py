@@ -137,6 +137,14 @@ class PaymentService:
     ) -> Payment:
         """Create an STK push attempt for a payable order."""
         order = await self._get_order(tenant_id, order_id)
+        # B5: an order is charged at most once. Refuse a fresh STK push for an
+        # order that is already paid -- this is especially reachable for
+        # pay-on-delivery, where the order stays out_for_delivery after payment
+        # and would otherwise accept another (double-charging) push.
+        if order.payment_status == "completed":
+            raise OrderNotPayableError(
+                f"Order {order_id} is already paid; refusing another STK push"
+            )
         # Payable: awaiting_payment (prepay) or a pay-on-delivery order already
         # out_for_delivery (STK fires at rider arrival; see is_pod_in_transit).
         if order.status != OrderStatus.AWAITING_PAYMENT.value and not is_pod_in_transit(order):
@@ -363,6 +371,32 @@ class PaymentService:
             return
 
         now = datetime.now(UTC)
+
+        # B5: an order is credited at most once. If a *different* STK attempt
+        # already completed this order, this second successful callback must not
+        # credit it again (double revenue, double sale side effect). Record this
+        # attempt truthfully and flag it for reconciliation/refund instead.
+        if order.payment_status == "completed" or order.paid_at is not None:
+            payment.status = PaymentRecordStatus.COMPLETED
+            payment.mpesa_receipt_number = mpesa_receipt_number
+            payment.completed_at = now
+            payment.metadata_json = {**(payment.metadata_json or {}), "duplicate_payment": True}
+            await self.audit.log_action(
+                tenant_id=payment.tenant_id,
+                user_id=None,
+                action="payment.duplicate_detected",
+                resource="payment",
+                resource_id=payment.id,
+                metadata={
+                    "order_id": str(order.id),
+                    "checkout_request_id": payment.checkout_request_id,
+                    "mpesa_receipt_number": mpesa_receipt_number,
+                    "amount_cents": amount_cents,
+                    "reason": "order already paid; second successful attempt flagged",
+                },
+            )
+            return
+
         payment.status = PaymentRecordStatus.COMPLETED
         payment.mpesa_receipt_number = mpesa_receipt_number
         payment.completed_at = now
@@ -389,7 +423,9 @@ class PaymentService:
                 "mpesa_receipt_number": mpesa_receipt_number,
                 "amount_cents": amount_cents,
             },
-            idempotency_key=f"payment_completed:{payment.id}",
+            # Keyed by order (not payment): the completion is an order-level fact,
+            # so replayed/duplicate attempts collapse to a single outbox event.
+            idempotency_key=f"payment_completed:{order.id}",
             tenant_id=payment.tenant_id,
             session=self.session,
         )

@@ -247,6 +247,70 @@ async def test_duplicate_success_callback_does_not_double_credit(tenant_session,
     assert events.count("payment.completed") == 1
 
 
+async def test_second_stk_attempt_cannot_double_credit_paid_order(
+    tenant_session, tenant
+) -> None:
+    """Two STK attempts for one order: the second success must not credit again."""
+    provider = FakeProvider()
+    order = await _make_order(tenant_session, tenant.id)
+    service = PaymentService(tenant_session, provider)
+
+    first = await service.initiate_stk_payment(
+        tenant_id=tenant.id,
+        order_id=order.id,
+        phone_number=TENANT_PHONE,
+        callback_url="https://example.test/callback",
+        idempotency_key="stk:1",
+    )
+    second = await service.initiate_stk_payment(
+        tenant_id=tenant.id,
+        order_id=order.id,
+        phone_number=TENANT_PHONE,
+        callback_url="https://example.test/callback",
+        idempotency_key="stk:2",
+    )
+
+    # First attempt succeeds.
+    provider.result = _success_result(first.checkout_request_id or "", 500_000)
+    await service.handle_callback(tenant_id=tenant.id, payload={"Body": {}}, headers={})
+    await tenant_session.refresh(order)
+    paid_at = order.paid_at
+
+    # Second attempt also reports success (customer double-charged at M-Pesa).
+    provider.result = _success_result(second.checkout_request_id or "", 500_000)
+    await service.handle_callback(tenant_id=tenant.id, payload={"Body": {}}, headers={})
+
+    await tenant_session.refresh(order)
+    assert order.paid_at == paid_at  # not re-credited
+    events = (await tenant_session.execute(select(Outbox.event_type))).scalars().all()
+    assert events.count("payment.completed") == 1
+
+    await tenant_session.refresh(second)
+    assert second.status == PaymentRecordStatus.COMPLETED
+    assert second.metadata_json.get("duplicate_payment") is True
+
+    actions = (await tenant_session.execute(select(AuditLog.action))).scalars().all()
+    assert "payment.duplicate_detected" in actions
+
+
+async def test_initiate_refuses_stk_for_already_paid_pod_order(tenant_session, tenant) -> None:
+    provider = FakeProvider()
+    order = await _make_order(tenant_session, tenant.id, status=OrderStatus.OUT_FOR_DELIVERY)
+    order.payment_method = PaymentMethod.MPESA_PAY_ON_DELIVERY.value
+    order.payment_status = "completed"
+    await tenant_session.flush()
+
+    service = PaymentService(tenant_session, provider)
+    with pytest.raises(OrderNotPayableError):
+        await service.initiate_stk_payment(
+            tenant_id=tenant.id,
+            order_id=order.id,
+            phone_number=TENANT_PHONE,
+            callback_url="https://example.test/callback",
+            idempotency_key="stk:pod-retry",
+        )
+
+
 # =============================================================================
 # callback: wrong amount
 # =============================================================================
