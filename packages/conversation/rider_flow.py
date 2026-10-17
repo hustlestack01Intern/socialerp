@@ -150,20 +150,30 @@ _REASON_KEYWORDS: tuple[tuple[DeliveryFailureReason, str], ...] = (
 # Negations that must SUPPRESS a positive lifecycle match. "not arrived" cannot
 # mean arrived: a false `arrived` on a POD order fires an M-Pesa prompt to the
 # customer. FAILED phrases are matched first, so "not delivered"/"not done"/
-# "undelivered" (explicit failure reports) are unaffected. A negated positive
-# returns None, so try_handle answers with the quick-reply help menu.
+# "undelivered"/"cannot find" (explicit failure reports) are unaffected. A
+# negated positive returns None, so try_handle answers with the quick-reply
+# help menu. Apostrophe contractions are expanded by `_normalize_text`, so
+# "won't arrive"/"wasn't delivered" both end up containing the "not" token.
 _NEGATIONS: tuple[str, ...] = (
     "not",
-    "haven t",
-    "hasn t",
-    "didn t",
+    "cannot",
     "bado",  # Swahili "not yet"
 )
 
 
 def _normalize_text(text: str) -> str:
-    """Lowercase and reduce to space-separated alphanumerics (emoji-safe)."""
-    return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+    """Lowercase, expand apostrophe contractions, strip to word tokens.
+
+    Contraction expansion is what lets a single "not" token catch "won't",
+    "wasn't", "haven't", "didn't", … Without it, "won't arrive" would match the
+    positive "arrive" keyword and wrongly transition the delivery. Only
+    apostrophe forms are expanded, so bare "cant find" keeps matching its
+    explicit FAILED keyword unchanged.
+    """
+    lowered = text.lower().replace("can't", "cannot")
+    lowered = lowered.replace("won't", "will not").replace("shan't", "shall not")
+    lowered = re.sub(r"(\w+)n't\b", r"\1 not", lowered)  # haven't → have not, …
+    return re.sub(r"[^a-z0-9]+", " ", lowered).strip()
 
 
 def _contains(haystack: str, phrase: str) -> bool:

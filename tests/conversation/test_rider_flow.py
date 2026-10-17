@@ -31,13 +31,17 @@ def test_negated_positive_does_not_transition() -> None:
         "not picked up",
         "haven't picked up yet",
         "bado nimefika",
+        "can't arrive",
+        "cannot arrive",
+        "won't arrive",
+        "didn't arrive",
     ):
         assert rider_flow.parse_rider_command(text) is None, text
 
 
 def test_failure_reports_still_parse_under_negation_guard() -> None:
     """Explicit failure reports (which read like negations) must still fail."""
-    for text in ("not delivered", "undelivered", "not done", "no answer"):
+    for text in ("not delivered", "undelivered", "not done", "no answer", "wasn't delivered"):
         cmd = rider_flow.parse_rider_command(text)
         assert cmd is not None and cmd.action == "failed", text
 
