@@ -1,73 +1,56 @@
 # Project State
 
-> State of record. Updated 2026-10-17 by the scribe after the **rider WhatsApp quick-reply flow +
-> U19 money-path concurrency fix** increment was COMMITTED (slices `b3e8571`/`aec992b`/`7102d1c`)
-> plus a router negation-guard fix found in review. It sits on top of the Phase 7b delivery-API
-> increment and the same-day money-path hardening session. If this contradicts MAP.md or the
-> filesystem, check `git log` and `docs/plans/`.
+> State of record. Updated 2026-10-17 by the scribe after the **Phase 7 remainder** increment
+> (public order tracking page + durable owner alerts) was COMMITTED in three slices
+> (`814b4b8` tracking, `726a00f` owner alerts, `02fbba7` skeptic-review hardening). It sits on
+> top of the rider-flow + U19 money-path increment and the Phase 7b delivery-API increment.
+> If this contradicts MAP.md or the filesystem, check `git log` and `docs/plans/`.
 
 ## Current Phase
-**Rider WhatsApp quick-reply flow + U19 arrival concurrency fix — COMMITTED 2026-10-17**
-(slices `b3e8571` provider extraction, `aec992b` rider flow + worker wiring, `7102d1c` U19 lock;
-router contraction fix `a93127d`).
-A review pass before commit found and fixed a router negation bug: "not arrived" parsed as
-`arrived` and "not picked up" as `picked_up` — on a POD order a false `arrived` fires an M-Pesa
-prompt to the customer. A negation guard now suppresses those — including apostrophe contractions
-(`_normalize_text` expands "won't arrive"/"wasn't delivered"/"can't arrive" so one "not" token
-catches them; commit `a93127d`), while explicit failure reports like
-"not delivered"/"not done"/"undelivered"/"no answer" still parse as failed; tests in
-`tests/conversation/test_rider_flow.py`. **Lesson recorded in LEARNINGS.md:** the first @skeptic
-report was largely hallucinated code (it described functions that don't exist), so subagent claims
-must be verified line-by-line — a second, quote-required skeptic pass then found the real residual
-contraction gap.
-`packages/conversation/rider_flow.py` handles a rider's inbound text with a deterministic
-EN/SW keyword router (`picked up`/`arrived`/`delivered`/`failed <reason>`/`status`) driving the
-delivery FSM — no LLM. The worker (`apps/worker/main.py::handle_inbound_message`) tries the rider
-flow first and falls through to the customer agent for non-riders; a rider with nothing in flight
-who sends plain text also falls through. Replies are persisted as outbound `WhatsAppMessage` rows
-(`metadata_json.rider_flow`). **POD collection is deferred**: an `arrived` on a POD+unpaid order
-only sets `collection_due`; the worker commits, then calls `trigger_pod_collection` in a *fresh*
-transaction using idempotency key `delivery:{delivery_id}:arrived` — so an at-least-once retry
-cannot double-prompt the customer (skeptic B2). A rider's `delivered` on a POD order can't attach
-the required proof photo over text, so it is answered with `POD_NEEDS_SHOP` (skeptic B1;
-UNCERTAINTY U26/U27). Provider resolution moved to `packages/integrations/provider_resolver.py`,
-shared by the API and the worker.
+**Phase 7 remainder — public tracking + owner alerts — COMMITTED 2026-10-17**
+(`814b4b8`, `726a00f`, `02fbba7`). Phase 7 (delivery) is now feature-complete for its planned
+scope: zones/fees, rider WhatsApp quick replies, POD STK trigger, delivery API, tracking page
+and owner alerting all exist and are tested. Remaining Phase 7 residuals are the honest gaps
+U22/U25/U26/U27/U29 (see UNCERTAINTY.md).
 
-**U19 (money-path concurrency) RESOLVED.** `DeliveryRepository.get_delivery(..., for_update=True)`
-holds the delivery row `FOR UPDATE`; `DeliveryService.mark_arrived(..., lock=True)` (used by both
-the API arrival route and the rider flow) serializes concurrent arrivals so exactly one STK push
-fires; the POD STK itself is fired post-commit in a fresh transaction so the lock is never held
-across the network call. `latest_active_for_rider` orders deterministically
-(`created_at DESC, id DESC`). `create_rider` normalizes the phone (U21); duplicate zone/rider now
-return 409 not 500 (U20); a cross-tenant delivery test fails closed (U23, reduced).
+- **Public order tracking** (`packages/core/delivery/tracking.py`, `apps/api/routes/tracking.py`):
+  `GET /api/v1/tracking/{order_id}` (JSON) and `GET /tracking/{order_id}` (self-contained HTML)
+  are PUBLIC and deliberately PII-free — order status, delivery status, zone name, payment
+  method and a timestamped timeline only; never customer name/phone/address, never rider
+  identity/location. Unknown order → 404; malformed id → 422. Tests seed conspicuous PII and
+  assert it (plus a normalised-phone regex) never appears. **Known deviation:** the lookup has no
+  tenant context, so it does NOT fail closed for a foreign order UUID — a capability-URL design,
+  tracked as **U29** (the Phase 7 plan AC is amended to record this).
+- **Durable owner alerts** (`packages/core/alerts/`, `packages/core/models/alert.py`, migration
+  `0011_owner_alerts`): the worker's `payment.collected_after_terminal` handler now persists a
+  CRITICAL, acknowledgeable `owner_alerts` row (dedupe `payment_collected_after_terminal:{order_id}`)
+  in addition to the log line, so money captured on a non-collectable order survives log rotation
+  (U15 partially resolved). `GET /api/v1/alerts` + `POST /api/v1/alerts/{id}/ack` are
+  tenant-scoped; `owner_alerts` carries RLS (policy + grants in 0011, policy in the test schema)
+  and has a dedicated non-owner-role RLS test. `raise_alert` is idempotent per dedupe key AND
+  race-safe (savepoint absorbs a lost race), with a test proving the unique-constraint backstop.
 
-This sits on the same-day **money-path hardening pass (2026-10-16, committed `ef95e4a`)** and the
-**Phase 7b delivery API + POD arrival→STK trigger (committed `0bb16be`)**: `apps/api/routes/delivery.py`
-is registered in `apps/api/main.py` and exposes tenant-scoped zone/rider CRUD, dispatch, delivery
-transitions and list/get. `DeliveryService.mark_failed` guards the ORDER transition on the
-PREVIOUS delivery status. The FSM edges it depends on are recorded in ADR 0015 + ADR 0006.
-Deficiencies are tracked honestly in UNCERTAINTY U13–U27 (U19–U21 resolved this session; U25–U27
-are the new rider-flow items). Phase 7 remainder (tracking page, owner alerting) + Phases 8–10 +
-owner dashboard are planned in `docs/plans/2026-10-15-program-phases-7-10-dashboard.md`.
 
-## Measured Results (real output, 2026-10-17, after commit of rider-flow + U19 + negation-guard fix)
+## Measured Results (real output, 2026-10-17, after commit `02fbba7` Phase 7 remainder)
 | Gate | Command | Result |
 |---|---|---|
 | Lint | `uv run ruff check .` | **All checks passed!** |
-| Format | `uv run ruff format --check .` | **248 files already formatted** |
-| Types | `uv run mypy packages apps` (strict) | **Success: no issues found in 93 source files** |
-| Tests | `uv run pytest` (via `make check`) | **529 passed, 154 warnings in 534.18s (0:08:54)** |
+| Format | `uv run ruff format --check .` | **255 files already formatted** |
+| Types | `uv run mypy packages apps` (strict) | **Success: no issues found in 100 source files** |
+| Tests | `uv run pytest` (via `make check`) | **545 passed, 154 warnings in 760.47s (0:12:40)** |
 | Evals | `uv run python -m evals.runner` | **8/8 cases pass; wrong-price/stock hallucinations: 0** |
 | Full gate | `make check` | **✅ All checks passed! (EXIT=0)** |
 
-New tests this session: `tests/delivery/test_delivery_api.py` (U19 lock proof + barriered concurrent
-arrival; duplicate zone/rider → 409; invalid rider phone → 422; cross-tenant → 404/empty list),
-`tests/conversation/test_rider_flow.py` (router), `tests/conversation/test_rider_flow_service.py`
-(picked_up/arrived/failed/inactive/fall-through/POD flag/second-arrival rejection/local-format
-lookup/transcript), `tests/conversation/test_pod_collection.py` (post-commit STK, idempotent replay,
-paid/prepay/missing-callback-URL/missing-delivery guards), `tests/conversation/test_worker_inbound.py`
-(rider bypasses agent; POD arrival triggers collection only after commit; replayed arrival prompts
-once).
+New tests this increment (Phase 7 remainder): `tests/delivery/test_tracking.py` (5: 404 unknown
+JSON+HTML, status/zone/timeline exposed, no-PII + normalised-phone regex on both JSON and HTML,
+no-delivery order, malformed id 422), `tests/alerts/test_alerts.py` (7: dedupe idempotency,
+no-key always inserts, acknowledge idempotent + records `acknowledged_at`/`acknowledged_by`,
+unique-constraint backstop, concurrent-race collapse, API list+ack+status filter,
+foreign-tenant 404, worker handler replay-safe, worker PII via a real seeded customer),
+`tests/alerts/test_alerts_rls.py` (2: cross-tenant read isolated, cross-tenant insert blocked).
+Prior measurement (2026-10-17, rider flow + U19): 529 passed; before that 541 intermediate,
+493 (2026-10-16), 448 (Slice 0 / Phase 4 remainder).
+
 
 Prior measurement (2026-10-16, Phase 7b + money-path hardening): ruff clean, mypy 91 files,
 `make check` all green. Prior: Phase 4 remainder (aggregator + provider selection): 448 tests, evals 8/8.
@@ -346,11 +329,14 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
   test for zone/rider/dispatch routes and `TenantContextMiddleware` not registered in main.py so RLS
   is inert on the API path (delivery queries are tenant_id-scoped); (U24) duplicate/invalid path
   UUIDs and unauthenticated access are not explicitly tested for these routes. (See UNCERTAINTY.md)
-- **Phases 7–10 remainder:** rider WhatsApp quick-reply flow + POD trigger **DONE** (committed
-  2026-10-16/17); remaining in Phase 7: rider location/photo proof, tracking page, owner alerting;
-  then CRM memory/segments/insights, Instagram, onboarding wizard, TikTok assisted mode,
-  billing, hardening/load/security review. (POD trigger is DONE in 7b; pay-on-delivery completion gates
-  still rely on existing payment callback path.)
+- **Phases 7–10 remainder:** Phase 7 (delivery) **DONE** — zones/fees, rider WhatsApp quick
+  replies, POD trigger, delivery API, public tracking page and owner alerting all committed
+  2026-10-16/17. Honest Phase 7 residuals remain open: U22 (re-arrival key reuse), U25 (POD
+  callback URL must be explicit in prod), U26/U27 (no in-chat POD close / no media ingestion),
+  U29 (tracking does not fail closed cross-tenant). Next: Phase 8 CRM memory/segments/insights
+  + owner WhatsApp console, then Phase 9 Instagram + onboarding wizard, Phase 10 TikTok
+  assisted mode + billing + hardening, plus the owner dashboard
+  (`docs/plans/2026-10-15-program-phases-7-10-dashboard.md`).
 - **Phase 6 remainder — conversation pipeline: DONE** (Phase 6b landed 2026-10-15, commit
   `782c04e`; see the Phase 6b section below). L2 order creation is idempotent end-to-end from
   the webhook to the tool.
@@ -386,10 +372,9 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
   `DatabaseSessionMiddleware` exist but are not added in `main.py`; the payments callback
   route sets `app.current_tenant_id` manually. Authenticated routes still rely on the DB
   connection role. To be addressed with a tenancy middleware pass.
-- Working tree as of 2026-10-17: the rider-flow + U19 increment is **COMMITTED** (`b3e8571`,
-  `aec992b`, `7102d1c`) and the router negation guard + 3 tests are included in `aec992b`.
-  Only docs (this file, MAP, UNCERTAINTY, LEARNINGS) were pending at the time of the gate run
-  and are committed alongside.
+- Working tree as of 2026-10-17: the Phase 7 remainder increment is **COMMITTED**
+  (`814b4b8` tracking, `726a00f` owner alerts, `02fbba7` skeptic-review hardening). Docs
+  (this file, MAP, UNCERTAINTY) updated in a following docs commit.
 
 ## Risks
 - Two-generation duplication can silently ship wrong tenant/schema behaviour until fully retired
@@ -404,24 +389,27 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
   amount and is routed to human review rather than auto-credited — so genuinely missing money
   still needs operator attention.
 - A success callback on a terminal order (cancelled/failed_delivery) is captured on the
-  Payment and alerted, but deliberately **not** applied to the order and **not** sold — if the
-  `payment.collected_after_terminal` WARNING is missed (log-only alerting, see UNCERTAINTY),
-  that money sits unreconciled until a human notices.
+  Payment and alerted, but deliberately **not** applied to the order and **not** sold — the
+  money sits unreconciled until a human resolves refund-vs-honour. As of 2026-10-17 the alert is
+  a DURABLE `owner_alerts` row (survives log rotation, visible at `GET /api/v1/alerts`), but there
+  is still no push/notification channel, so an owner who never opens the dashboard can still miss
+  it (U15).
 - Full suite wall-clock is ~13 minutes (769s measured 2026-10-16); the shell/tooling default
   timeout can truncate a run (use ≥15 min when running `make check` locally).
 
 ## Next Steps
-1. ~~Agent + commit this increment~~ **DONE 2026-10-17** (3 slices + docs; negation-guard fix
-   included; see LEARNINGS.md for the skeptic-hallucination lesson).
-2. Phase 7 remainder: tracking page (public, no PII) + owner alerting; then Phases 8–10 per
-   `docs/plans/2026-10-15-program-phases-7-10-dashboard.md` (delivery API + POD trigger + rider
-   quick replies are DONE; address the rider-flow residual gaps U25–U27).
-3. Money-path liveness/observability gaps: auto-cancel or expiry bound for orders left
+1. ~~Agent + commit the Phase 7 remainder (tracking page + owner alerts)~~ **DONE 2026-10-17**
+   (`814b4b8`, `726a00f`, `02fbba7`; skeptic review applied; U29 recorded).
+2. **Phase 8 — CRM memory, segments, owner insights, owner WhatsApp console** per
+   `docs/plans/2026-10-15-program-phases-7-10-dashboard.md` (plan the slice first, tests-first).
+3. Phase 9 — Instagram channel + 30-minute instrumented onboarding wizard; Phase 10 — TikTok
+   assisted mode (flagged), billing, hardening/load/security review; owner dashboard.
+4. Money-path liveness/observability gaps: auto-cancel or expiry bound for orders left
    `awaiting_payment` by a deferred cancel (U13); idempotent replay for concurrent initiate (U14);
-   page a human on `payment.collected_after_terminal` (U15); partial unique index for single
-   completion (U18).
-4. Reconcile docker-compose files; verify `make migrate`/`make run-api` from root; wire tenancy
-   middleware into `main.py` (U23).
+   push/paging on `payment.collected_after_terminal` (U15 — durability done, notification open);
+   partial unique index for single completion (U18).
+5. Reconcile docker-compose files; verify `make migrate`/`make run-api` from root; wire tenancy
+   middleware into `main.py` (U23) — and wire the public tracking path deliberately (U29).
 ## Phase 6b — conversation pipeline wiring (agent on inbound WhatsApp) (2026-10-15)
 - **ADR 0014** (`docs/adr/0014-agent-conversation-pipeline.md`): outbox→worker pipeline; webhook
   enqueues `inbound_message` event with `provider_message_id`, `conversation_id`, `contact_id`,

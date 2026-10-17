@@ -19,7 +19,8 @@ socialerp/
 │   │   ├── security/  # HMAC, encryption, injection defense, PII redaction
 │   │   ├── orders/    # OrderService (reserve/sell/cancel/expiry), FSM transitions, `is_order_paid`
 │   │   ├── payments/  # PaymentService (protected zone): STK flows, callbacks, reconciliation
-│   │   └── delivery/  # DeliveryService: zones, riders, dispatch FSM, POD gates (API: routes/delivery.py; arrived→STK)
+│   │   ├── alerts/    # AlertService: durable, deduped, tenant-scoped owner alerts (RLS 0011)
+│   │   └── delivery/  # DeliveryService: zones, riders, FSM, POD gates + tracking projection (no PII)
 │   ├── integrations/  # External API clients and fakes
 │   │   ├── meta/      # WhatsApp/Instagram Graph API client
 │   │   │   ├── webhook.py        # Webhook receiver + signature verification
@@ -132,7 +133,9 @@ apps/api: Order created → outbox `order.created` + ACTIVE reservation rows
         → success but order is neither awaiting_payment nor POD out_for_delivery?
           CAPTURE on Payment (metadata collected_after_terminal=True),
           order left untouched, outbox payment.collected_after_terminal
-          → worker logs WARNING alert (human: refund vs manual honour)
+          → worker persists a DURABLE CRITICAL owner_alert row (dedupe
+            payment_collected_after_terminal:{order_id}) + logs WARNING
+            (human: refund vs manual honour; GET /api/v1/alerts; U15)
         → otherwise: collect on the order (payment_status = completed) →
             prepay: awaiting_payment → paid (FSM transition)
             POD in transit: paid_at recorded, status unchanged (paid comes
@@ -182,6 +185,30 @@ WhatsApp → webhook → outbox `inbound_message:{provider_message_id}`
         → non-rider / inactive-rider / no-active-delivery fall through to the customer agent
 ```
 
+### Public Order Tracking (no auth; PII-free; capability URL by order UUID)
+```
+GET /api/v1/tracking/{order_id}   → JSON projection (agent/dashboard embed)
+GET /tracking/{order_id}          → self-contained HTML status page
+    → build_tracking(session, order_id): order status + delivery status + zone name
+      + payment method + timestamped timeline
+    → EXCLUDES customer name/phone/address and rider identity/location (ADR-ish; no PII)
+    → unknown order → 404; malformed id → 422
+    → NOTE: no tenant context → does NOT fail closed for a foreign order UUID (U29,
+      capability-URL design; fix = signed tracking token or SECURITY DEFINER lookup)
+```
+
+### Owner Alerts (durable, tenant-scoped, acknowledgeable)
+```
+Any handler/service → AlertService.raise_alert(tenant_id, kind, severity, title,
+      body, dedupe_key?) → owner_alerts row (idempotent per (tenant_id, dedupe_key);
+      race-safe via savepoint; audit alert.raised)
+GET  /api/v1/alerts?status=open   → this tenant's alerts, newest first
+POST /api/v1/alerts/{id}/ack      → OPEN → ACKNOWLEDGED (records acknowledged_at/by; audit)
+worker handle_payment_collected_after_terminal → raise_alert(CRITICAL,
+      dedupe payment_collected_after_terminal:{order_id})
+RLS: migration 0011 (policy + socialerp_app grants); dedicated non-owner-role RLS test
+```
+
 ### Stock Movement (Event Sourcing)
 ```
 Any stock change → StockMovementRecorded event (immutable)
@@ -229,16 +256,22 @@ Inbound → Webhook → MessageReceived → ConversationManager
 15. **packages/core/payments/service.py** - PaymentService and the money-path guards
 16. **apps/api/routes/delivery.py** - delivery/zones/riders routes + the arrive→STK POD trigger
 17. **packages/conversation/rider_flow.py** - rider quick replies + `trigger_pod_collection`
+18. **packages/core/delivery/tracking.py + apps/api/routes/tracking.py** - public PII-free tracking
+19. **packages/core/alerts/** + **apps/api/routes/alerts.py** - durable owner alerts (0011 RLS)
 
-## Current Phase: Phase 7b done in tree; money-path hardening + delivery API/POD trigger (uncommitted)
+## Current Phase: Phase 7 (delivery) DONE; next is Phase 8 (CRM memory + owner console)
 - M0: Scaffold, tooling, CI, docs, fake Meta/Daraja servers ✓
 - M1: Multi-tenant core, auth, RLS, audit log, isolation tests ✓
 - M2: WhatsApp channel (webhooks, signature verification, 24h window, inbox, handoff) ✓
 - M3: Catalog, stock ledger, orders ✓
 - M4: Payments, reconciliation ✓ (daraja + aggregator + manual providers, refunds, statements)
 - M5: Agent L0/L1, evals, policy, injection defenses ✓
-- M6: L2 transact end-to-end ✓ (conversation pipeline ADR 0014; gate green: 493 tests, evals 8/8);
+- M6: L2 transact end-to-end ✓ (conversation pipeline ADR 0014; gate green: 545 tests, evals 8/8);
   pilot checklist ☐
-- Phase 7: delivery domain/service + POD FSM edges ✓ (ADR 0015, migration 0010); delivery API routes + POD pay-at-arrival STK trigger ✓ (Phase 7b, committed `0bb16be`); rider WhatsApp quick-reply flow ✓ (`packages/conversation/rider_flow.py`, committed `aec992b`); tracking page, owner alerting ☐
-- Phases 8–10 (CRM, Instagram, onboarding, TikTok, billing, hardening) ☐
+- Phase 7: delivery domain/service + POD FSM edges ✓ (ADR 0015, migration 0010); delivery API routes
+  + POD pay-at-arrival STK trigger ✓ (Phase 7b, committed `0bb16be`); rider WhatsApp quick-reply
+  flow ✓ (`aec992b`); public tracking page ✓ (`814b4b8`); durable owner alerts ✓ (`726a00f`,
+  hardened `02fbba7`). Residuals U22/U25/U26/U27/U29 open.
+- Phases 8–10 (CRM memory/segments/insights + owner console, Instagram, onboarding, TikTok,
+  billing, hardening) ☐
 - GATE G1: Human decision
