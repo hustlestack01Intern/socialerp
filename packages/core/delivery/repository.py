@@ -100,11 +100,15 @@ class DeliveryRepository:
         await self.session.flush()
         return delivery
 
-    async def get_delivery(self, tenant_id: UUID, delivery_id: UUID) -> Delivery | None:
+    async def get_delivery(
+        self, tenant_id: UUID, delivery_id: UUID, *, for_update: bool = False
+    ) -> Delivery | None:
         stmt = select(Delivery).where(
             Delivery.tenant_id == tenant_id,
             Delivery.id == delivery_id,
         )
+        if for_update:
+            stmt = stmt.with_for_update()
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
     async def get_delivery_by_order(self, tenant_id: UUID, order_id: UUID) -> Delivery | None:
@@ -127,6 +131,30 @@ class DeliveryRepository:
             ]),
         )
         return (await self.session.execute(stmt)).scalar_one_or_none()
+
+    async def latest_active_for_rider(self, tenant_id: UUID, rider_id: UUID) -> Delivery | None:
+        """The delivery a rider is currently working, newest first.
+
+        "Active" here means assigned or picked_up or arrived (not failed: a
+        failed attempt is parked for owner triage/retry). Riders normally carry
+        one job at a time; when more exist the most recent is chosen, and the
+        delivery FSM still rejects an out-of-order quick reply.
+        """
+        stmt = (
+            select(Delivery)
+            .where(
+                Delivery.tenant_id == tenant_id,
+                Delivery.rider_id == rider_id,
+                Delivery.status.in_([
+                    DeliveryStatus.ASSIGNED.value,
+                    DeliveryStatus.PICKED_UP.value,
+                    DeliveryStatus.ARRIVED.value,
+                ]),
+            )
+            .order_by(Delivery.created_at.desc(), Delivery.id.desc())
+            .limit(1)
+        )
+        return (await self.session.execute(stmt)).scalars().first()
 
     async def list_deliveries(
         self, tenant_id: UUID, *, status: str | None = None, rider_id: UUID | None = None

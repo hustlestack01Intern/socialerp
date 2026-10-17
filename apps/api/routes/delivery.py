@@ -32,6 +32,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from socialerp.settings import get_settings
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.routes.payments import get_tenant_payment_provider
@@ -191,7 +192,12 @@ async def create_zone(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ZoneView:
     service = DeliveryService(db)
-    zone = await service.create_zone(tenant_id, name=body.name, fee_cents=body.fee_cents)
+    try:
+        zone = await service.create_zone(tenant_id, name=body.name, fee_cents=body.fee_cents)
+    except IntegrityError as exc:
+        # Same zone name already exists for this tenant.
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="A zone with this name already exists") from exc
     await db.commit()
     return _zone(zone)
 
@@ -236,7 +242,18 @@ async def create_rider(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> RiderView:
     service = DeliveryService(db)
-    rider = await service.create_rider(tenant_id, phone=body.phone, name=body.name)
+    try:
+        rider = await service.create_rider(tenant_id, phone=body.phone, name=body.name)
+    except ValueError as exc:
+        # Invalid Kenyan MSISDN; the rider flow matches on the normalized form.
+        await db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        # Same normalized phone already has a rider for this tenant.
+        await db.rollback()
+        raise HTTPException(
+            status_code=409, detail="A rider with this phone already exists"
+        ) from exc
     await db.commit()
     return _rider(rider)
 
@@ -352,7 +369,9 @@ async def mark_arrived(
     """
     service = DeliveryService(db)
     try:
-        delivery = await service.mark_arrived(tenant_id, delivery_id)
+        # lock=True holds the delivery row (FOR UPDATE) for this whole request,
+        # serializing concurrent arrivals so exactly one STK push can fire.
+        delivery = await service.mark_arrived(tenant_id, delivery_id, lock=True)
     except (IllegalDeliveryTransitionError, IllegalTransitionError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except DeliveryError as exc:

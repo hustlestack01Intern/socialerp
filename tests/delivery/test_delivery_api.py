@@ -8,6 +8,7 @@ when a rider marks "arrived".
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncGenerator
 from typing import Any
 from uuid import UUID, uuid4
@@ -35,6 +36,11 @@ class _FakeProvider:
 
     async def initiate_stk_push(self, request: Any) -> STKPushResponse:
         self.pushes.append(request)
+        # Hold the (only) in-flight request open briefly so a concurrent
+        # arrival is guaranteed to reach its locking SELECT before this
+        # request commits. Without the row lock both would push; with it the
+        # second blocks, re-reads `arrived`, and is rejected.
+        await asyncio.sleep(0.05)
         n = len(self.pushes)
         return STKPushResponse(
             checkout_request_id=f"ws_CO_{n}",
@@ -374,3 +380,117 @@ async def test_prepay_arrival_never_resolves_a_provider(
     arrived = await plain_client.post(f"/api/v1/delivery/deliveries/{delivery_id}/arrived")
     assert arrived.status_code == 200, arrived.text
     assert arrived.json()["stk"] is None
+
+
+async def test_arrival_is_once_only(delivery_client: AsyncClient, session_factory, tenant) -> None:
+    order_id = await _seed_order(delivery_client, session_factory, tenant, status="packed")
+    zone_id, rider_id = await _make_zone_and_rider(delivery_client)
+    dispatched = await delivery_client.post(
+        f"/api/v1/delivery/orders/{order_id}/dispatch",
+        json={"rider_id": rider_id, "zone_id": zone_id},
+    )
+    delivery_id = dispatched.json()["id"]
+    await delivery_client.post(f"/api/v1/delivery/deliveries/{delivery_id}/picked-up")
+
+    first = await delivery_client.post(f"/api/v1/delivery/deliveries/{delivery_id}/arrived")
+    assert first.status_code == 200, first.text
+
+    second = await delivery_client.post(f"/api/v1/delivery/deliveries/{delivery_id}/arrived")
+    assert second.status_code == 409
+
+
+async def test_concurrent_arrivals_fire_exactly_one_stk(
+    delivery_client: AsyncClient, session_factory, tenant, fake_provider
+) -> None:
+    """Two simultaneous arrivals must not double-push STK (U19).
+
+    Each ASGI request gets its own DB session, so the delivery-row FOR UPDATE in
+    the route is what serializes them: one 200, one 409, one provider call.
+    """
+    order_id = await _seed_order(
+        delivery_client, session_factory, tenant, status="packed", payment_method="mpesa_pod"
+    )
+    zone_id, rider_id = await _make_zone_and_rider(delivery_client)
+    dispatched = await delivery_client.post(
+        f"/api/v1/delivery/orders/{order_id}/dispatch",
+        json={"rider_id": rider_id, "zone_id": zone_id},
+    )
+    delivery_id = dispatched.json()["id"]
+    await delivery_client.post(f"/api/v1/delivery/deliveries/{delivery_id}/picked-up")
+
+    r1, r2 = await asyncio.gather(
+        delivery_client.post(f"/api/v1/delivery/deliveries/{delivery_id}/arrived"),
+        delivery_client.post(f"/api/v1/delivery/deliveries/{delivery_id}/arrived"),
+    )
+    assert sorted([r1.status_code, r2.status_code]) == [200, 409], (r1.text, r2.text)
+    assert len(fake_provider.pushes) == 1
+
+
+async def test_duplicate_zone_name_returns_409(delivery_client: AsyncClient) -> None:
+    first = await delivery_client.post(
+        "/api/v1/delivery/zones", json={"name": "Karen", "fee_cents": 30000}
+    )
+    assert first.status_code == 201, first.text
+    dup = await delivery_client.post(
+        "/api/v1/delivery/zones", json={"name": "Karen", "fee_cents": 35000}
+    )
+    assert dup.status_code == 409, dup.text
+
+
+async def test_duplicate_rider_phone_returns_409(delivery_client: AsyncClient) -> None:
+    first = await delivery_client.post(
+        "/api/v1/delivery/riders", json={"phone": "254733333333", "name": "Rider C"}
+    )
+    assert first.status_code == 201, first.text
+    # A different spelling of the same MSISDN normalizes to the same value.
+    dup = await delivery_client.post(
+        "/api/v1/delivery/riders", json={"phone": "0733 333 333", "name": "Rider C2"}
+    )
+    assert dup.status_code == 409, dup.text
+
+
+async def test_invalid_rider_phone_returns_422(delivery_client: AsyncClient) -> None:
+    resp = await delivery_client.post(
+        "/api/v1/delivery/riders", json={"phone": "not-a-phone", "name": "Bad"}
+    )
+    assert resp.status_code == 422, resp.text
+
+
+async def test_delivery_is_tenant_scoped(
+    delivery_client: AsyncClient, session_factory, tenant
+) -> None:
+    """A delivery created by tenant A is invisible to tenant B."""
+    from socialerp.tenancy import Tenant
+
+    order_id = await _seed_order(delivery_client, session_factory, tenant, status="packed")
+    zone_id, rider_id = await _make_zone_and_rider(delivery_client)
+    dispatched = await delivery_client.post(
+        f"/api/v1/delivery/orders/{order_id}/dispatch",
+        json={"rider_id": rider_id, "zone_id": zone_id},
+    )
+    assert dispatched.status_code == 201, dispatched.text
+    delivery_id = dispatched.json()["id"]
+
+    async with session_factory() as session, session.begin():
+        other = Tenant(
+            id=uuid4(),
+            name="Other Business",
+            slug=f"other-biz-{uuid4().hex[:8]}",
+            owner_phone="254799999999",
+            owner_email="other@example.com",
+            is_active=True,
+            settings={},
+        )
+        session.add(other)
+        await session.flush()
+        other_id = other.id
+
+    app.dependency_overrides[get_current_tenant_id] = lambda: other_id
+    try:
+        seen = await delivery_client.get(f"/api/v1/delivery/deliveries/{delivery_id}")
+        assert seen.status_code == 404, seen.text
+        listed = await delivery_client.get("/api/v1/delivery/deliveries")
+        assert listed.status_code == 200
+        assert listed.json()["items"] == []
+    finally:
+        app.dependency_overrides[get_current_tenant_id] = lambda: tenant.id

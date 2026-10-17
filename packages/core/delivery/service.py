@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from packages.core.audit.logger import AuditLogger
 from packages.core.delivery.repository import DeliveryRepository
+from packages.core.domain import CustomerPhone
 from packages.core.domain.delivery import (
     DeliveryFailureReason,
     DeliveryStatus,
@@ -140,7 +141,11 @@ class DeliveryService:
     # -- riders -------------------------------------------------------------
 
     async def create_rider(self, tenant_id: UUID, *, phone: str, name: str) -> Rider:
-        rider = Rider(tenant_id=tenant_id, phone=phone, name=name, active=True)
+        # Normalize to 2547XXXXXXXX/2541XXXXXXXX so a rider's WhatsApp sender id
+        # matches the stored phone exactly (the rider flow looks riders up by
+        # the inbound number). Invalid numbers raise ValueError → 422.
+        normalized = CustomerPhone.from_raw(phone).value
+        rider = Rider(tenant_id=tenant_id, phone=normalized, name=name, active=True)
         await self.deliveries.add_rider(rider)
         await self.audit.log_action(
             tenant_id=tenant_id,
@@ -148,7 +153,7 @@ class DeliveryService:
             action="delivery.rider_created",
             resource="rider",
             resource_id=rider.id,
-            after={"phone": phone, "name": name},
+            after={"phone": normalized, "name": name},
         )
         return rider
 
@@ -252,8 +257,14 @@ class DeliveryService:
         )
         return delivery
 
-    async def mark_arrived(self, tenant_id: UUID, delivery_id: UUID) -> Delivery:
-        delivery = await self._get_delivery(tenant_id, delivery_id)
+    async def mark_arrived(
+        self, tenant_id: UUID, delivery_id: UUID, *, lock: bool = False
+    ) -> Delivery:
+        # `lock=True` takes the delivery row FOR UPDATE for the caller's whole
+        # transaction. The arrival handler holds it across the POD STK trigger,
+        # so two concurrent arrivals serialize: the loser re-reads `arrived` and
+        # the FSM rejects it, instead of both firing an STK push.
+        delivery = await self._get_delivery(tenant_id, delivery_id, for_update=lock)
         self._transition_delivery(delivery, DeliveryStatus.ARRIVED)
         delivery.arrived_at = datetime.now(UTC)
         await self.audit.log_action(
@@ -395,8 +406,10 @@ class DeliveryService:
             raise OrderNotFoundError(f"Order {order_id} not found")
         return order
 
-    async def _get_delivery(self, tenant_id: UUID, delivery_id: UUID) -> Delivery:
-        delivery = await self.deliveries.get_delivery(tenant_id, delivery_id)
+    async def _get_delivery(
+        self, tenant_id: UUID, delivery_id: UUID, *, for_update: bool = False
+    ) -> Delivery:
+        delivery = await self.deliveries.get_delivery(tenant_id, delivery_id, for_update=for_update)
         if delivery is None:
             raise DeliveryError(f"Delivery {delivery_id} not found")
         return delivery
