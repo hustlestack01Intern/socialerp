@@ -28,12 +28,14 @@ socialerp/
 │   │   ├── daraja/    # Safaricom Daraja STK Push client
 │   │   ├── aggregator/  # Payment aggregator client + factory + webhook (Pesapal-style)
 │   │   ├── manual/      # Pay-to-Till-and-confirm manual provider
+│   │   ├── provider_resolver.py  # Shared per-tenant PaymentProvider resolution (API + worker)
 │   │   ├── fake_meta/    # Fake Meta server (M0)
 │   │   └── fake_daraja/  # Fake Daraja server (M0)
 │   ├── conversation/  # Unified inbox + handoff
 │   │   ├── manager.py       # Conversation state + inbox
 │   │   ├── handoff.py       # Human handoff workflow
-│   │   └── agent_service.py # Inbound WhatsApp → agent → reply pipeline (ADR 0014)
+│   │   ├── agent_service.py # Inbound WhatsApp → agent → reply pipeline (ADR 0014)
+│   │   └── rider_flow.py    # Rider quick-reply FSM (no LLM) + post-commit POD STK trigger
 │   └── agent/         # LLM gateway, prompts, tools, policy, evals
 ├── infra/             # Infrastructure as code (Docker, Kubernetes, Terraform)
 ├── tests/             # Unit, integration, contract tests
@@ -82,6 +84,7 @@ graph TD
     conversation --> manager[packages/conversation/manager]
     conversation --> handoff[packages/conversation/handoff]
     conversation --> agent_service[packages/conversation/agent_service]
+    conversation --> rider_flow[packages/conversation/rider_flow]
     
     %% External
     meta --> WhatsApp[(WhatsApp Cloud API)]
@@ -144,7 +147,7 @@ apps/api: Order created → outbox `order.created` + ACTIVE reservation rows
 apps/api: POST /api/v1/delivery/orders/{order_id}/dispatch  (idempotent; order packed)
     → DeliveryService.dispatch → Delivery row status=assigned
     → POST .../deliveries/{id}/picked-up   assigned → picked_up
-    → POST .../deliveries/{id}/arrived     picked_up → arrived, then:
+    → POST .../deliveries/{id}/arrived     picked_up → arrived (FOR UPDATE lock), then:
         → order is mpesa_pod AND unpaid?
             → resolve PaymentProvider LAZILY (only in this branch; prepay never needs one)
             → PaymentService.initiate_stk_payment(
@@ -152,7 +155,7 @@ apps/api: POST /api/v1/delivery/orders/{order_id}/dispatch  (idempotent; order p
             → STK sent (stk in response); provider error → stk_error, arrival still commits
         → else (prepay / already paid): no provider resolution, no STK
         → single db.commit() at the end (arrival + initiation in one transaction;
-          NOT atomic against a concurrent arrival — see UNCERTAINTY U19)
+          the delivery row lock serializes concurrent arrivals → exactly one push; see U19)
     → Daraja callback → PaymentService.handle_callback → order paid (POD)
     → POST .../deliveries/{id}/delivered  (requires payment collected + proof)
     → order delivered (sale side effect from payment.completed)
@@ -161,6 +164,22 @@ Failure: POST .../deliveries/{id}/failed
     → previous status assigned?  → order untouched (stays packed; no packed→failed_delivery edge)
     → previous picked_up/arrived? → order → failed_delivery
     → POST .../deliveries/{id}/retry → delivery failed→picked_up, order packed→out_for_delivery
+```
+
+### Rider WhatsApp Quick Replies (no LLM)
+```
+WhatsApp → webhook → outbox `inbound_message:{provider_message_id}`
+    → worker handle_inbound_message
+        → RiderFlowService.try_handle (ONLY if sender phone matches an active/inactive rider)
+            → parse_rider_command (fixed EN/SW keyword map: picked|arrived|delivered|failed|status)
+            → mark_picked_up / mark_arrived(lock=True) / mark_delivered / mark_failed / status
+            → reply stored as an outbound WhatsAppMessage (metadata_json.rider_flow=action)
+            → if action == arrived on a POD+unpaid order: collection_due=True, NO inline STK
+        → worker commits, THEN, iff collection_due:
+            trigger_pod_collection(tenant_id, delivery_id)  (own transaction, key
+            "delivery:{id}:arrived") → STK  [post-commit ⇒ a retry cannot double-prompt]
+        → rider "delivered" on POD raises ProofOfDeliveryRequiredError → reply POD_NEEDS_SHOP
+        → non-rider / inactive-rider / no-active-delivery fall through to the customer agent
 ```
 
 ### Stock Movement (Event Sourcing)
@@ -209,6 +228,7 @@ Inbound → Webhook → MessageReceived → ConversationManager
 14. **docs/adr/0006 + 0015** - Order FSM (amended) + transition helper + POD edges
 15. **packages/core/payments/service.py** - PaymentService and the money-path guards
 16. **apps/api/routes/delivery.py** - delivery/zones/riders routes + the arrive→STK POD trigger
+17. **packages/conversation/rider_flow.py** - rider quick replies + `trigger_pod_collection`
 
 ## Current Phase: Phase 7b done in tree; money-path hardening + delivery API/POD trigger (uncommitted)
 - M0: Scaffold, tooling, CI, docs, fake Meta/Daraja servers ✓
@@ -219,6 +239,6 @@ Inbound → Webhook → MessageReceived → ConversationManager
 - M5: Agent L0/L1, evals, policy, injection defenses ✓
 - M6: L2 transact end-to-end ✓ (conversation pipeline ADR 0014; gate green: 493 tests, evals 8/8);
   pilot checklist ☐
-- Phase 7: delivery domain/service + POD FSM edges ✓ (ADR 0015, migration 0010); delivery API routes + POD pay-at-arrival STK trigger ✓ (Phase 7b, UNCOMMITTED); rider WhatsApp flow, tracking page, owner alerting ☐
+- Phase 7: delivery domain/service + POD FSM edges ✓ (ADR 0015, migration 0010); delivery API routes + POD pay-at-arrival STK trigger ✓ (Phase 7b, committed `0bb16be`); rider WhatsApp quick-reply flow ✓ (`packages/conversation/rider_flow.py`, committed `aec992b`); tracking page, owner alerting ☐
 - Phases 8–10 (CRM, Instagram, onboarding, TikTok, billing, hardening) ☐
 - GATE G1: Human decision
