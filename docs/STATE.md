@@ -56,9 +56,9 @@ owner dashboard are planned in `docs/plans/2026-10-15-program-phases-7-10-dashbo
 | Lint | `uv run ruff check .` | **All checks passed!** |
 | Format | `uv run ruff format --check .` | **248 files already formatted** |
 | Types | `uv run mypy packages apps` (strict) | **Success: no issues found in 93 source files** |
-| Tests | `uv run pytest` (via `make check`) | **529 passed** (529 collected; 0 failed, 0 skipped) |
+| Tests | `uv run pytest` (via `make check`) | **529 passed, 154 warnings in 534.18s (0:08:54)** |
 | Evals | `uv run python -m evals.runner` | **8/8 cases pass; wrong-price/stock hallucinations: 0** |
-| Full gate | `make check` | **✅ All checks passed!** (all four deps green) |
+| Full gate | `make check` | **✅ All checks passed! (EXIT=0)** |
 
 New tests this session: `tests/delivery/test_delivery_api.py` (U19 lock proof + barriered concurrent
 arrival; duplicate zone/rider → 409; invalid rider phone → 422; cross-tenant → 404/empty list),
