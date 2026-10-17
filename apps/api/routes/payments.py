@@ -44,7 +44,6 @@ from packages.core.domain.payment import (
     PaymentProviderError,
 )
 from packages.core.domain.user import User
-from packages.core.models.core import Tenant
 from packages.core.models.payment import Payment
 from packages.core.payments import (
     OrderNotFoundError,
@@ -55,9 +54,7 @@ from packages.core.payments import (
     RefundNotAllowedError,
     RefundNotApprovedError,
 )
-from packages.integrations.aggregator import build_aggregator_provider
-from packages.integrations.daraja import build_direct_daraja_provider
-from packages.integrations.manual import ManualPaymentProvider
+from packages.integrations.provider_resolver import resolve_tenant_payment_provider
 
 router = APIRouter(prefix="/api/v1/payments", tags=["payments"])
 
@@ -66,10 +63,8 @@ router = APIRouter(prefix="/api/v1/payments", tags=["payments"])
 # Per-tenant provider selection
 # =============================================================================
 
-# Providers own HTTP clients, so they are built once per tenant (and per
-# provider list) and reused. The 100-tenant initial load target keeps this
-# bounded; a settings change re-keys the cache automatically.
-_provider_cache: dict[tuple[UUID, tuple[str, ...]], PaymentProvider] = {}
+# Provider construction + caching live in packages.integrations.provider_resolver
+# so the worker (rider WhatsApp flow) resolves the identical provider.
 
 
 async def get_tenant_payment_provider(
@@ -85,41 +80,7 @@ async def get_tenant_payment_provider(
     historical default. Falls back to direct Daraja if the tenant row is
     missing (defense in depth — auth normally guarantees it exists).
     """
-    tenant = (await db.execute(select(Tenant).where(Tenant.id == tenant_id))).scalar_one_or_none()
-    providers: tuple[str, ...] = ()
-    if tenant is not None:
-        raw = tenant.settings.get("payment_providers", []) if tenant.settings else []
-        providers = tuple(p for p in raw if isinstance(p, str))
-
-    key = (tenant_id, providers)
-    cached = _provider_cache.get(key)
-    if cached is not None:
-        return cached
-
-    provider = _build_provider(providers, tenant)
-    _provider_cache[key] = provider
-    return provider
-
-
-def _build_provider(providers: tuple[str, ...], tenant: Tenant | None) -> PaymentProvider:
-    """Instantiate the first enabled provider for a tenant."""
-    for name in providers:
-        if name == "daraja":
-            return build_direct_daraja_provider()
-        if name == "aggregator":
-            return build_aggregator_provider()
-        if name == "manual":
-            from socialerp.settings import get_settings as _get_settings
-
-            settings = _get_settings()
-            till = (
-                tenant.settings.get("mpesa_till_number", "") if tenant and tenant.settings else ""
-            )
-            return ManualPaymentProvider(
-                callback_token=settings.MANUAL_PAYMENT_TOKEN,
-                till=till,
-            )
-    return build_direct_daraja_provider()
+    return await resolve_tenant_payment_provider(db, tenant_id)
 
 
 class STKPushBody(BaseModel):
