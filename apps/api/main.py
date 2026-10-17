@@ -149,6 +149,11 @@ def create_app() -> FastAPI:
     app.include_router(tracking.router, tags=["tracking"])
     app.include_router(tracking.page_router, tags=["tracking"])
 
+    # Phase 7 remainder: owner alerts (own "/api/v1/alerts" prefix)
+    from apps.api.routes import alerts
+
+    app.include_router(alerts.router, tags=["alerts"])
+
     # Phase 5: Agent
     # from apps.api.routes import agent
     # app.include_router(agent.router, prefix="/api/v1/agent", tags=["agent"])

@@ -95,9 +95,20 @@ async def handle_payment_collected_after_terminal(payload: dict[str, Any], tenan
     """Alert: money was collected for an order that could not be marked paid.
 
     This must NOT be silently swallowed (that is the whole point of the event):
-    a human must decide refund vs manual honour. Alert loudly; no automatic
-    stock or order side effect here.
+    a human must decide refund vs manual honour. We log AND persist a durable
+    ``owner_alerts`` row (Phase 7 remainder) — a log line can be lost to
+    rotation; a queryable, acknowledgeable alert cannot. No automatic stock or
+    order side effect here; refunds stay human-approved.
     """
+    from uuid import UUID
+
+    from socialerp.database import get_session_factory
+    from sqlalchemy import text
+
+    from packages.core.alerts import AlertService
+    from packages.core.domain import TenantId
+    from packages.core.models.alert import AlertSeverity
+
     logger.warning(
         "payment collected on a non-collectable order -- needs refund/review",
         order_id=payload.get("order_id"),
@@ -105,6 +116,51 @@ async def handle_payment_collected_after_terminal(payload: dict[str, Any], tenan
         mpesa_receipt_number=payload.get("mpesa_receipt_number"),
         amount_cents=payload.get("amount_cents"),
         tenant_id=str(tenant_id),
+    )
+
+    order_id = UUID(payload["order_id"])
+    amount_cents = payload.get("amount_cents")
+    receipt = payload.get("mpesa_receipt_number") or "unknown receipt"
+    order_status = payload.get("order_status") or "unknown status"
+    # Integer math, never float, even for a label (money is displayed, not mutated).
+    if isinstance(amount_cents, int):
+        shillings, cents = divmod(amount_cents, 100)
+        amount_str = f"KES {shillings:,}.{cents:02d}"
+    else:
+        amount_str = "an unknown amount"
+
+    async with get_session_factory()() as session:
+        await session.execute(
+            text("SELECT set_config('app.current_tenant_id', :tid, true)"),
+            {"tid": str(tenant_id)},
+        )
+        alerts = AlertService(session)
+        alert = await alerts.raise_alert(
+            TenantId(UUID(str(tenant_id))),
+            kind="payment.collected_after_terminal",
+            severity=AlertSeverity.CRITICAL,
+            title="Money collected on a non-collectable order",
+            body=(
+                f"{amount_str} was paid (receipt {receipt}) but the order is "
+                f"{order_status}. Decide: refund or honour the order."
+            ),
+            resource_type="order",
+            resource_id=order_id,
+            metadata={
+                "payment_id": payload.get("payment_id"),
+                "order_status": order_status,
+                "checkout_request_id": payload.get("checkout_request_id"),
+                "mpesa_receipt_number": receipt,
+                "amount_cents": amount_cents,
+            },
+            # Idempotent under outbox replay: one alert per order, ever.
+            dedupe_key=f"payment_collected_after_terminal:{order_id}",
+        )
+        await session.commit()
+    logger.info(
+        "Raised owner alert for payment collected after terminal",
+        alert_id=str(alert.id),
+        order_id=str(order_id),
     )
 
 

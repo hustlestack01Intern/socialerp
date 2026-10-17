@@ -66,6 +66,7 @@ _RLS_TENANT_TABLES = (
     "delivery_zones",
     "riders",
     "deliveries",
+    "owner_alerts",
 )
 
 

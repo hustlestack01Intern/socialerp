@@ -4,6 +4,11 @@ SQLAlchemy Models Package
 Re-export all models for convenience.
 """
 
+from packages.core.models.alert import (
+    AlertSeverity,
+    AlertStatus,
+    OwnerAlert,
+)
 from packages.core.models.base import Base
 from packages.core.models.catalog import (
     Category,
@@ -66,6 +71,8 @@ from packages.core.models.whatsapp import (
 )
 
 __all__ = [
+    "AlertSeverity",
+    "AlertStatus",
     "ApiKey",
     "ApiKeyScope",
     "AuditLog",
@@ -80,6 +87,7 @@ __all__ = [
     "OrderStatus",
     "OrderType",
     "OutboxEvent",
+    "OwnerAlert",
     "Payment",
     "PaymentMethod",
     "PaymentMethodType",
