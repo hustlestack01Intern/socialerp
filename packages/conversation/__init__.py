@@ -12,6 +12,12 @@ from packages.conversation.agent_service import (
 )
 from packages.conversation.handoff import HandoffManager
 from packages.conversation.manager import ConversationManager
+from packages.conversation.rider_flow import (
+    RiderCommand,
+    RiderFlowResult,
+    RiderFlowService,
+    parse_rider_command,
+)
 
 __all__ = [
     "ConversationAgentResult",
@@ -19,5 +25,9 @@ __all__ = [
     "ConversationManager",
     "HandoffManager",
     "MessageSender",
+    "RiderCommand",
+    "RiderFlowResult",
+    "RiderFlowService",
     "autonomy_from_settings",
+    "parse_rider_command",
 ]

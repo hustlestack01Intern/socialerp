@@ -146,12 +146,26 @@ def build_conversation_agent_service(session: Any, tenant_id: Any) -> Any:
     return ConversationAgentService(session, tenant_id, sender=WhatsAppSenderAdapter(session))
 
 
+def build_rider_flow_service(session: Any, tenant_id: Any) -> Any:
+    """Construct the rider quick-reply flow with the real Meta sender.
+
+    Separate factory so tests inject a fake sender (ADR 0014).
+    """
+    from packages.conversation.rider_flow import RiderFlowService
+    from packages.integrations.meta.sender import WhatsAppSenderAdapter
+
+    return RiderFlowService(session, tenant_id, sender=WhatsAppSenderAdapter(session))
+
+
 async def handle_inbound_message(payload: dict[str, Any], tenant_id: Any) -> None:
     """Run the agent for one inbound WhatsApp message.
 
     Invoked by the outbox relay. The outbox event is idempotent on
     ``inbound_message:{provider_message_id}``; this handler opens its own
     tenant-scoped session and commits the outcome.
+
+    A message from a *known rider* is handled by the deterministic delivery
+    flow first (Phase 7b); everyone else goes to the customer agent.
     """
     from uuid import UUID
 
@@ -164,12 +178,47 @@ async def handle_inbound_message(payload: dict[str, Any], tenant_id: Any) -> Non
         logger.debug("inbound message has no text body; skipping", payload=payload)
         return
 
+    tenant_uuid = UUID(str(tenant_id))
     async with get_session_factory()() as session:
         await session.execute(
             text("SELECT set_config('app.current_tenant_id', :tid, true)"),
             {"tid": str(tenant_id)},
         )
-        service = build_conversation_agent_service(session, UUID(str(tenant_id)))
+
+        rider_flow = build_rider_flow_service(session, tenant_uuid)
+        try:
+            rider_result = await rider_flow.try_handle(
+                conversation_id=UUID(payload["conversation_id"]),
+                contact_id=UUID(payload["contact_id"]),
+                rider_phone=payload["customer_phone"],
+                text=text_body,
+                provider_message_id=payload.get("provider_message_id"),
+            )
+            if rider_result.handled:
+                await session.commit()
+                # POD collection is triggered only AFTER the arrival is
+                # committed, in its own transaction: the arrival transition is
+                # the idempotency guard, so a redelivered event cannot fire a
+                # second STK prompt (see packages.conversation.rider_flow).
+                if rider_result.collection_due and rider_result.delivery_id:
+                    from packages.conversation.rider_flow import trigger_pod_collection
+
+                    await trigger_pod_collection(
+                        tenant_id=tenant_uuid,
+                        delivery_id=UUID(rider_result.delivery_id),
+                    )
+                logger.info(
+                    "Handled rider quick reply",
+                    conversation_id=payload["conversation_id"],
+                    rider_action=rider_result.action,
+                    delivery_id=rider_result.delivery_id,
+                    sent=rider_result.sent,
+                )
+                return
+        finally:
+            await rider_flow.aclose()
+
+        service = build_conversation_agent_service(session, tenant_uuid)
         try:
             result = await service.respond_to_message(
                 conversation_id=UUID(payload["conversation_id"]),
