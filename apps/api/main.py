@@ -143,6 +143,12 @@ def create_app() -> FastAPI:
 
     app.include_router(delivery.router, tags=["delivery"])
 
+    # Phase 7 remainder: public tracking (own "/api/v1/tracking" + "/tracking")
+    from apps.api.routes import tracking
+
+    app.include_router(tracking.router, tags=["tracking"])
+    app.include_router(tracking.page_router, tags=["tracking"])
+
     # Phase 5: Agent
     # from apps.api.routes import agent
     # app.include_router(agent.router, prefix="/api/v1/agent", tags=["agent"])
