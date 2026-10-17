@@ -8,13 +8,18 @@
 
 ## Current Phase
 **Rider WhatsApp quick-reply flow + U19 arrival concurrency fix — COMMITTED 2026-10-17**
-(slices `b3e8571` provider extraction, `aec992b` rider flow + worker wiring, `7102d1c` U19 lock).
+(slices `b3e8571` provider extraction, `aec992b` rider flow + worker wiring, `7102d1c` U19 lock;
+router contraction fix `a93127d`).
 A review pass before commit found and fixed a router negation bug: "not arrived" parsed as
 `arrived` and "not picked up" as `picked_up` — on a POD order a false `arrived` fires an M-Pesa
-prompt to the customer. A negation guard now suppresses those (explicit failure reports like
-"not delivered"/"not done"/"undelivered"/"no answer" still parse as failed); 3 new tests.
-**Lesson recorded in LEARNINGS.md:** the @skeptic report was largely hallucinated code —
-subagent claims are hypotheses, verify every file:line against the file.
+prompt to the customer. A negation guard now suppresses those — including apostrophe contractions
+(`_normalize_text` expands "won't arrive"/"wasn't delivered"/"can't arrive" so one "not" token
+catches them; commit `a93127d`), while explicit failure reports like
+"not delivered"/"not done"/"undelivered"/"no answer" still parse as failed; tests in
+`tests/conversation/test_rider_flow.py`. **Lesson recorded in LEARNINGS.md:** the first @skeptic
+report was largely hallucinated code (it described functions that don't exist), so subagent claims
+must be verified line-by-line — a second, quote-required skeptic pass then found the real residual
+contraction gap.
 `packages/conversation/rider_flow.py` handles a rider's inbound text with a deterministic
 EN/SW keyword router (`picked up`/`arrived`/`delivered`/`failed <reason>`/`status`) driving the
 delivery FSM — no LLM. The worker (`apps/worker/main.py::handle_inbound_message`) tries the rider

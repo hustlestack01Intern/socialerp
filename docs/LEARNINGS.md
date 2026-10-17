@@ -21,3 +21,12 @@ reports as hypotheses, not evidence.** Verify every `file:line` claim against th
 acting; a confident, detailed report is not a trustworthy one. Its genuinely-useful signal
 (the router negation gap) was recovered by an empirical probe (`parse_rider_command` over an
 adversarial case list), which is the pattern to reuse.
+
+**Follow-up (same day):** a second @skeptic pass was run with a hard constraint — quote the exact
+lines you rely on or say "unverified". That pass found a **real** residual gap the first
+(hallucinated) report had not: apostrophe contractions slipped past the first negation guard
+("can't arrive" → arrived, "wasn't delivered" → delivered, the latter would close a prepay order as
+delivered). Fixed in `a93127d` by expanding contractions in `_normalize_text` so one "not" token
+catches them, plus tests. **Lesson: constraining a subagent to quote evidence turns it from a
+confident fiction-writer into a usable reviewer.** Cheaper than re-reading everything yourself, and
+it surfaced a bug that empirical probing of my own initial fix had missed.
