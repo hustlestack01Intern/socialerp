@@ -151,6 +151,13 @@ async def get_current_tenant_id(
     return UUID(payload.tenant_id)
 
 
+async def get_current_user_id(
+    payload: Annotated[TokenPayload, Depends(get_current_user_payload)],
+) -> UUID:
+    """Extract the acting user id (JWT ``sub``) from the token payload."""
+    return UUID(payload.sub)
+
+
 # =============================================================================
 # API Key Authentication
 # =============================================================================

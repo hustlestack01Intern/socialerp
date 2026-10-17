@@ -8,6 +8,7 @@ projection exposes status + zone + timeline but never the customer's identity.
 
 from __future__ import annotations
 
+import re
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -134,6 +135,8 @@ async def test_tracking_json_exposes_status_but_never_pii(
     text = resp.text
     for secret in (PII_PHONE, PII_NAME, PII_ADDRESS):
         assert secret not in text, f"PII leaked into tracking JSON: {secret!r}"
+    # A reformatted phone must not slip through either.
+    assert re.search(r"254\s*7\d{2}\s*\d{3}\s*\d{3}", text) is None
 
 
 @pytest.mark.asyncio

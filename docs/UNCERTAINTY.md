@@ -1,10 +1,12 @@
 # UNCERTAINTY LEDGER
 
-Updated 2026-10-17 by the scribe after the rider-flow commit + the router negation-guard fix
-(added U28). The prior update was 2026-10-16 by the scribe after the U19 money-path concurrency
-fix + the rider WhatsApp flow, on top of the Phase 7b increment that had added U19–U24. Anything
-marked OPEN is a STOP condition if it affects money, stock, security or privacy. Older rows (U1–U12)
-are kept for the record; statuses were re-verified against the tree on 2026-10-16 where noted.
+Updated 2026-10-17 by the scribe after the Phase 7-remainder increment (public tracking page
++ durable owner alerts; added U28 first, then U29). The prior update was 2026-10-17 by the scribe
+after the rider-flow commit + the router negation-guard fix (added U28). The prior update was
+2026-10-16 by the scribe after the U19 money-path concurrency fix + the rider WhatsApp flow, on
+top of the Phase 7b increment that had added U19–U24. Anything marked OPEN is a STOP condition if
+it affects money, stock, security or privacy. Older rows (U1–U12) are kept for the record;
+statuses were re-verified against the tree on 2026-10-16 where noted.
 
 | # | Assumption | Confidence 0-1 | Why | How to Verify | Status |
 |---|---|---|---|---|---|
@@ -22,7 +24,7 @@ are kept for the record; statuses were re-verified against the tree on 2026-10-1
 | U12 | Full test suite is green | 0.9 | 2026-10-16 measured: **493 passed, 0 failed, 0 skipped**; the 2026-10-14 event-loop flake did not recur | re-run `uv run pytest` | **RESOLVED** (measured; treat as day-of, not guaranteed) |
 | U13 | A deferred cancel leaves a liveness hole: if attempt A's cancel is deferred because attempt B is in flight, and B then fails/cancels too, the order stays `awaiting_payment` with `payment_status == failed` indefinitely | 0.8 | The 2026-10-16 guard chose money-safety over liveness (a retry's cancel can no longer kill the order); no auto-cancel/expiry bound was implemented | Add an expiry bound: when no attempt is INITIATED/PENDING and the order is `awaiting_payment`+failed, cancel it; test the sequence | **OPEN — MEDIUM (liveness, not money loss)** |
 | U14 | Concurrent `initiate_stk_payment` with the same idempotency key can surface a raw `IntegrityError` 500 instead of an idempotent replay | 0.9 | The unique index preserves correctness (no second charge); only the replay/error-mapping path is missing | Two concurrent initiates in a test must return the first result, not 500 | OPEN (LOW) |
-| U15 | `payment.collected_after_terminal` reaches a human: worker handler logs a WARNING only | 0.9 | Handler verified in `apps/worker/main.py`; no pager/notification integration exists, so the event can be missed in log rotation | Wire the alert to a notification channel and confirm receipt end-to-end | OPEN (LOW) |
+| U15 | `payment.collected_after_terminal` reaches a human: worker handler logs a WARNING only | 0.6 | **PARTIALLY RESOLVED 2026-10-17.** The handler now ALSO persists a durable, queryable, acknowledgeable `owner_alerts` row (dedupe `payment_collected_after_terminal:{order_id}`), so the event survives log rotation (rows `0011_owner_alerts`, `GET /api/v1/alerts`). What remains open is PUSH to a human: there is still no pager/SMS/and owner-console surfacing, so it is durable but passive. | Add owner-console surfacing + a push channel (email/SMS/WhatsApp owner alert) and confirm receipt end-to-end. | OPEN (LOW — durability done, notification open) |
 | U16 | Chosen fail-safe policy: POD money captured while the order is `packed`/`failed_delivery` is recorded on the Payment and flagged, but the ORDER is not marked collected, so the B4 delivery gate BLOCKS delivery until a human resolves refund vs manual honour | 0.95 | Deliberate decision in the 2026-10-16 pass — block on ambiguity rather than auto-mark paid; may strand a deliverable order until reviewed | Owner policy review; test that `mark_delivered` raises while the payment is captured-not-collectable | **DECISION (fail-safe) — revisit with owner's policy** |
 | U17 | No stock SELL is recorded for captured-after-non-collectable money (by design) | 0.95 | The sale side effect hangs off `payment.completed`, which is deliberately not emitted in that path; a human must reconcile the sale manually | Daily reconciliation (or an operator runbook step) must flag captured payments with no matching SELL | NOTE — human reconciliation required |
 | U18 | The B5 single-completion guard is application-level only: a DB partial unique index `UNIQUE(order_id) WHERE status='completed'` was deferred to avoid a migration in the stabilization pass | 0.7 | Plan `docs/plans/2026-10-16-stabilize-phase7-pod.md` assumption 5 (copied here as the plan required, at C6); sequential + single-transaction cases are tested, concurrency proof deferred | Add the partial unique index migration + a true concurrent-double-complete test | OPEN (deferred by plan; correctness currently rests on the service guard + row lock) |
@@ -36,6 +38,7 @@ are kept for the record; statuses were re-verified against the tree on 2026-10-1
 | U26 | (Rider flow / B1) A POD delivery cannot be closed over the text-only rider channel: `mark_delivered` requires a proof photo, and the worker drops non-text inbound, so the rider's "delivered" is answered with `POD_NEEDS_SHOP` (the shop must confirm handover). There is no in-chat cash/manual-collection close path. | 0.9 | Deliberate degradation: the flow refuses an impossible action and tells the rider instead of looping. Money/stock untouched. But an owner who runs purely on WhatsApp cannot close a POD delivery without the dashboard. | Decide whether to (a) accept shop-side closure via the dashboard, or (b) add a guarded manual-collection confirm (protected zone: `packages/core/payments/`) requiring ADR + human approval. | **OPEN (MED — product gap)** |
 | U27 | (Rider flow) The worker skips any inbound with no `text_body`, so a rider's photo/PIN/media is never processed; there is no media-attachment path at all | 0.9 | `handle_inbound_message` returns early when `text_body` is falsy. This is the same root cause as U26. | Plan media ingestion (download + store + attach as proof) before offering photo-based POD closure over WhatsApp. | OPEN (MED) |
 | U28 | (Rider router) The bare keyword "done" (and the phrase "done for today") matches `delivered`, so a rider ending their shift with "done for today" would be read as having delivered an order | 0.7 | Accepted residual false-positive from the 2026-10-17 negation-guard pass. Removing bare "done" trades recall ("done" is a common EN confirm) against this rare shift-ending phrasing; "delivery done" and "handed over" remain explicit. | If a rider actually trips over it, drop bare "done" from `_KEYWORDS` and add the shift phrasings to a negation list; test. | OPEN (LOW) |
+| U29 | (Public tracking) `GET /tracking/{order_id}` and `GET /api/v1/tracking/{order_id}` have NO tenant context, so they rely on a privileged read and return any order whose unguessable UUID is known. The Phase 7 plan AC said "tracking page 404s for another tenant's order". | 0.9 | **OPEN — known AC deviation (accepted for now).** `build_tracking` does a bare `select(Order).where(Order.id == order_id)` with no tenant predicate, and (like U23) the API path does not enable RLS, so a foreign order UUID returns 200, not 404. The UUID is treated as a capability URL, matching the plan's "no PII beyond order id" intent, but this is NOT the fail-closed behaviour the AC named and must not be mistaken for it. | Either (a) implement a signed, expiring tracking token (preferred: keeps the page public + unguessable + scoped), or (b) move the lookup behind a `SECURITY DEFINER` function that only reveals minimal fields. Then add a cross-tenant test asserting fail-closed. Until then, when Phase 10 wires `TenantContextMiddleware`, wire this path deliberately (allow-list it), not by accident. | **OPEN (MED — documented AC deviation, defence-in-depth gap)** |
 
 ## Action required
 - U7: align `requires-python`/mypy target with the CI pin (human choice: 3.12 or 3.13).
@@ -60,5 +63,10 @@ are kept for the record; statuses were re-verified against the tree on 2026-10-1
   guarded manual-collection confirm in the payments protected zone (needs ADR + human approval).
 - U27 (MED, rider flow): plan media ingestion (photo/PIN) before offering photo-based POD closure.
 - U28 (LOW, rider router): bare "done"/"done for today" reads as `delivered`; accepted for now.
+- U29 (MED, public tracking): the tracking endpoints are capability-URL scoped (unguessable order
+  UUID) but do NOT fail closed for a foreign tenant's order, which the Phase 7 plan AC named.
+  Known, documented deviation — fix with a signed token or a SECURITY DEFINER minimal lookup, and
+  wire the path deliberately when U23's middleware lands.
+- U15 note: durable `owner_alerts` now survive log rotation; the remaining gap is a push/notify channel.
 - **2026-10-17 note:** the router negation false-arrived class ("not arrived"/"not picked up")
   was found and FIXED before commit (`aec992b`); it is no longer an open uncertainty.

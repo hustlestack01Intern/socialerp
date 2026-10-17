@@ -118,6 +118,11 @@ no existing behavior changed except the FSM edge (guarded to POD path).
 - Property tests: delivery FSM + order FSM edge.
 - Cross-tenant: rider A cannot see/act on tenant B orders (fail closed);
   tracking page 404s for another tenant's order.
+  **AMENDED 2026-10-17:** the public tracking page is deliberately a
+  capability URL (unguessable order UUID) and does NOT fail closed for a
+  foreign order — it returns 200. This is a documented deviation from the AC
+  above, tracked as **UNCERTAINTY U29**, with the fix (signed tracking token or
+  SECURITY DEFINER minimal lookup) pending. Do not treat this AC as met.
 - RLS present on zones/riders/deliveries in migration + verified by tests.
 
 ## Docs to update

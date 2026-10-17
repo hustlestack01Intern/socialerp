@@ -21,7 +21,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from packages.core.alerts import AlertService
-from packages.core.auth.dependencies import get_current_tenant_id, get_db
+from packages.core.auth.dependencies import get_current_tenant_id, get_current_user_id, get_db
 from packages.core.domain import TenantId
 from packages.core.models.alert import OwnerAlert
 
@@ -84,10 +84,11 @@ async def list_alerts(
 async def acknowledge_alert(
     alert_id: UUID,
     tenant_id: Annotated[UUID, Depends(get_current_tenant_id)],
+    user_id: Annotated[UUID, Depends(get_current_user_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> AlertView:
     """Acknowledge one of this tenant's alerts."""
-    alert = await AlertService(db).acknowledge(TenantId(tenant_id), alert_id, user_id=None)
+    alert = await AlertService(db).acknowledge(TenantId(tenant_id), alert_id, user_id=user_id)
     if alert is None:
         raise HTTPException(status_code=404, detail="Alert not found")
     await db.commit()
