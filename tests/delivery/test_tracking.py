@@ -4,6 +4,11 @@ Phase 7 remainder: public order tracking tests.
 The tracking endpoints are PUBLIC and must never leak PII. These tests seed a
 customer with a deliberately conspicuous name/phone/address, then assert the
 projection exposes status + zone + timeline but never the customer's identity.
+
+U29 (fail closed): the endpoints are gated by a signed, expiring capability
+token (``?t=``), so every success case below mints a token for the order's
+tenant, and the fail-closed cases (missing/expired/wrong-tenant tokens) live
+in ``test_tracking_token.py``.
 """
 
 from __future__ import annotations
@@ -11,7 +16,7 @@ from __future__ import annotations
 import re
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -19,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.main import app
 from packages.core.auth.dependencies import get_db
+from packages.core.delivery.tracking_token import sign_tracking_token
 from packages.core.models.delivery import Delivery, DeliveryZone, Rider
 from packages.core.models.order import Customer, Order
 
@@ -102,13 +108,30 @@ async def _seed_order_with_delivery(session_factory, tenant, *, with_delivery: b
         return str(order.id)
 
 
+def _token_for(tenant, order_id: str) -> str:
+    """Mint a valid tracking capability token for the order's tenant."""
+    return sign_tracking_token(tenant.id, UUID(order_id))
+
+
 @pytest.mark.asyncio
 async def test_unknown_order_is_404(tracking_client: AsyncClient) -> None:
-    """Both endpoints 404 for an order that does not exist (no existence leak)."""
-    unknown = str(uuid4())
+    """Both endpoints 404 for an order that does not exist (no existence leak).
+
+    Holds with no token AND with a syntactically valid token for the unknown
+    id: a token does not conjure an order into existence.
+    """
+    unknown = uuid4()
     json_resp = await tracking_client.get(f"/api/v1/tracking/{unknown}")
     assert json_resp.status_code == 404
     page_resp = await tracking_client.get(f"/tracking/{unknown}")
+    assert page_resp.status_code == 404
+
+    signed_for_unknown = sign_tracking_token(uuid4(), unknown)
+    json_resp = await tracking_client.get(
+        f"/api/v1/tracking/{unknown}", params={"t": signed_for_unknown}
+    )
+    assert json_resp.status_code == 404
+    page_resp = await tracking_client.get(f"/tracking/{unknown}", params={"t": signed_for_unknown})
     assert page_resp.status_code == 404
 
 
@@ -118,7 +141,9 @@ async def test_tracking_json_exposes_status_but_never_pii(
 ) -> None:
     order_id = await _seed_order_with_delivery(session_factory, tenant, with_delivery=True)
 
-    resp = await tracking_client.get(f"/api/v1/tracking/{order_id}")
+    resp = await tracking_client.get(
+        f"/api/v1/tracking/{order_id}", params={"t": _token_for(tenant, order_id)}
+    )
     assert resp.status_code == 200, resp.text
 
     body = resp.json()
@@ -145,7 +170,9 @@ async def test_tracking_page_is_html_and_never_pii(
 ) -> None:
     order_id = await _seed_order_with_delivery(session_factory, tenant, with_delivery=True)
 
-    resp = await tracking_client.get(f"/tracking/{order_id}")
+    resp = await tracking_client.get(
+        f"/tracking/{order_id}", params={"t": _token_for(tenant, order_id)}
+    )
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("text/html")
     assert "out for delivery" in resp.text.lower()
@@ -162,7 +189,9 @@ async def test_tracking_json_order_without_delivery(
     """An order with no delivery yet reports delivery_status None, still no PII."""
     order_id = await _seed_order_with_delivery(session_factory, tenant, with_delivery=False)
 
-    resp = await tracking_client.get(f"/api/v1/tracking/{order_id}")
+    resp = await tracking_client.get(
+        f"/api/v1/tracking/{order_id}", params={"t": _token_for(tenant, order_id)}
+    )
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["delivery_status"] is None

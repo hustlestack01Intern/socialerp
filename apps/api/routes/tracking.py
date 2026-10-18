@@ -3,14 +3,22 @@ Public order tracking routes (Phase 7 remainder).
 
 Two endpoints, both PUBLIC (no auth) and both deliberately PII-free:
 
-- ``GET /api/v1/tracking/{order_id}``  → JSON projection (for the WhatsApp
-  agent and the dashboard to embed).
-- ``GET /tracking/{order_id}``         → a small self-contained HTML status page.
+- ``GET /api/v1/tracking/{order_id}?t=<token>``  → JSON projection (for the
+  WhatsApp agent and the dashboard to embed).
+- ``GET /tracking/{order_id}?t=<token>``         → a small self-contained
+  HTML status page.
 
-Both return 404 for an unknown order id and expose only order/delivery status,
-the zone name, and a timestamped timeline — never the customer's phone, name or
-address, and never the rider's identity or location (see
-``packages.core.delivery.tracking`` and A4 in the Phase 7 plan).
+Both FAIL CLOSED (UNCERTAINTY U29): the ``t`` query parameter must be a
+valid, unexpired capability token minted by
+``packages.core.delivery.tracking_token.sign_tracking_token`` and bound to
+the order's own tenant. A missing, malformed, tampered, expired or
+wrong-tenant token returns the same 404 as an unknown order id — the
+endpoints never reveal whether the order exists.
+
+Both return only order/delivery status, the zone name, and a timestamped
+timeline — never the customer's phone, name or address, and never the
+rider's identity or location (see ``packages.core.delivery.tracking`` and
+A4 in the Phase 7 plan).
 """
 
 from __future__ import annotations
@@ -18,7 +26,7 @@ from __future__ import annotations
 from html import escape
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -40,21 +48,34 @@ def _as_dict(view: TrackingView) -> dict[str, object]:
     }
 
 
+def _not_found() -> HTTPException:
+    # Deliberately identical for "unknown order" and "invalid token" (U29).
+    return HTTPException(status_code=404, detail="Order not found")
+
+
 @router.get("/{order_id}")
-async def tracking_json(order_id: UUID, db: AsyncSession = Depends(get_db)) -> dict[str, object]:
-    """Customer-safe tracking projection as JSON (public, no PII)."""
-    view = await build_tracking(db, order_id)
+async def tracking_json(
+    order_id: UUID,
+    t: str | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, object]:
+    """Customer-safe tracking projection as JSON (public, no PII, token-gated)."""
+    view = await build_tracking(db, order_id, token=t)
     if view is None:
-        raise HTTPException(status_code=404, detail="Order not found")
+        raise _not_found()
     return _as_dict(view)
 
 
 @page_router.get("/{order_id}", response_class=HTMLResponse)
-async def tracking_page(order_id: UUID, db: AsyncSession = Depends(get_db)) -> str:
-    """Minimal public HTML tracking page (public, no PII)."""
-    view = await build_tracking(db, order_id)
+async def tracking_page(
+    order_id: UUID,
+    t: str | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+) -> str:
+    """Minimal public HTML tracking page (public, no PII, token-gated)."""
+    view = await build_tracking(db, order_id, token=t)
     if view is None:
-        raise HTTPException(status_code=404, detail="Order not found")
+        raise _not_found()
 
     steps_html = "\n".join(
         f"      <li><strong>{escape(s.label)}</strong>"

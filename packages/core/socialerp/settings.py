@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "DEBUG"
     SECRET_KEY: str = Field(..., min_length=32)
     ENCRYPTION_KEY: str = Field(..., min_length=32)
+    # Public order-tracking capability tokens (U29): HMAC key + TTL for the
+    # signed `?t=` token on the public tracking endpoints. When the secret is
+    # empty, SECRET_KEY is used as the signing key.
+    TRACKING_TOKEN_SECRET: str = ""
+    TRACKING_TOKEN_TTL_DAYS: int = 30
 
     # -------------------------------------------------------------------------
     # Database

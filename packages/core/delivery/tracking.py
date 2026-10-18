@@ -2,8 +2,10 @@
 Public order tracking projection (no PII).
 
 Builds a minimal, customer-safe view of an order's progress for the public
-tracking page. The lookup is keyed by the order's UUID (unguessable), and the
-projection deliberately EXCLUDES everything sensitive:
+tracking page. The lookup is keyed by the order's UUID and gated by a signed,
+expiring capability token (see ``packages.core.delivery.tracking_token``,
+UNCERTAINTY U29), and the projection deliberately EXCLUDES everything
+sensitive:
 
 - no customer name / phone / email / delivery address,
 - no rider identity or phone / location,
@@ -13,11 +15,11 @@ It DOES include the order status, the delivery status, the delivery zone name
 (the customer's own area) and a timestamped timeline — all of which the customer
 already knows from their own order.
 
-Production note (UNCERTAINTY U29): the public lookup has no tenant context, so
-under strict RLS it relies on a privileged read. Today the API path does not
-enable RLS (TenantContextMiddleware is not wired — see STATE.md); when Phase 10
-wires tenancy, this endpoint must move to a SECURITY DEFINER lookup function or
-receive a signed tracking token. Tracked honestly, not hidden.
+Fail-closed contract (U29): ``build_tracking`` returns ``None`` — which both
+public routes turn into a bare 404 — when the order does not exist OR when the
+capability token is missing, malformed, tampered, expired, or bound to a
+different tenant/order. "Invalid token" and "unknown order" are deliberately
+indistinguishable to the caller.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from packages.core.delivery.tracking_token import verify_tracking_token
 from packages.core.models.delivery import Delivery, DeliveryZone
 from packages.core.models.order import Order
 
@@ -57,10 +60,19 @@ def _short_ref(order_id: UUID) -> str:
     return str(order_id)[:8].upper()
 
 
-async def build_tracking(session: AsyncSession, order_id: UUID) -> TrackingView | None:
-    """Return the tracking view for an order, or ``None`` when it does not exist."""
+async def build_tracking(
+    session: AsyncSession, order_id: UUID, *, token: str | None
+) -> TrackingView | None:
+    """Return the tracking view, or ``None`` when the order is unknown or the
+    capability token is missing/invalid (fail closed — U29).
+
+    The token is verified against the order's OWN tenant id, so a token minted
+    for one tenant's order never unlocks another tenant's order.
+    """
     order = (await session.execute(select(Order).where(Order.id == order_id))).scalar_one_or_none()
     if order is None:
+        return None
+    if not verify_tracking_token(token, order.tenant_id, order_id):
         return None
 
     delivery = (
