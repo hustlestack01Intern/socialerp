@@ -211,6 +211,19 @@ class ConversationAgentService:
         text: str,
         provider_message_id: str | None = None,
     ) -> ConversationAgentResult:
+        # Phase 8c: the owner console intercepts messages from the owner's phone
+        # BEFORE the customer agent. It returns None for every non-owner sender,
+        # so the customer path below is unchanged (ADR 0019).
+        owner_result = await self._try_owner_console(
+            conversation_id=conversation_id,
+            contact_id=contact_id,
+            sender_phone=customer_phone,
+            text=text,
+            provider_message_id=provider_message_id,
+        )
+        if owner_result is not None:
+            return owner_result
+
         settings = await self._load_settings()
         autonomy = self._autonomy or autonomy_from_settings(settings)
         catalog = await self._build_catalog()
@@ -260,6 +273,53 @@ class ConversationAgentService:
             requires_human=outcome.decision.requires_human,
             order_id=outcome.order_id,
             tools_used=tuple(outcome.tools_used),
+        )
+
+    # -- owner console hook (Phase 8c) -------------------------------------
+
+    async def _try_owner_console(
+        self,
+        *,
+        conversation_id: UUID,
+        contact_id: UUID,
+        sender_phone: str,
+        text: str,
+        provider_message_id: str | None,
+    ) -> ConversationAgentResult | None:
+        """Run the owner console for owner senders; None for everyone else.
+
+        Lazy import avoids a circular import (owner_console imports
+        MessageSender/autonomy_from_settings from this module). The console
+        shares this service's sender but never closes it — the caller owns the
+        sender's lifecycle (the service ``aclose`` closes it).
+        """
+        from packages.conversation.owner_console import OwnerConsoleService
+
+        console = OwnerConsoleService(
+            self.session,
+            self.tenant_id,
+            sender=self._sender,
+            policy=self.policy,
+            autonomy=self._autonomy,
+        )
+        outcome = await console.try_handle(
+            conversation_id=conversation_id,
+            contact_id=contact_id,
+            sender_phone=sender_phone,
+            text=text,
+            provider_message_id=provider_message_id,
+        )
+        if not outcome.handled:
+            return None
+        return ConversationAgentResult(
+            intent=f"owner_console:{outcome.command or 'help'}",
+            action=outcome.decision or "",
+            reply_text=outcome.reply_text,
+            sent=outcome.sent,
+            grounded=True,
+            requires_human=outcome.requires_human,
+            order_id=outcome.order_id,
+            tools_used=(),
         )
 
     # -- persistence -------------------------------------------------------
