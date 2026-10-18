@@ -1,6 +1,6 @@
 # ADR 0017: CRM memory — evidence-backed versioned traits, consent and erasure
 
-- Status: **Proposed** (implementation exists but is uncommitted/unreviewed as of 2026-10-17)
+- Status: **Accepted** (implemented in `713a135`, hardening in `229fd48`, human-approved 2026-10-18)
 - Date: 2026-10-17
 - Phase: 8a (CRM memory)
 - Relates to: AGENTS.md §10 (customer memory) and §12 (Kenya DPA), ADR 0012 (autonomy
@@ -60,11 +60,23 @@ Seven invariants, enforced in code + DB:
    an approver id (the API layer enforces `require_owner`); it sets the GUC, deletes
    events/traits/consents for the tenant+customer, **anonymises** the customer row
    (phone → tombstone `erased-<id>`, name/email/address NULLed, `is_active=false`) and
-   scrubs the phone/name snapshot on the customer's orders. Order records themselves are
-   **retained as the financial record** without personal identifiers. The action is
-   written to the audit log with the acting user. This is an extension beyond the plan's
-   "cascade for the CRM data" — scrubbing order snapshots is required for erasure to
-   mean anything.
+   scrubs the phone/name snapshot on the customer's orders (including `customer_email`,
+   `delivery_address`, `delivery_area`, `delivery_lat/lng`, `delivery_instructions` and
+   `notes`, per the fix pass `229fd48`). Order records themselves are **retained as the
+   financial record** without personal identifiers. The action is written to the audit
+   log with the acting user. This is an extension beyond the plan's "cascade for the CRM
+   data" — scrubbing order snapshots is required for erasure to mean anything.
+
+   **Completeness scope note (as of 2026-10-18):** erasure covers customers, orders,
+   payments, CRM tables (events/traits/consents) and the audit-log record — but does
+   NOT yet cover (a) the **outbox** (`payment.initiated` payloads carry the phone as
+   `"phone": phone_number`, and the outbox is append-only by design; see UNCERTAINTY
+   U51) or (b) **`whatsapp_contacts`** (`phone`/`wa_id`/`name`) and
+   **`whatsapp_messages`** (`text_body`), which survive erasure verbatim (see
+   UNCERTAINTY U52). Both are privacy/protected-zone items awaiting a human decision:
+   either extend the erasure scope to scrub them, or document a lawyer-reviewed
+   carve-out in this ADR. **Do not treat erasure as complete for pilot readiness until
+   U51/U52 are resolved.**
 
 7. **Deterministic trait arithmetic.** RFM buckets, LTV (`Σ total_cents` over paid
    orders, reusing the ADR 0016 paid predicate), reorder cycle (median of order-date

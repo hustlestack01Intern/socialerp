@@ -23,6 +23,8 @@ socialerp/
 │   │   ├── delivery/  # DeliveryService: zones, riders, FSM, POD gates + tracking projection (no PII)
 │   │   │   └── tracking_token.py  # HMAC-SHA256 signed, expiring `?t=` capability tokens (U29)
 │   │   └── crm/       # CRMService: events, consent, versioned evidence-backed traits, export/erasure (RLS 0012)
+│   │       ├── segments.py        # Phase 8b: fixed enum rules + pure JSON predicate evaluator
+│   │       └── segment_service.py # Phase 8b: tenant-scoped batch latest-trait evaluation (no persistence)
 │   ├── integrations/  # External API clients and fakes
 │   │   ├── meta/      # WhatsApp/Instagram Graph API client
 │   │   │   ├── webhook.py        # Webhook receiver + signature verification
@@ -235,6 +237,26 @@ worker handle_payment_collected_after_terminal → raise_alert(CRITICAL,
 RLS: migration 0011 (policy + socialerp_app grants); dedicated non-owner-role RLS test
 ```
 
+### Segments + Owner Insights (Phase 8b — read-only, ADR 0018)
+```
+GET /api/v1/segments                   → static segment catalogue (owner-only)
+GET /api/v1/segments/{key}/members     → member customer IDs (sorted, paginated)
+    → SegmentService.latest_traits_by_customer(tenant): ONE batched customer_traits
+      SELECT; highest version per (customer, name) wins (same rule as CRMService)
+    → evaluate_predicate(rule.predicate, traits)  PURE: and/or + comparisons over
+      ALLOWED_TRAITS only; a MISSING trait never matches (no `not` operator);
+      NOTHING is persisted (no segments table, no migration)
+
+GET /api/v1/insights/daily?date=        day report: orders, PAID-only revenue, AOV,
+                                        new/returning, top items + order anomaly
+GET /api/v1/insights/weekly?week_start= 7-day report (no anomaly)
+GET /api/v1/insights/stock-alerts       active variants quantity < reorder_level
+    → InsightsService (packages/core/insights/service.py): computed on the fly, all
+      tenant_id-scoped, paid = is_order_paid, money in integer cents, LLM never runs
+    → anomaly = today's order COUNT vs trailing 14-day median; spike >2x, drop <1/2x,
+      refused below a median of 5; NO durable owner_alerts row is written.
+```
+
 ### Stock Movement (Event Sourcing)
 ```
 Any stock change → StockMovementRecorded event (immutable)
@@ -272,21 +294,25 @@ Inbound → Webhook → MessageReceived → ConversationManager
 4. **packages/core/events/__init__.py** - Event system and outbox pattern
 5. **packages/core/security/__init__.py** - Security utilities
 6. **docs/adr/0001-lean-mvp.md** - M0 plan
-8. **docs/adr/0002-stack-choices.md** - Technology decisions
-9. **docs/adr/0003-fake-servers.md** - Fake server design
-10. **docs/adr/0007-whatsapp-webhook-design.md** - Webhook signature verification
-11. **docs/adr/0008-24h-window-tracking.md** - 24h window + rate limiting
-12. **docs/adr/0009-conversation-handoff-design.md** - Conversation state + handoff
-13. **docs/adr/0013-order-creation-reservation-and-sale.md** - Ledger + reservation + sale
-14. **docs/adr/0006 + 0015** - Order FSM (amended) + transition helper + POD edges
-15. **packages/core/payments/service.py** - PaymentService and the money-path guards
-16. **apps/api/routes/delivery.py** - delivery/zones/riders routes + the arrive→STK POD trigger
-17. **packages/conversation/rider_flow.py** - rider quick replies + `trigger_pod_collection`
-18. **packages/core/delivery/tracking.py + tracking_token.py + apps/api/routes/tracking.py** - public PII-free tracking, signed-token gated (U29)
-19. **packages/core/alerts/** + **apps/api/routes/alerts.py** - durable owner alerts (0011 RLS)
-20. **packages/core/crm/** + **apps/api/routes/crm.py** - CRM memory: events/consent/traits (0012 RLS), export + owner-approved erasure
+7. **docs/adr/0002-stack-choices.md** - Technology decisions
+8. **docs/adr/0003-fake-servers.md** - Fake server design
+9. **docs/adr/0007-whatsapp-webhook-design.md** - Webhook signature verification
+10. **docs/adr/0008-24h-window-tracking.md** - 24h window + rate limiting
+11. **docs/adr/0009-conversation-handoff-design.md** - Conversation state + handoff
+12. **docs/adr/0013-order-creation-reservation-and-sale.md** - Ledger + reservation + sale
+13. **docs/adr/0006 + 0015** - Order FSM (amended) + transition helper + POD edges
+14. **packages/core/payments/service.py** - PaymentService and the money-path guards
+15. **apps/api/routes/delivery.py** - delivery/zones/riders routes + the arrive→STK POD trigger
+16. **packages/conversation/rider_flow.py** - rider quick replies + `trigger_pod_collection`
+17. **packages/core/delivery/tracking.py + tracking_token.py + apps/api/routes/tracking.py** - public PII-free tracking, signed-token gated (U29)
+18. **packages/core/alerts/** + **apps/api/routes/alerts.py** - durable owner alerts (0011 RLS)
+19. **packages/core/crm/** + **apps/api/routes/crm.py** - CRM memory: events/consent/traits (0012 RLS), export + owner-approved erasure
+20. **docs/adr/0018-segments-insights.md** + **packages/core/crm/segments.py + segment_service.py** +
+    **packages/core/insights/** + **apps/api/routes/{segments,insights}.py** - Phase 8b segments (fixed
+    enum rules, read-time evaluation) and deterministic owner reports/anomaly (committed `8dbc120`,
+    routers wired at `main.py:165-166`, 37+38 tests green in wave-2 gate)
 
-## Current Phase: Phase 7 DONE; Phase 8a (CRM memory) DONE-pending-skeptic-fixes; U29 DONE
+## Current Phase: Phase 8 COMPLETE (except U51/U52 privacy carve-outs); Phase 9 next
 - M0: Scaffold, tooling, CI, docs, fake Meta/Daraja servers ✓
 - M1: Multi-tenant core, auth, RLS, audit log, isolation tests ✓
 - M2: WhatsApp channel (webhooks, signature verification, 24h window, inbox, handoff) ✓
@@ -300,8 +326,15 @@ Inbound → Webhook → MessageReceived → ConversationManager
   flow ✓ (`aec992b`); public tracking page ✓ (`814b4b8`); durable owner alerts ✓ (`726a00f`,
   hardened `02fbba7`); **U29 tracking fail-closed FIXED** ✓ (`19d88ff`, signed expiring tokens).
   Residuals U22/U25/U26/U27 open.
-- Phase 8a: CRM memory ✓ (`713a135`, migration `0012_crm`, ADR 0017) — **SHIP-WITH-FIXES**: erasure/
-  export gaps U30–U33 open in the privacy protected zone, awaiting human approval.
-- Phases 8b/8c/9/10 (segments/insights, owner console, Instagram + onboarding, TikTok + billing +
-  hardening) — **plans written** (`docs/plans/2026-10-18-*.md`), not started ☐
+- Phase 8a: CRM memory ✓ (`713a135`, migration `0012_crm`, ADR 0017) — fix pass U30–U37 ✓
+  (`229fd48`, human-approved); residuals U51/U52 (outbox MSISDN, whatsapp_contacts) awaiting
+  human approval.
+- Phase 8b: segments + insights ✓ (`8dbc120`, ADR 0018, routers wired at `main.py:165-166`,
+  37+38 tests green in wave-2 gate). Residuals U44/U45 open.
+- Phase 8c: owner WhatsApp console ✓ (`fdef945`, ADR 0019, 52 tests green in wave-2 gate).
+  Residual U55 open (re-ack copy, injection-marker false-positive).
+- Wave-2 skeptic fixes F3+F5 ✓ (`e7170d2`: revenue excludes refunds; restock replay-dedupe).
+  Residual U56 open (LTV counts refunded — product decision).
+- Phases 9/10 (Instagram + onboarding, TikTok + billing + hardening) — **plans written**, not
+  started ☐
 - GATE G1: Human decision

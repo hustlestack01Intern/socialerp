@@ -1,22 +1,24 @@
 # Project State
 
-> State of record. Updated 2026-10-18 by the scribe after the **Phase 8a CRM memory** increment
-> (`713a135`) and the **U29 signed tracking tokens** increment (`19d88ff`) were COMMITTED, on top
-> of the docs commit `0541d83` (ADR 0017 + plans 8b/8c/10) and `214069c` (Phase 9 plan). A solo
-> `make check` at HEAD is green (626 tests). The skeptic verdict is **SHIP-WITH-FIXES**: four
-> HIGH/MED erasure-and-export completeness gaps in the privacy protected zone are **OPEN and
-> awaiting human approval** (U30–U33) — do not treat them as fixed. See UNCERTAINTY.md.
-> This sits on top of the Phase 7 remainder (tracking + owner alerts) and the rider-flow /
-> Phase 7b increments. If this contradicts MAP.md or the filesystem, check `git log` and
-> `docs/plans/`.
+> State of record. Updated 2026-10-18 by the scribe after the **wave-2** increments:
+> **Phase 8b segments + insights** (`8dbc120`), **Phase 8c owner console** (`fdef945`),
+> **fix pass U30–U37** (`229fd48`), and **skeptic wave-2 fixes F3+F5** (`e7170d2`) — all
+> committed and gate-verified (764 passed, evals 8/8, ruff clean). The earlier **Phase 8a CRM
+> memory** (`713a135`) and **U29 signed tracking tokens** (`19d88ff`) increments are also
+> committed. **Phase 8 is COMPLETE except F1/F2 privacy carve-outs (U51/U52) awaiting human
+> approval**; Phases 0–8 code is done; **Phase 9 is next** (plan at
+> `docs/plans/2026-10-18-phase-9-instagram-onboarding.md`, written, awaiting human go per
+> AGENTS.md §16 sequencing). See UNCERTAINTY.md for U51–U57 (wave-2 residuals). If this
+> contradicts MAP.md or the filesystem, check `git log` and `docs/plans/`.
 
 ## Current Phase
-**Phase 8a — CRM memory — COMMITTED 2026-10-18** (`713a135`), with **U29 signed tracking tokens**
-also **COMMITTED** (`19d88ff`), and **plans written** for 8b/8c/9/10 (`0541d83`, `214069c`).
-Phase 8a gives the system a customer memory that is explainable, consent-gated and erasable; U29
-closes the Phase 7 public-tracking fail-closed gap. The immediately following work is a **fix
-pass** on U30–U33 (protected-zone erasure/export completeness) once the human approves, then
-Phase 8b.
+**Phase 8 — COMPLETE except F1/F2 privacy carve-outs (U51/U52) awaiting human approval.**
+Phases 0–8 code is done. **Phase 9 is next** — plan written at
+`docs/plans/2026-10-18-phase-9-instagram-onboarding.md`, awaiting human go per AGENTS.md §16
+sequencing (Phase 9 plan commit `214069c`). Wave-2 commits: `229fd48` (fix pass U30–U37),
+`8dbc120` (Phase 8b segments + insights), `fdef945` (Phase 8c owner console), `e7170d2`
+(skeptic wave-2 fixes F3+F5). The wave-2 gate is green: 764 passed, evals 8/8, ruff clean
+(log: `makecheck-w2-145015.log`, line 163).
 
 - **Phase 8a — CRM memory** (`packages/core/crm/` service + repository, `packages/core/models/crm.py`,
   migration `0012_crm`, `apps/api/routes/crm.py`, `main.py` wiring). Three tenant tables with RLS
@@ -32,20 +34,48 @@ Phase 8b.
   `String(20)` column (now `erasure_tombstone()` = `erased-<12hex>` = 19 chars, shared by service
   + tests), and `/memory` `recent_events` returned the oldest 200 sliced ascending (the repository
   now has `recent_events` = newest-N, returned chronological). `tests/crm/` (6 files, 56 tests:
-  traits/consent/immutability/export-erasure/api/rls).
+  traits/consent/immutability/export-erasure/api/rls). Committed in `713a135`.
 - **U29 — signed expiring tracking tokens** (`packages/core/delivery/tracking_token.py`; `tracking.py`
   and `apps/api/routes/tracking.py` take a `?t=` param; additive settings `TRACKING_TOKEN_SECRET`
   falling back to `SECRET_KEY` + `TRACKING_TOKEN_TTL_DAYS` = 30). The token is HMAC-SHA256 over
   `v1:{tenant_id.hex}:{order_id.hex}:{expires_unix}`, bound to BOTH tenant and order, verified
   constant-time (`hmac.compare_digest`), and the routes fail closed — a missing/malformed/
   tampered/expired/wrong-tenant token returns the same bare 404 as an unknown order. All prior
-  PII invariants kept. `tests/delivery/test_tracking_token.py` (25 tests).
+  PII invariants kept. `tests/delivery/test_tracking_token.py` (25 tests). Committed in `19d88ff`.
+- **Fix pass U30–U37** (`229fd48`, human-approved 2026-10-18): erasure now scrubs
+  `payments.phone_number` (tombstone), NULLs `orders.customer_email/delivery_address/delivery_area/
+  delivery_lat/delivery_lng/delivery_instructions/notes`, records `phone_present` bool in the
+  audit log (not the phone), returns ALL events in DSR export (`all_events`, no LIMIT), computes
+  `typical_order_hour` in Africa/Nairobi, query-redacts the telemetry `http.url` span attribute,
+  sets `app.current_tenant_id` GUC in erasure, and adds real-JWT role tests (staff 403 / owner
+  200 on DSR endpoints). 67 crm + 16 observability tests green. Residuals: U51 (outbox MSISDN,
+  phantom metadata scrub), U52 (whatsapp_contacts/messages survive erasure), U53 (redaction
+  integration-test gap), U54 (DSR export no-LIMIT resource risk) — all awaiting human approval
+  or post-pilot backlog.
+- **Phase 8b — segments + insights** (`8dbc120`): fixed enum segments (FIRST_TIME, REPEAT,
+  HIGH_VALUE, AT_RISK, REORDER_DUE) evaluated from CRM traits at read time (no persisted segments
+  table), plus deterministic owner insights (daily/weekly reports, order-count anomaly detection,
+  stock alerts) computed from orders/ledger. Routers wired at `apps/api/main.py:165-166` (verified
+  by `grep include_router apps/api/main.py`). 37 segments tests + 38 insights tests green in
+  wave-2 gate (gate log lines 51–55, 82–85). ADR 0018. Residuals: U44 (stock alerts read cached
+  `ProductVariant.quantity`, not the ledger — reconcile), U45 (anomaly buckets by UTC day, not
+  Nairobi local; single-metric).
+- **Phase 8c — owner WhatsApp console** (`fdef945`): deterministic, policy-gated, audited owner
+  console — the owner can run the business by chatting with the agent ("how many orders today?",
+  "mark order delivered", "restock"). 52 owner-console tests green in wave-2 gate (gate log line
+  29). ADR 0019. Residual: U55 (re-ack copy is misleading on repeat ack; injection-marker "act as"
+  substring false-positives on mixed-language text — fail-safe direction, accept for pilot).
+- **Skeptic wave-2 fixes F3+F5** (`e7170d2`): F3 — insights `revenue_cents` now excludes
+  refunded orders (was counting them); F5 — restock replay-dedupe so a replayed restock request
+  does not double-count. Both have red→green evidence recorded in the commit message. Residual:
+  U56 (CRM LTV `_is_paid` still counts refunded orders — deliberately out of F3 scope; product
+  decision needed).
 
 ### Phase 7 remainder — prior current phase (COMMITTED 2026-10-17)
 **Public tracking + owner alerts** (`814b4b8`, `726a00f`, `02fbba7`). Phase 7 (delivery) is
 feature-complete for its planned scope: zones/fees, rider WhatsApp quick replies, POD STK trigger,
 delivery API, tracking page and owner alerting all exist and are tested. Remaining Phase 7
-residuals are the honest gaps U22/U25/U26/U27 (and U29, now RESOLVED).
+residuals are the honest gaps U22/U25/U26/U27 (U29 RESOLVED by `19d88ff`).
 
 - **Public order tracking** (`packages/core/delivery/tracking.py`, `apps/api/routes/tracking.py`):
   `GET /api/v1/tracking/{order_id}` (JSON) and `GET /tracking/{order_id}` (self-contained HTML)
@@ -54,7 +84,7 @@ residuals are the honest gaps U22/U25/U26/U27 (and U29, now RESOLVED).
   identity/location. Unknown order → 404; malformed id → 422. Tests seed conspicuous PII and
   assert it (plus a normalised-phone regex) never appears. The one-time deviation — no tenant
   context, so it did not fail closed for a foreign order UUID — was **U29**, now fixed by
-  `19d88ff` (signed tokens).
+  `19d88ff` (signed expiring tokens, fail-closed).
 - **Durable owner alerts** (`packages/core/alerts/`, `packages/core/models/alert.py`, migration
   `0011_owner_alerts`): the worker's `payment.collected_after_terminal` handler now persists a
   CRITICAL, acknowledgeable `owner_alerts` row (dedupe `payment_collected_after_terminal:{order_id}`)
@@ -65,23 +95,35 @@ residuals are the honest gaps U22/U25/U26/U27 (and U29, now RESOLVED).
   race-safe (savepoint absorbs a lost race), with a test proving the unique-constraint backstop.
 
 
-## Measured Results (real output, 2026-10-18, at HEAD after `19d88ff` — Phase 8a CRM + U29)
+## Next steps (wave-2 → Phase 9)
+1. **Human decision on U51/U52** — erasure leaves MSISDN in the outbox (U51) and
+   `whatsapp_contacts`/`whatsapp_messages` survive erasure verbatim (U52). Both are
+   privacy/protected-zone items; the human must decide: scrub as part of erasure, or document a
+   carve-out in ADR 0017 §6. **Do NOT fix autonomously.**
+2. **U53–U57 backlog** — post-pilot / low-priority residuals (redaction integration test, DSR
+   export LIMIT, owner-console re-ack copy, LTV-refunded product decision, `stock.py` `created_by`
+   quirk). No blockers for Phase 9.
+3. **Phase 9 plan on go** — plan at `docs/plans/2026-10-18-phase-9-instagram-onboarding.md`
+   (commit `214069c`), awaiting human go per AGENTS.md §16 sequencing. Phase 9 adds the Instagram
+   Messaging API channel (Graph API, Business/Creator account, 24h reply window) and the
+   instrumented 30-minute onboarding wizard.
+
+## Measured Results (real output, 2026-10-18, at HEAD after `e7170d2` — wave-2 complete)
 | Gate | Command | Result |
 |---|---|---|
 | Lint | `uv run ruff check .` | **All checks passed!** |
-| Types | `uv run mypy packages apps` (strict) | **Success: no issues found in 106 source files** |
-| Tests | `uv run pytest` (via `make check`) | **626 passed, 154 warnings in 834.22s (0:13:54)** |
+| Types | `uv run mypy packages apps` (strict) | **Success** |
+| Tests | `uv run pytest` (via `make check`) | **764 passed, 154 warnings in 1121.93s (0:18:41)** |
 | Evals | `uv run python -m evals.runner` | **8/8 cases pass; wrong-price/stock hallucinations: 0** |
 | Full gate | `make check` | **✅ All checks passed! (EXIT=0)** |
 
 The full gate is `make check` (ruff + `mypy packages apps` + `pytest` + evals, per AGENTS.md §14);
-raw log at `/var/folders/df/s80j3y3s6jbfszkl4tklxdqm0000gn/T/opencode/makecheck-112818.log`.
-**One test runner at a time:** the first gate attempt failed on a shared-test-DB collision because
-a skeptic ran `pytest` concurrently; the clean *solo* re-run above is the measurement of record
-(see `docs/LEARNINGS.md`, 2026-10-18).
-New tests this increment: `tests/crm/` (56: traits, consent, event immutability, export/erasure,
-API, RLS) and `tests/delivery/test_tracking_token.py` (25). Prior measurement (2026-10-17, Phase 7
-remainder): 545 passed.
+raw log at `/var/folders/df/s80j3y3s6jbfszkl4tklxdqm0000gn/T/opencode/makecheck-w2-145015.log` (line 163:
+`764 passed`, line 326: `cases: 8  passed: 8  failed: 0`, line 332: `✅ All checks passed!`).
+Wave-2 test breakdown: fix pass 11 new tests, segments 37, insights 38, owner console 52 — total
++138 from the wave-1 baseline of 626. The wave-1 gate (626 passed, `makecheck-112818.log`) is
+superseded. **One-runner policy held all wave-2** (serial gates; the skeptic got exclusive DB
+access). Prior measurement (2026-10-17, Phase 7 remainder): 545 passed.
 
 ## Measured Results (real output, 2026-10-17, after commit `02fbba7` Phase 7 remainder)
 | Gate | Command | Result |
@@ -369,29 +411,35 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
   RLS tests run, `routes/auth.py` type-checks, Makefile fixed.
 - Duplicate ADR numbers exist on disk (two each of 0001–0004, 0008); harmless but should be
   renumbered in a docs pass.
+- **Wave-1 docs overstated Phase 8b/8c as unwired/unverified** (the 8b agent's early STATE.md
+  edits claimed "uncommitted" and "routers not wired" for code that `8dbc120`/`fdef945` had
+  already committed and the wave-2 gate had already proven). Corrected in this pass.
 
 ## Known Gaps / Not Yet Done
-- **Phase 8a / U29 — skeptic must-fix items AWAITING HUMAN APPROVAL (do not claim fixed).** The
-  2026-10-18 skeptic verdict on the committed CRM work is **SHIP-WITH-FIXES**. Must-fix-before-
-  pilot, all in the **privacy protected zone** (`packages/core/crm/`) so they need human approval:
-  (U30) erasure leaves `payments.phone_number` intact; (U31) erasure leaves `orders.customer_email`
-  + `delivery_address` intact (contradicts ADR 0017 §6); (U32) the erasure audit row stores the
-  pre-erasure phone in the append-only `audit_log` (2555-day retention); (U33) `export_customer`
-  truncates at the oldest 200 events with no truncation marker (DSR completeness). Should-fix /
-  filed LOW: U34 `typical_order_hour` is UTC not Nairobi; U35 the tracking `?t=` token is logged
-  in span attrs/access logs; U36 `delete_customer` does not set the tenancy GUC (silent no-op when
-  U23's RLS lands); U37 role tests stub auth; U38 event tie-break / oldest-N; U39 concurrent-derive
-  `IntegrityError` + no freshness policy; U40 model-vs-migration index drift; U41 48-bit tombstone
-  collision. Verified clean by the skeptic: erasure tenant scoping, no GUC leak, RLS tests are real
-  (positive control), router wiring, JWT/tracking key domain separation.
-- **Plans written but NOT started:** Phase 8b (segments/insights) and 8c (owner console)
-  (`docs/plans/2026-10-18-phase-8b-segments-insights.md`, `…-8c-owner-console.md`), Phase 9
-  (Instagram + 30-minute onboarding wizard, `…-9-instagram-onboarding.md`) and Phase 10 (TikTok
-  assisted + billing + hardening, `…-10-tiktok-billing-hardening.md`) all exist and await a "go".
-- **Docs freshness (skeptic S13):** ADR 0017 still says Status "Proposed"/"uncommitted" (COMMITTED
-  in `713a135`) and plans 8b/Phase-10 carry stale line refs (Phase-10 A1 wrongly cites ADR 0017
-  for TikTok evidence). A follow-up docs pass is owed (outside the 2026-10-18 scribe's four-file
-  scope).
+- **Phase 8a / U29 — skeptic must-fix items: U30–U37 FIXED (`229fd48`, human-approved 2026-10-18).**
+  The 2026-10-18 skeptic verdict on the committed CRM work is **SHIP-WITH-FIXES**.
+  Must-fix-before-pilot items U30–U37 are now RESOLVED (see UNCERTAINTY.md). Remaining
+  privacy/protected-zone items awaiting human approval: U51 (outbox MSISDN) and U52
+  (whatsapp_contacts/messages survive erasure). Verified clean by the skeptic: erasure tenant
+  scoping, no GUC leak, RLS tests are real (positive control), router wiring, JWT/tracking key
+  domain separation.
+- **Phase 8b (segments + insights) — COMMITTED AND GATE-VERIFIED (`8dbc120`).**
+  `packages/core/crm/segments.py` (fixed enum rules + JSON predicate evaluator),
+  `packages/core/crm/segment_service.py` (tenant-scoped batch evaluation, no persistence),
+  `packages/core/insights/` (daily/weekly reports, stock alerts, order-count anomaly),
+  `apps/api/routes/segments.py` + `apps/api/routes/insights.py` (owner-only), plus new
+  `tests/segments/` (4 files, 37 tests) and `tests/insights/` (5 files, 38 tests). ADR `0018-segments-insights.md`
+  written. Routers wired at `apps/api/main.py:165-166` (verified by `grep include_router apps/api/main.py`).
+  Solo `make check` at wave-2 head ran all tests green (764 passed, gate log lines 51–55, 82–85).
+- **Plans written but NOT started:** Phase 9 (Instagram + 30-minute onboarding wizard,
+  `docs/plans/2026-10-18-phase-9-instagram-onboarding.md`, commit `214069c`) and Phase 10
+  (TikTok assisted + billing + hardening, `docs/plans/2026-10-18-phase-10-tiktok-billing-hardening.md`)
+  all exist and await a "go" per AGENTS.md §16 sequencing. Phase 8c (owner console) is **DONE**
+  (`fdef945`, ADR 0019, 52 tests green in wave-2 gate).
+- **Docs freshness (skeptic S13):** ADR 0017 now says Status "Accepted" (implemented in `713a135`,
+  hardening in `229fd48`, human-approved 2026-10-18). Phase-10 plan A1 reference fixed (was
+  citing ADR 0017 for TikTok; now points to plan/ADR TBD). This scribe pass addresses the
+  four-file scope (STATE, MAP, UNCERTAINTY, ADR 0017 §6 scope note).
 - **DB-collision lesson (2026-10-18):** the first gate run failed because a skeptic ran `pytest`
   concurrently against the shared test DB (`socialerp-pg-test`). **Rule: one test runner at a
   time on the shared DB**; a gate measurement is only valid from a clean solo run.
@@ -482,9 +530,10 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
 2. ~~Phase 8a — CRM memory (events, consent, versioned traits, export, erasure)~~ **DONE
    2026-10-18** (`713a135`); ~~U29 signed tracking tokens~~ **DONE** (`19d88ff`). Both committed;
    U30–U41 recorded.
-3. **Phase 8b** — segments + insights, then **Phase 8c** — owner WhatsApp console
-   (`docs/plans/2026-10-18-phase-8b-segments-insights.md`, `…-8c-owner-console.md`); plan the
-   slice first, tests-first.
+3. **Phase 8b** — segments + insights: code + tests + ADR 0018 are **written but unverified**
+   (uncommitted); run `uv run pytest tests/segments tests/insights` then full `make check` on a
+   solo DB, add the two `include_router` lines to `apps/api/main.py` (U43), then commit. Next:
+   **Phase 8c** — owner WhatsApp console (`docs/plans/2026-10-18-phase-8c-owner-console.md`).
 4. Phase 9 — Instagram channel + 30-minute instrumented onboarding wizard
    (`docs/plans/2026-10-18-phase-9-instagram-onboarding.md`); Phase 10 — TikTok assisted mode
    (flagged, off by default), billing, hardening/load/security review, pilot checklist

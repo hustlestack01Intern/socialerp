@@ -1,5 +1,11 @@
 # PLAN: Phase 8b — Segments + owner insights
 
+Status: **SHIPPED, COMMITTED** (`8dbc120`, 2026-10-18). Gate-verified: 37 segments + 38
+insights tests green in the wave-2 `make check` (764 passed, `makecheck-w2-145015.log`
+lines 51–55 and 82–85). Routers wired at `apps/api/main.py:165-166`. ADR 0018.
+Line references below were corrected post-ship to match the actual shipped code (the
+fix-pass `229fd48` shifted some line numbers in `crm/service.py`).
+
 Date: 2026-10-18. Author: Chief Engineer (planning scribe output). Classification
 (@taxonomist):
 - type = feature delivery (deterministic derivation; uses existing CRM)
@@ -45,7 +51,7 @@ evidence-oriented.
 5. **Evidence-aligned.** Segment predicates prefer stable, evidenced traits
    (e.g. `order_count`, `rfm_score`, `reorder_cycle_days`, `typical_order_hour`,
    `preferred_size/color`, `lifetime_value_cents`, `churn_risk`) as produced by
-   `CRMService.derive_traits` (see `packages/core/crm/service.py:186-358`).
+   `CRMService.derive_traits` (see `packages/core/crm/service.py:189-358`).
 6. **Safe defaults.** Uncertain values don’t fabricate membership (treat missing
    trait as “unknown”, segment doesn’t match unless predicate explicitly allows).
 7. **Anomalies are simple and derived.** No magic numbers. Thresholds and
@@ -59,13 +65,13 @@ evidence-oriented.
 - **Segments (predicate model):** A segment is a named rule over traits (all/any
   boolean composition). Evaluation uses the **latest** trait version per
   (customer, name) (as written by `record_trait`/`derive_traits`:
-  `packages/core/crm/service.py:186-212, 239-341`). Missing required trait =>
+  `packages/core/crm/service.py:189-214, 217-341`). Missing required trait =>
   no match. Example predicates:
   - `first_time`: `order_count == 1` (evidence-based)
   - `repeat_buyers`: `order_count >= 2`
   - `high_value`: `lifetime_value_cents >= T` (KES-aware; store cents)
   - `at_risk`: `churn_risk >= t` (from `churn_risk` derivation at
-    `packages/core/crm/service.py:304-341`)
+    `packages/core/crm/service.py:312-341`)
   - `reorder_due`: uses `reorder_cycle_days` and last order (via evidence)
   - `size_preference_*`, `color_preference_*` map to modal attributes
 - **Insights (owner, time-bounded):** Use `packages/core/orders/` and
@@ -203,7 +209,7 @@ evidence requirement unchanged.
 |---|---|---|
 | Segment matches on fabricated/missing trait | Unit tests (missing trait => no match); type checks (mypy). | Treat missing as unknown; require evidence-backed traits. |
 | Cross-tenant leakage | Integration test: list members for tenant A using tenant B context => empty/forbidden. | RLS + tenant_id filter in repo/service; test fails closed. |
-| Revenue includes unpaid | Report test: unpaid order excluded from `revenue_cents`. | Filter to paid (payment_status completed or paid_at set) per `_is_paid` logic (mirror `crm/service.py:115-118`). |
+| Revenue includes unpaid | Report test: unpaid order excluded from `revenue_cents`. | Filter to paid (payment_status completed or paid_at set) per `_is_paid` logic (mirror `crm/service.py:81-83`). |
 | AOV division by zero | Test with no paid orders => AOV 0 or omitted with explanation. | Guard: if paid_count==0 return 0 or skip. |
 | Anomaly false positive (small baseline) | Test with < min_baseline days => no anomaly. | Enforce `min_baseline` (default 5). |
 | Non-determinism (LLM used) | Code review + grep (no LLM imports in segments/insights). | Pure code only; evaluator has no gateway calls. |
@@ -240,8 +246,8 @@ evidence requirement unchanged.
 
 | Assumption | Confidence (0-1) | Evidence/way to reduce |
 |---|---|---|
-| Traits from `derive_traits` are sufficient for initial segments (order_count, ltv, churn_risk, rfm, cycle, prefs). | 0.95 | Read `packages/core/crm/service.py:239-358`; matches AGENTS.md §10. |
-| “Paid” = completed or paid_at set (mirror `_is_paid`). | 0.95 | Consistent with CRM LTV (service.py:115-118). |
+| Traits from `derive_traits` are sufficient for initial segments (order_count, ltv, churn_risk, rfm, cycle, prefs). | 0.95 | Read `packages/core/crm/service.py:217-358`; matches AGENTS.md §10. |
+| “Paid” = completed or paid_at set (mirror `_is_paid`). | 0.95 | Consistent with CRM LTV (`service.py:81-83`). |
 | Trailing median (14d) + factor 2.0 + min_baseline 5 is acceptable baseline for owner alerts/insights (simple). | 0.7 | Synthetic tests + owner feedback later; must be stated derivation. |
 | Read-time segment evaluation (no persisted segments table) is sufficient for 8b acceptance. | 0.9 | Avoids migration; can persist later if performance needed. |
 | Insights are read-only; no side effects (separates from console). | 0.95 | Matches slice boundary (8c is console). |

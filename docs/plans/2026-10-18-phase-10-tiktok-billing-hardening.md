@@ -102,7 +102,7 @@ this session creates exactly one file.)
 
 | # | Assumption | Confidence | How to verify / note |
 |---|---|---|---|
-| A1 | TikTok Business Messaging API is unavailable or unapproved for Kenya at build time, so assisted mode (draft-only, owner sends) is the correct and only legal design | 0.5 | Build-start step of Slice E: check official TikTok Business Messaging docs + apply for access; record evidence in ADR 0017. If Kenya IS available, the flag still defaults OFF and direct-send remains out of scope for Phase 10 |
+| A1 | TikTok Business Messaging API is unavailable or unapproved for Kenya at build time, so assisted mode (draft-only, owner sends) is the correct and only legal design | 0.5 | Build-start step of Slice E: check official TikTok Business Messaging docs + apply for access; record evidence in this plan (TikTok has no ADR yet — ADR TBD). If Kenya IS available, the flag still defaults OFF and direct-send remains out of scope for Phase 10 |
 | A2 | Phases 8 (CRM) and 9 (Instagram/onboarding) are implemented and committed before Phase 10 starts, per the parent program sequence | 0.9 | STATE.md "Current Phase" at start of work |
 | A3 | Root `alembic/versions/` (0001–0012) is the complete system of record; `packages/core/alembic/alembic/versions/0001_initial.py` is a stale duplicate | 0.85 | Grep the repo for imports/references of `packages.core.alembic` before deleting; run the full suite against a migrated DB |
 | A4 | Manual plan flags + usage counters are sufficient for the pilot; Stripe integration is an upgrade path, not a pilot blocker | 0.8 | Human confirm (open question 3). Stripe placeholders already exist (`packages/core/socialerp/settings.py:172-176`, `.env.example:125-129`) |
@@ -429,9 +429,9 @@ human-approved diffs only; steps that touch them are marked ⚠.
 
 ### Slice E — TikTok assisted mode (D1)
 
-21. **E1. ADR 0017 + Kenya availability check.** Human/agent checks official TikTok Business
+21. **E1. TikTok ADR (TBD) + Kenya availability check.** Human/agent checks official TikTok Business
     Messaging API docs for Kenya availability and access requirements; the answer (with
-    links/evidence) is recorded in `docs/adr/0017-tiktok-assisted-mode.md` and the A1
+    links/evidence) is recorded in `docs/adr/XXXX-tiktok-assisted-mode.md` and the A1
     uncertainty row is updated by the scribe. No code. This is a hard gate for E2+.
 22. **E2. TikTok integration package.**
     `packages/integrations/tiktok/`: `webhook.py` (receiver; signature verification per the
@@ -588,7 +588,7 @@ Deploy order if staged: A → B → C → D → E → F → G. Every slice ends 
    `tiktok_assisted` capability (≥ 6 labeled cases active, not deferred).
 2. **TikTok**: `FEATURE_TIKTOK_ENABLED` default False in `.env.example`, config, and
    settings; flag-off tests green at both gates; draft-only invariant test green (zero
-   outbound HTTP possible); nudge drafts only, ≤ 1 per conversation; ADR 0017 exists with
+   outbound HTTP possible); nudge drafts only, ≤ 1 per conversation; TikTok ADR (TBD) exists with
    the Kenya evidence recorded.
 3. **Billing**: subscription + usage tables migrated with RLS and cross-tenant tests;
    backfill leaves existing tenants entitled; a cancelled-past-grace tenant's inbound
@@ -614,10 +614,10 @@ Deploy order if staged: A → B → C → D → E → F → G. Every slice ends 
 
 - `docs/UNCERTAINTY.md`: copy A1–A8 as new rows; flip the U-rows listed in AC 4 with test
   evidence; new rows for any residual found during the phase.
-- `docs/adr/0017-tiktok-assisted-mode.md` (D1 + I1/I2/I3 + Kenya evidence);
-  `docs/adr/0018-billing-entitlement-and-pod-policy.md` (D2/D3 + G2 decisions);
+- `docs/adr/XXXX-tiktok-assisted-mode.md` (D1 + I1/I2/I3 + Kenya evidence);
+  `docs/adr/YYYY-billing-entitlement-and-pod-policy.md` (D2/D3 + G2 decisions);
   ADR for the tenancy-wiring choice if the human wants it separated (D4) — otherwise
-  referenced from 0017/0018's "related decisions".
+  referenced from XXXX/YYYY's "related decisions".
 - `docs/THREAT_MODEL.md` → v2.0 (G1).
 - `docs/STATE.md` (phase completion + real gate output), `docs/MAP.md` (new modules:
   billing, tiktok integration, load harness), `docs/GLOSSARY.md` (assisted mode,
