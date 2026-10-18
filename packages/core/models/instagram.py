@@ -46,6 +46,7 @@ class InstagramMessageType(str, enum.Enum):
     INTERACTIVE = "interactive"
     QUICK_REPLY = "quick_reply"
     STORY_REPLY = "story_reply"
+    TEMPLATE = "template"
     UNKNOWN = "unknown"
 
 
