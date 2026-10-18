@@ -11,11 +11,18 @@ from packages.core.onboarding.steps import (
     STEP_CONFIG,
     FALLBACK_TYPES,
 )
-from packages.core.onboarding.events import (
-    OnboardingStepStarted,
-    OnboardingStepCompleted,
-    OnboardingWizardCompleted,
-    OnboardingFallbackTriggered,
+from packages.core.onboarding.metrics import (
+    ONBOARDING_STEP_DURATION,
+    ONBOARDING_TOTAL_DURATION,
+    ONBOARDING_STEP_STARTED,
+    ONBOARDING_STEP_COMPLETED,
+    ONBOARDING_ACTIVE_SESSIONS,
+    ONBOARDING_FALLBACK,
+    ONBOARDING_SLO_BREACH,
+    ONBOARDING_LAUNCH_APPROVED,
+    ONBOARDING_WIZARD_ABORTED,
+    STEP_TARGETS,
+    TOTAL_TARGET_SECONDS,
 )
 
 __all__ = [
@@ -24,8 +31,15 @@ __all__ = [
     "OnboardingStep",
     "STEP_CONFIG",
     "FALLBACK_TYPES",
-    "OnboardingStepStarted",
-    "OnboardingStepCompleted",
-    "OnboardingWizardCompleted",
-    "OnboardingFallbackTriggered",
+    "ONBOARDING_STEP_DURATION",
+    "ONBOARDING_TOTAL_DURATION",
+    "ONBOARDING_STEP_STARTED",
+    "ONBOARDING_STEP_COMPLETED",
+    "ONBOARDING_ACTIVE_SESSIONS",
+    "ONBOARDING_FALLBACK",
+    "ONBOARDING_SLO_BREACH",
+    "ONBOARDING_LAUNCH_APPROVED",
+    "ONBOARDING_WIZARD_ABORTED",
+    "STEP_TARGETS",
+    "TOTAL_TARGET_SECONDS",
 ]
