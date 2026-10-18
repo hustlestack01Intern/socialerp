@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     meta_app_secret: str = Field(default="", alias="META_APP_SECRET")
     meta_verify_token: str = Field(default="", alias="META_VERIFY_TOKEN")
     meta_whatsapp_phone_number_id: str = Field(default="", alias="META_WHATSAPP_PHONE_NUMBER_ID")
+    meta_instagram_account_id: str = Field(default="", alias="META_INSTAGRAM_ACCOUNT_ID")
     meta_graph_api_version: str = Field(default="v20.0", alias="META_GRAPH_API_VERSION")
 
     # Fake Meta (for testing)

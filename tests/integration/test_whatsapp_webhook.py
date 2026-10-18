@@ -205,7 +205,9 @@ class TestWebhookSignatureVerification:
         )
 
         assert response.status_code == 200
-        assert response.json() == {"status": "received"}
+        data = response.json()
+        assert data["status"] == "received"
+        assert data["channel"] == "whatsapp"
 
     def test_invalid_signature_rejected(self, client, test_phone_number_id, test_settings):
         """Invalid signature returns 401."""
