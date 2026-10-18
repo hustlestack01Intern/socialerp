@@ -67,7 +67,32 @@ _RLS_TENANT_TABLES = (
     "riders",
     "deliveries",
     "owner_alerts",
+    "customer_events",
+    "consent_records",
+    "customer_traits",
 )
+
+
+# Mirror of migration 0012's append-only trigger, so the metadata-built test
+# schema exercises the same immutability guarantee production has.
+_IMMUTABLE_EVENTS_SQL = """
+    CREATE OR REPLACE FUNCTION customer_events_immutable()
+    RETURNS trigger AS $$
+    BEGIN
+        IF TG_OP = 'DELETE'
+           AND current_setting('app.allow_event_erasure', true) = 'on' THEN
+            RETURN OLD;
+        END IF;
+        RAISE EXCEPTION 'customer_events is append-only';
+    END;
+    $$ LANGUAGE plpgsql;
+"""
+
+_IMMUTABLE_EVENTS_TRIGGER_SQL = """
+    CREATE TRIGGER customer_events_no_mutate
+    BEFORE UPDATE OR DELETE ON customer_events
+    FOR EACH ROW EXECUTE FUNCTION customer_events_immutable();
+"""
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -112,6 +137,10 @@ def _schema():
                         "WITH CHECK (tenant_id = current_tenant_id())"
                     )
                 )
+
+        # Append-only customer event log (mirror of migration 0012's trigger).
+        conn.execute(sa_text(_IMMUTABLE_EVENTS_SQL))
+        conn.execute(sa_text(_IMMUTABLE_EVENTS_TRIGGER_SQL))
 
     with engine.execution_options(isolation_level="AUTOCOMMIT").connect() as conn:
         conn.execute(

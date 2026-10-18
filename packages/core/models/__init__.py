@@ -28,6 +28,11 @@ from packages.core.models.core import (
     User,
     UserRole,
 )
+from packages.core.models.crm import (
+    ConsentRecord,
+    CustomerEvent,
+    CustomerTrait,
+)
 from packages.core.models.delivery import (
     Delivery,
     DeliveryZone,
@@ -78,7 +83,10 @@ __all__ = [
     "AuditLog",
     "Base",
     "Category",
+    "ConsentRecord",
     "Customer",
+    "CustomerEvent",
+    "CustomerTrait",
     "Delivery",
     "DeliveryZone",
     "Location",

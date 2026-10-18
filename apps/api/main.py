@@ -154,6 +154,11 @@ def create_app() -> FastAPI:
 
     app.include_router(alerts.router, tags=["alerts"])
 
+    # Phase 8a: CRM memory (router carries its own "/api/v1/crm" prefix)
+    from apps.api.routes import crm
+
+    app.include_router(crm.router, tags=["crm"])
+
     # Phase 5: Agent
     # from apps.api.routes import agent
     # app.include_router(agent.router, prefix="/api/v1/agent", tags=["agent"])
