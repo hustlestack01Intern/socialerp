@@ -178,8 +178,9 @@ def create_app() -> FastAPI:
     # app.include_router(crm.router, prefix="/api/v1/crm", tags=["crm"])
 
     # Phase 9: Onboarding
-    # from apps.api.routes import onboarding
-    # app.include_router(onboarding.router, prefix="/api/v1/onboarding", tags=["onboarding"])
+    from apps.api.routes import onboarding
+
+    app.include_router(onboarding.router, tags=["onboarding"])
 
     # Phase 11: Billing
     # from apps.api.routes import billing
