@@ -1,8 +1,8 @@
 """
-24h Customer Service Window Tracker
+24h Customer Service Window Tracker (Generic)
 
-Tracks the WhatsApp 24-hour customer service window per tenant and contact.
-Under Coexistence mode, the limit is ~20 messages/second.
+Tracks 24-hour customer service windows for multiple channels (WhatsApp, Instagram).
+Generic over ChannelIdentity protocol to support different identity types.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Protocol, TypeVar
 from uuid import UUID
 
 from sqlalchemy import select, update
@@ -18,7 +18,140 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from packages.core.config import get_settings
 from packages.core.domain import CustomerPhone, TenantId
-from packages.core.models import WhatsAppContact
+
+# =============================================================================
+# Channel Identity Protocol
+# =============================================================================
+
+
+class ChannelIdentity(Protocol):
+    """Protocol for channel-specific identity keys."""
+
+    def cache_key(self, tenant_id: TenantId) -> tuple[UUID, str]: ...
+
+    async def get_contact(self, session: AsyncSession, tenant_id: TenantId) -> Any: ...
+
+    async def update_window(
+        self, session: AsyncSession, tenant_id: TenantId, now: datetime, expires_at: datetime
+    ) -> None: ...
+
+    async def close_window(self, session: AsyncSession, tenant_id: TenantId) -> None: ...
+
+
+# =============================================================================
+# WhatsApp Identity
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class WhatsAppIdentity:
+    """WhatsApp contact identity (phone number)."""
+
+    phone: CustomerPhone
+
+    def cache_key(self, tenant_id: TenantId) -> tuple[UUID, str]:
+        return (tenant_id, str(self.phone))
+
+    async def get_contact(self, session: AsyncSession, tenant_id: TenantId) -> Any:
+        from packages.core.models import WhatsAppContact
+
+        result = await session.execute(
+            select(WhatsAppContact).where(
+                WhatsAppContact.tenant_id == tenant_id,
+                WhatsAppContact.phone == str(self.phone),
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def update_window(
+        self, session: AsyncSession, tenant_id: TenantId, now: datetime, expires_at: datetime
+    ) -> None:
+        from packages.core.models import WhatsAppContact
+
+        result = await session.execute(
+            select(WhatsAppContact).where(
+                WhatsAppContact.tenant_id == tenant_id,
+                WhatsAppContact.phone == str(self.phone),
+            )
+        )
+        contact = result.scalar_one_or_none()
+        if contact:
+            contact.last_customer_message_at = now
+            contact.window_expires_at = expires_at
+            contact.updated_at = now
+
+    async def close_window(self, session: AsyncSession, tenant_id: TenantId) -> None:
+        from packages.core.models import WhatsAppContact
+
+        await session.execute(
+            update(WhatsAppContact)
+            .where(
+                WhatsAppContact.tenant_id == tenant_id,
+                WhatsAppContact.phone == str(self.phone),
+            )
+            .values(window_expires_at=None)
+        )
+
+
+# =============================================================================
+# Instagram Identity
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class InstagramIdentity:
+    """Instagram contact identity (thread_id + ig_handle)."""
+
+    thread_id: str
+    ig_handle: str | None = None
+
+    def cache_key(self, tenant_id: TenantId) -> tuple[UUID, str]:
+        return (tenant_id, f"ig:{self.thread_id}")
+
+    async def get_contact(self, session: AsyncSession, tenant_id: TenantId) -> Any:
+        from packages.core.models.instagram import InstagramContact
+
+        result = await session.execute(
+            select(InstagramContact).where(
+                InstagramContact.tenant_id == tenant_id,
+                InstagramContact.thread_id == self.thread_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def update_window(
+        self, session: AsyncSession, tenant_id: TenantId, now: datetime, expires_at: datetime
+    ) -> None:
+        from packages.core.models.instagram import InstagramContact
+
+        result = await session.execute(
+            select(InstagramContact).where(
+                InstagramContact.tenant_id == tenant_id,
+                InstagramContact.thread_id == self.thread_id,
+            )
+        )
+        contact = result.scalar_one_or_none()
+        if contact:
+            contact.last_customer_message_at = now
+            contact.window_expires_at = expires_at
+            contact.updated_at = now
+
+    async def close_window(self, session: AsyncSession, tenant_id: TenantId) -> None:
+        from packages.core.models.instagram import InstagramContact
+
+        await session.execute(
+            update(InstagramContact)
+            .where(
+                InstagramContact.tenant_id == tenant_id,
+                InstagramContact.thread_id == self.thread_id,
+            )
+            .values(window_expires_at=None)
+        )
+
+
+# =============================================================================
+# Generic Window State
+# =============================================================================
 
 
 @dataclass
@@ -39,9 +172,17 @@ class WindowState:
         }
 
 
-class WindowTracker:
+# =============================================================================
+# Generic Window Tracker
+# =============================================================================
+
+
+T = TypeVar("T", bound=ChannelIdentity)
+
+
+class WindowTracker[T: ChannelIdentity]:
     """
-    Tracks 24h customer service windows per (tenant_id, contact_phone).
+    Tracks 24h customer service windows per (tenant_id, channel_identity).
 
     The window opens when a customer sends a message and stays open for 24 hours
     from the last customer message. Within the window, free-form messages are
@@ -54,15 +195,14 @@ class WindowTracker:
         self.session = session
         self.settings = get_settings()
 
-        # In-memory cache: {(tenant_id, phone): (expires_at, last_message_at)}
+        # In-memory cache: {(tenant_id, channel_key): (expires_at, last_message_at)}
         self._cache: dict[tuple[UUID, str], tuple[datetime, datetime | None]] = {}
         self._cache_ttl = timedelta(minutes=5)
         self._last_cache_cleanup = time.time()
 
-    async def get_window_state(self, tenant_id: TenantId, phone: CustomerPhone) -> WindowState:
-        """Get current window state for a contact."""
-        # Check cache first
-        cache_key = (tenant_id, str(phone))
+    async def get_window_state(self, tenant_id: TenantId, identity: T) -> WindowState:
+        """Get current window state for a channel identity."""
+        cache_key = identity.cache_key(tenant_id)
         now = datetime.now(UTC)
 
         if cache_key in self._cache:
@@ -78,13 +218,7 @@ class WindowTracker:
                 del self._cache[cache_key]
 
         # Fallback to database
-        result = await self.session.execute(
-            select(WhatsAppContact).where(
-                WhatsAppContact.tenant_id == tenant_id,
-                WhatsAppContact.phone == str(phone),
-            )
-        )
-        contact = result.scalar_one_or_none()
+        contact = await identity.get_contact(self.session, tenant_id)
 
         if not contact:
             return WindowState(is_open=False, expires_at=None, last_customer_message_at=None)
@@ -104,38 +238,21 @@ class WindowTracker:
             last_customer_message_at=contact.last_customer_message_at,
         )
 
-    async def can_send_freeform(self, tenant_id: TenantId, phone: CustomerPhone) -> bool:
+    async def can_send_freeform(self, tenant_id: TenantId, identity: T) -> bool:
         """Check if free-form message can be sent to this contact."""
-        state = await self.get_window_state(tenant_id, phone)
+        state = await self.get_window_state(tenant_id, identity)
         return state.is_open
 
-    async def update_on_customer_message(
-        self, tenant_id: TenantId, phone: CustomerPhone
-    ) -> WindowState:
+    async def update_on_customer_message(self, tenant_id: TenantId, identity: T) -> WindowState:
         """Update window when customer sends a message."""
         now = datetime.now(UTC)
         expires_at = now + timedelta(hours=24)
 
         # Update database
-        result = await self.session.execute(
-            select(WhatsAppContact).where(
-                WhatsAppContact.tenant_id == tenant_id,
-                WhatsAppContact.phone == str(phone),
-            )
-        )
-        contact = result.scalar_one_or_none()
-
-        if contact:
-            contact.last_customer_message_at = now
-            contact.window_expires_at = expires_at
-            contact.updated_at = now
-        else:
-            # Contact doesn't exist - this shouldn't happen in normal flow
-            # but handle gracefully
-            pass
+        await identity.update_window(self.session, tenant_id, now, expires_at)
 
         # Update cache
-        cache_key = (tenant_id, str(phone))
+        cache_key = identity.cache_key(tenant_id)
         self._cache[cache_key] = (expires_at, now)
 
         return WindowState(
@@ -144,20 +261,13 @@ class WindowTracker:
             last_customer_message_at=now,
         )
 
-    async def close_window(self, tenant_id: TenantId, phone: CustomerPhone) -> None:
+    async def close_window(self, tenant_id: TenantId, identity: T) -> None:
         """Manually close a window (e.g., when conversation is closed)."""
-        cache_key = (tenant_id, str(phone))
+        cache_key = identity.cache_key(tenant_id)
         if cache_key in self._cache:
             del self._cache[cache_key]
 
-        await self.session.execute(
-            update(WhatsAppContact)
-            .where(
-                WhatsAppContact.tenant_id == tenant_id,
-                WhatsAppContact.phone == str(phone),
-            )
-            .values(window_expires_at=None)
-        )
+        await identity.close_window(self.session, tenant_id)
 
     def _cleanup_cache(self) -> None:
         """Remove expired entries from cache."""
@@ -176,7 +286,7 @@ class WindowTracker:
 
 
 # =============================================================================
-# Rate Limiter
+# Rate Limiter (unchanged)
 # =============================================================================
 
 
@@ -206,7 +316,7 @@ class RateLimitBucket:
 
 class RateLimiter:
     """
-    Token bucket rate limiter for outbound WhatsApp messages.
+    Token bucket rate limiter for outbound messages.
 
     Under Coexistence mode: ~20 messages/second per tenant.
     """
@@ -279,15 +389,15 @@ class RateLimiter:
 
 
 # =============================================================================
-# Combined Manager
+# Combined Manager (backward compatible)
 # =============================================================================
 
 
 class WhatsAppLimitsManager:
-    """Combined window tracker and rate limiter."""
+    """Combined window tracker and rate limiter for WhatsApp (backward compatible)."""
 
     def __init__(self, session: AsyncSession):
-        self.window_tracker = WindowTracker(session)
+        self.window_tracker = WindowTracker[WhatsAppIdentity](session)
         self.rate_limiter = RateLimiter(session)
 
     async def can_send_message(
@@ -314,7 +424,8 @@ class WhatsAppLimitsManager:
 
         # Check 24h window for free-form messages
         if not is_template:
-            window_allowed = await self.window_tracker.can_send_freeform(tenant_id, phone)
+            identity = WhatsAppIdentity(phone=phone)
+            window_allowed = await self.window_tracker.can_send_freeform(tenant_id, identity)
             if not window_allowed:
                 return False, {
                     "error": "window_closed",
@@ -339,6 +450,76 @@ class WhatsAppLimitsManager:
 
         # Update window if not template
         if not is_template:
-            await self.window_tracker.update_on_customer_message(tenant_id, phone)
+            identity = WhatsAppIdentity(phone=phone)
+            await self.window_tracker.update_on_customer_message(tenant_id, identity)
+
+        return True, {}
+
+
+# =============================================================================
+# Instagram Limits Manager
+# =============================================================================
+
+
+class InstagramLimitsManager:
+    """Combined window tracker and rate limiter for Instagram."""
+
+    def __init__(self, session: AsyncSession):
+        self.window_tracker = WindowTracker[InstagramIdentity](session)
+        self.rate_limiter = RateLimiter(session)
+
+    async def can_send_message(
+        self,
+        tenant_id: TenantId,
+        thread_id: str,
+        ig_handle: str | None = None,
+        is_template: bool = False,
+    ) -> tuple[bool, dict[str, Any]]:
+        """
+        Check if a message can be sent on Instagram.
+
+        Args:
+            tenant_id: Tenant ID
+            thread_id: Instagram thread/conversation ID
+            ig_handle: Instagram handle (optional)
+            is_template: Whether this is a template message (bypasses 24h window)
+
+        Returns:
+            (allowed, metadata)
+        """
+        # Check rate limit first (Instagram: 750 calls/hour for private replies)
+        rate_allowed, rate_meta = await self.rate_limiter.check_rate_limit(tenant_id)
+        if not rate_allowed:
+            return False, {"error": "rate_limited", **rate_meta}
+
+        # Check 24h window for free-form messages (Instagram doesn't have human agent tag)
+        if not is_template:
+            identity = InstagramIdentity(thread_id=thread_id, ig_handle=ig_handle)
+            window_allowed = await self.window_tracker.can_send_freeform(tenant_id, identity)
+            if not window_allowed:
+                return False, {
+                    "error": "window_closed",
+                    "message": "Outside 24h customer service window. Use template message.",
+                }
+
+        return True, {"rate_limit": rate_meta}
+
+    async def send_message(
+        self,
+        tenant_id: TenantId,
+        thread_id: str,
+        ig_handle: str | None = None,
+        is_template: bool = False,
+    ) -> tuple[bool, dict[str, Any]]:
+        """
+        Record a message send attempt (updates limits).
+        """
+        # Consume rate limit token
+        await self.rate_limiter.check_rate_limit(tenant_id, tokens=1)
+
+        # Update window if not template
+        if not is_template:
+            identity = InstagramIdentity(thread_id=thread_id, ig_handle=ig_handle)
+            await self.window_tracker.update_on_customer_message(tenant_id, identity)
 
         return True, {}
