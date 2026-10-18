@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import inspect
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -20,6 +21,17 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from packages.core.crm import CRMService, CustomerNotFoundError, erasure_tombstone
 from packages.core.domain import TenantId
+from packages.core.domain.payment import (
+    PaymentProvider,
+    PaymentProviderError,
+    ProviderPaymentResult,
+)
+from packages.core.domain.payment import (
+    STKPushRequest as DomainSTKPushRequest,
+)
+from packages.core.domain.payment import (
+    STKPushResponse as DomainSTKPushResponse,
+)
 from packages.core.models.core import Tenant, UserRole
 from packages.core.models.crm import CustomerEvent
 from packages.core.models.payment import Payment, PaymentRecordStatus
@@ -561,3 +573,260 @@ async def test_export_returns_every_event_beyond_the_default_200_cap(
     assert len(payload["events"]) == total, (
         f"U33: export must return all {total} events, got {len(payload['events'])}"
     )
+
+
+# =============================================================================
+# U51-U52: additional protected-zone erasure fixes (2026-10-18)
+# =============================================================================
+
+
+class FakeOutboxProvider(PaymentProvider):
+    """Fake provider for outbox erasure test (no network)."""
+
+    def __init__(self) -> None:
+        self.valid_callback = True
+        self.result: ProviderPaymentResult | None = None
+        self.push_error: PaymentProviderError | None = None
+        self._seq = 0
+
+    async def initiate_stk_push(self, request: DomainSTKPushRequest) -> DomainSTKPushResponse:
+        if self.push_error is not None:
+            raise self.push_error
+        self._seq += 1
+        return DomainSTKPushResponse(
+            checkout_request_id=f"ws_CO_{self._seq}",
+            merchant_request_id=f"mreq_{self._seq}",
+            response_code="0",
+            response_description="Success. Request accepted for processing",
+            customer_message="Enter PIN",
+        )
+
+    async def query_status(self, checkout_request_id: str) -> ProviderPaymentResult:
+        assert self.result is not None
+        return self.result
+
+    async def validate_callback(self, payload: dict[str, Any], headers: dict[str, str]) -> bool:
+        return self.valid_callback
+
+    async def parse_callback(self, payload: dict[str, Any]) -> ProviderPaymentResult:
+        assert self.result is not None
+        return self.result
+
+    async def refund(self, mpesa_receipt_number: str, amount_cents: int, reason: str) -> bool:
+        return False
+
+
+async def test_erasure_scrubs_outbox_payment_phone_payload(
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """U51: erasure must remove the customer's phone from outbox payment payloads.
+
+    The `payment.initiated` outbox event stores the phone in its JSONB payload.
+    `delete_customer` must scrub that key from historical outbox rows after the
+    payment lifecycle is complete. The financial columns on `payments` are
+    already scrubbed by U30; the outbox is an operational table that also
+    carries PII and must be cleaned.
+    """
+
+    from packages.core.payments.service import PaymentService
+
+    async with session_factory() as session, session.begin():
+        approver = await make_user(session, tenant.id, role=UserRole.OWNER)
+        approver_id = approver.id
+        customer = await make_customer(session, tenant.id, phone=PHONE)
+        customer_id = customer.id
+        order = await make_order(
+            session,
+            tenant.id,
+            customer_id,
+            total_cents=1234,
+            payment_status="pending",
+            status="awaiting_payment",
+        )
+        order_id = order.id
+
+        # Create a real payment via PaymentService.initiate_stk_payment so the
+        # outbox gets the real payload with "phone" key.
+        provider = FakeOutboxProvider()
+        payment_service = PaymentService(session, provider)
+        payment = await payment_service.initiate_stk_payment(
+            tenant_id=tenant.id,
+            order_id=order_id,
+            phone_number=PHONE,
+            callback_url="http://test/callback",
+            idempotency_key="ik-test-outbox-1",
+        )
+        await session.flush()
+
+        # Verify the outbox has the phone in its payload
+        result = await session.execute(
+            text(
+                "SELECT payload FROM outbox "
+                "WHERE event_type = 'payment.initiated' AND tenant_id = :t"
+            ),
+            {"t": str(tenant.id)},
+        )
+        outbox_row = result.scalar_one()
+        assert "phone" in outbox_row, "seed must have phone in outbox payload"
+        assert outbox_row["phone"] == PHONE
+
+        await CRMService(session).delete_customer(
+            TenantId(tenant.id), customer_id, approved_by=approver_id
+        )
+
+    # Verify the outbox payload no longer has the phone key
+    async with session_factory() as session:
+        result = await session.execute(
+            text(
+                "SELECT payload FROM outbox "
+                "WHERE event_type = 'payment.initiated' AND tenant_id = :t"
+            ),
+            {"t": str(tenant.id)},
+        )
+        outbox_row = result.scalar_one()
+        assert "phone" not in outbox_row, "U51: phone key must be removed from outbox payload"
+        # Other keys should remain
+        assert outbox_row["payment_id"] == str(payment.id)
+        assert outbox_row["checkout_request_id"] == "ws_CO_1"
+        assert outbox_row["amount_cents"] == 1234
+        assert outbox_row["provider"] == "daraja"
+
+
+async def test_erasure_hard_deletes_whatsapp_contacts_and_messages(
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """U52: erasure must HARD DELETE WhatsApp contacts and messages.
+
+    DSR erasure means "gone", not "redacted but linkable". The tables are
+    channel-infrastructure; no business ledger depends on them (orders/payments/
+    CRM already scrubbed). Hard delete is cleaner and matches the regulation's
+    intent. Must be tenant-scoped — a bystander customer's WhatsApp data in the
+    same tenant must be untouched.
+    """
+    from packages.core.models.whatsapp import (
+        WhatsAppContact,
+        WhatsAppConversation,
+        WhatsAppConversationState,
+        WhatsAppMessage,
+    )
+
+    async with session_factory() as session, session.begin():
+        approver = await make_user(session, tenant.id, role=UserRole.OWNER)
+        approver_id = approver.id
+
+        # Target customer to be erased
+        customer = await make_customer(session, tenant.id, phone=PHONE)
+        customer_id = customer.id
+
+        # Bystander customer in the same tenant (must survive)
+        await make_customer(session, tenant.id, phone="254788888888")
+
+        # Create WhatsApp contact for target customer
+        contact = WhatsAppContact(
+            tenant_id=tenant.id,
+            phone=PHONE,
+            wa_id=PHONE,
+            name="Test Customer",
+            metadata_json={},
+        )
+        session.add(contact)
+        await session.flush()
+
+        # Create a conversation for the target customer
+        conversation = WhatsAppConversation(
+            tenant_id=tenant.id,
+            contact_id=contact.id,
+            state=WhatsAppConversationState.OPEN,
+        )
+        session.add(conversation)
+        await session.flush()
+
+        # Create 3 messages for the target customer's contact
+        for i in range(3):
+            msg = WhatsAppMessage(
+                tenant_id=tenant.id,
+                contact_id=contact.id,
+                conversation_id=conversation.id,
+                direction="inbound",
+                message_type="text",
+                status="delivered",
+                text_body=f"Identifiable message {i} from {PHONE}",
+                metadata_json={},
+            )
+            session.add(msg)
+        await session.flush()
+
+        # Create WhatsApp contact and message for bystander (must survive)
+        bystander_contact = WhatsAppContact(
+            tenant_id=tenant.id,
+            phone="254788888888",
+            wa_id="254788888888",
+            name="Bystander",
+            metadata_json={},
+        )
+        session.add(bystander_contact)
+        await session.flush()
+
+        # Create a conversation for the bystander
+        bystander_conversation = WhatsAppConversation(
+            tenant_id=tenant.id,
+            contact_id=bystander_contact.id,
+            state=WhatsAppConversationState.OPEN,
+        )
+        session.add(bystander_conversation)
+        await session.flush()
+
+        bystander_msg = WhatsAppMessage(
+            tenant_id=tenant.id,
+            contact_id=bystander_contact.id,
+            conversation_id=bystander_conversation.id,
+            direction="inbound",
+            message_type="text",
+            status="delivered",
+            text_body="Bystander message",
+            metadata_json={},
+        )
+        session.add(bystander_msg)
+        await session.flush()
+
+        contact_id = contact.id
+        bystander_contact_id = bystander_contact.id
+
+        await CRMService(session).delete_customer(
+            TenantId(tenant.id), customer_id, approved_by=approver_id
+        )
+
+    # Verify hard delete: target's contact and messages are GONE
+    async with session_factory() as session:
+        target_contact_count = (
+            await session.execute(
+                text("SELECT count(*) FROM whatsapp_contacts WHERE id = :c"),
+                {"c": str(contact_id)},
+            )
+        ).scalar()
+        target_msg_count = (
+            await session.execute(
+                text("SELECT count(*) FROM whatsapp_messages WHERE contact_id = :c"),
+                {"c": str(contact_id)},
+            )
+        ).scalar()
+        assert int(target_contact_count or 0) == 0, "U52: target WhatsApp contact must be deleted"
+        assert int(target_msg_count or 0) == 0, "U52: target WhatsApp messages must be deleted"
+
+        # Verify bystander's data is untouched
+        bystander_contact = (
+            await session.execute(
+                text("SELECT phone, name FROM whatsapp_contacts WHERE id = :c"),
+                {"c": str(bystander_contact_id)},
+            )
+        ).one()
+        assert bystander_contact.phone == "254788888888"
+        assert bystander_contact.name == "Bystander"
+
+        bystander_msg_count = (
+            await session.execute(
+                text("SELECT count(*) FROM whatsapp_messages WHERE contact_id = :c"),
+                {"c": str(bystander_contact_id)},
+            )
+        ).scalar()
+        assert int(bystander_msg_count or 0) == 1, "U52: bystander messages must survive"

@@ -34,7 +34,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from socialerp.settings import get_settings
-from sqlalchemy import text
+from sqlalchemy import delete, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,6 +42,7 @@ from packages.core.audit.logger import AuditLogger
 from packages.core.crm.repository import CRMRepository
 from packages.core.domain import TenantId
 from packages.core.models.crm import ConsentRecord, CustomerEvent, CustomerTrait
+from packages.core.models.whatsapp import WhatsAppContact, WhatsAppMessage
 
 # Names a trait may take. Anything else is refused (no sensitive attributes).
 ALLOWED_TRAITS: frozenset[str] = frozenset({
@@ -442,6 +443,8 @@ class CRMService:
             raise CustomerNotFoundError(str(customer_id))
 
         await self.session.execute(text("SELECT set_config('app.allow_event_erasure', 'on', true)"))
+        # Capture the original phone before we overwrite it with the tombstone.
+        original_phone = customer.phone
         await self.session.execute(
             text("DELETE FROM customer_events WHERE tenant_id = :t AND customer_id = :c"),
             {"t": str(tenant_id), "c": str(customer_id)},
@@ -489,6 +492,40 @@ class CRMService:
                 ")"
             ),
             {"p": tombstone, "t": str(tenant_id), "c": str(customer_id)},
+        )
+        # U51: scrub the phone key from outbox payment payloads.
+        # The outbox stores the phone in its JSONB payload for payment.initiated
+        # events. Erasure runs long after the payment lifecycle, so removing the
+        # key is safe. Use JSONB deletion operator (-) to remove the key.
+        await self.session.execute(
+            text(
+                "UPDATE outbox SET payload = payload - 'phone' "
+                "WHERE tenant_id = :t "
+                "AND payload ? 'phone' "
+                "AND payload->>'phone' = :phone"
+            ),
+            {"t": str(tenant_id), "phone": original_phone},
+        )
+        # U52: HARD DELETE WhatsApp contacts and messages for this customer.
+        # DSR erasure means "gone", not "redacted but linkable". These are
+        # channel-infrastructure tables; no business ledger depends on them.
+        # WhatsAppContact links to Customer via phone/wa_id, not a customer_id FK.
+        # Delete messages first (FK to contact), then contacts.
+        await self.session.execute(
+            delete(WhatsAppMessage).where(
+                WhatsAppMessage.contact_id.in_(
+                    select(WhatsAppContact.id).where(
+                        WhatsAppContact.phone == original_phone,
+                        WhatsAppContact.tenant_id == tenant_id,
+                    )
+                )
+            )
+        )
+        await self.session.execute(
+            delete(WhatsAppContact).where(
+                WhatsAppContact.phone == original_phone,
+                WhatsAppContact.tenant_id == tenant_id,
+            )
         )
         # U32: the audit_log is append-only for 2555 days — a plaintext phone
         # in `before` would survive the erasure. Record presence, not value.
