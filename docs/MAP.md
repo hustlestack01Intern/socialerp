@@ -20,7 +20,9 @@ socialerp/
 │   │   ├── orders/    # OrderService (reserve/sell/cancel/expiry), FSM transitions, `is_order_paid`
 │   │   ├── payments/  # PaymentService (protected zone): STK flows, callbacks, reconciliation
 │   │   ├── alerts/    # AlertService: durable, deduped, tenant-scoped owner alerts (RLS 0011)
-│   │   └── delivery/  # DeliveryService: zones, riders, FSM, POD gates + tracking projection (no PII)
+│   │   ├── delivery/  # DeliveryService: zones, riders, FSM, POD gates + tracking projection (no PII)
+│   │   │   └── tracking_token.py  # HMAC-SHA256 signed, expiring `?t=` capability tokens (U29)
+│   │   └── crm/       # CRMService: events, consent, versioned evidence-backed traits, export/erasure (RLS 0012)
 │   ├── integrations/  # External API clients and fakes
 │   │   ├── meta/      # WhatsApp/Instagram Graph API client
 │   │   │   ├── webhook.py        # Webhook receiver + signature verification
@@ -72,6 +74,7 @@ graph TD
     core --> orders[packages/core/orders]
     core --> payments[packages/core/payments]
     core --> delivery[packages/core/delivery]
+    core --> crm[packages/core/crm]
     
     %% Integrations submodules
     integrations --> meta[packages/integrations/meta]
@@ -185,16 +188,39 @@ WhatsApp → webhook → outbox `inbound_message:{provider_message_id}`
         → non-rider / inactive-rider / no-active-delivery fall through to the customer agent
 ```
 
-### Public Order Tracking (no auth; PII-free; capability URL by order UUID)
+### Public Order Tracking (no auth; token-gated; PII-free)
 ```
-GET /api/v1/tracking/{order_id}   → JSON projection (agent/dashboard embed)
-GET /tracking/{order_id}          → self-contained HTML status page
-    → build_tracking(session, order_id): order status + delivery status + zone name
-      + payment method + timestamped timeline
-    → EXCLUDES customer name/phone/address and rider identity/location (ADR-ish; no PII)
-    → unknown order → 404; malformed id → 422
-    → NOTE: no tenant context → does NOT fail closed for a foreign order UUID (U29,
-      capability-URL design; fix = signed tracking token or SECURITY DEFINER lookup)
+GET /api/v1/tracking/{order_id}?t=<token>  → JSON projection (agent/dashboard embed)
+GET /tracking/{order_id}?t=<token>         → self-contained HTML status page
+    → build_tracking(session, order_id, token): VERIFY token FIRST against the order's
+      OWN tenant_id (packages/core/delivery/tracking_token.py, HMAC-SHA256 v1,
+      bound to tenant+order, constant-time) → then order status + delivery status
+      + zone name + payment method + timestamped timeline
+    → EXCLUDES customer name/phone/address and rider identity/location (no PII)
+    → token missing/malformed/tampered/expired/wrong-tenant AND unknown order → SAME bare 404
+      (fail closed; U29 RESOLVED 2026-10-18, commit `19d88ff`; token-in-logs residual = U35)
+```
+
+### CRM Memory (customer events, consent, versioned traits, DSR)
+```
+Inbound/order/payment side effects → CRMService.record_event(...)  (idempotent on dedupe_key)
+    → customer_events row (append-only; raw SQL UPDATE/DELETE rejected by trigger;
+      DELETE only via the app.allow_event_erasure GUC)
+Consent: POST /api/v1/crm/customers/{id}/consent | /opt-out → consent_records
+    (latest-wins per (customer, purpose); absence = DENIED → has_consent() gates sends)
+Derive: POST /api/v1/crm/customers/{id}/derive
+    → deterministic RFM/LTV/reorder-cycle/churn from ORDERS (no LLM arithmetic)
+    → each trait APPENDS a versioned, evidence-carrying customer_traits row (allow-list only)
+Reads (staff):  GET /memory (latest traits + consent + recent events, chronological)
+                GET /events (append-only log) · GET /traits (all versions + evidence)
+Data-subject rights (owner): GET /export (full record)
+    DELETE /api/v1/crm/customers/{id}  → human-approved erase:
+        GUC app.allow_event_erasure=on → DELETE events/traits/consents → anonymise customer
+        (phone → `erased-<12hex>` tombstone, name/email/address NULL, is_active=false) →
+        scrub orders.customer_phone/name → audit `crm.customer_erased`
+    ⚠ KNOWN GAPS (U30–U33, OPEN — protected zone, awaiting approval): payments.phone_number,
+      orders.customer_email/delivery_address and the audit-log `before` phone survive;
+      export truncates at the oldest 200 events. See docs/UNCERTAINTY.md.
 ```
 
 ### Owner Alerts (durable, tenant-scoped, acknowledgeable)
@@ -256,22 +282,26 @@ Inbound → Webhook → MessageReceived → ConversationManager
 15. **packages/core/payments/service.py** - PaymentService and the money-path guards
 16. **apps/api/routes/delivery.py** - delivery/zones/riders routes + the arrive→STK POD trigger
 17. **packages/conversation/rider_flow.py** - rider quick replies + `trigger_pod_collection`
-18. **packages/core/delivery/tracking.py + apps/api/routes/tracking.py** - public PII-free tracking
+18. **packages/core/delivery/tracking.py + tracking_token.py + apps/api/routes/tracking.py** - public PII-free tracking, signed-token gated (U29)
 19. **packages/core/alerts/** + **apps/api/routes/alerts.py** - durable owner alerts (0011 RLS)
+20. **packages/core/crm/** + **apps/api/routes/crm.py** - CRM memory: events/consent/traits (0012 RLS), export + owner-approved erasure
 
-## Current Phase: Phase 7 (delivery) DONE; next is Phase 8 (CRM memory + owner console)
+## Current Phase: Phase 7 DONE; Phase 8a (CRM memory) DONE-pending-skeptic-fixes; U29 DONE
 - M0: Scaffold, tooling, CI, docs, fake Meta/Daraja servers ✓
 - M1: Multi-tenant core, auth, RLS, audit log, isolation tests ✓
 - M2: WhatsApp channel (webhooks, signature verification, 24h window, inbox, handoff) ✓
 - M3: Catalog, stock ledger, orders ✓
 - M4: Payments, reconciliation ✓ (daraja + aggregator + manual providers, refunds, statements)
 - M5: Agent L0/L1, evals, policy, injection defenses ✓
-- M6: L2 transact end-to-end ✓ (conversation pipeline ADR 0014; gate green: 545 tests, evals 8/8);
+- M6: L2 transact end-to-end ✓ (conversation pipeline ADR 0014; gate green: 626 tests, evals 8/8);
   pilot checklist ☐
 - Phase 7: delivery domain/service + POD FSM edges ✓ (ADR 0015, migration 0010); delivery API routes
   + POD pay-at-arrival STK trigger ✓ (Phase 7b, committed `0bb16be`); rider WhatsApp quick-reply
   flow ✓ (`aec992b`); public tracking page ✓ (`814b4b8`); durable owner alerts ✓ (`726a00f`,
-  hardened `02fbba7`). Residuals U22/U25/U26/U27/U29 open.
-- Phases 8–10 (CRM memory/segments/insights + owner console, Instagram, onboarding, TikTok,
-  billing, hardening) ☐
+  hardened `02fbba7`); **U29 tracking fail-closed FIXED** ✓ (`19d88ff`, signed expiring tokens).
+  Residuals U22/U25/U26/U27 open.
+- Phase 8a: CRM memory ✓ (`713a135`, migration `0012_crm`, ADR 0017) — **SHIP-WITH-FIXES**: erasure/
+  export gaps U30–U33 open in the privacy protected zone, awaiting human approval.
+- Phases 8b/8c/9/10 (segments/insights, owner console, Instagram + onboarding, TikTok + billing +
+  hardening) — **plans written** (`docs/plans/2026-10-18-*.md`), not started ☐
 - GATE G1: Human decision

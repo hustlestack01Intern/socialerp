@@ -1,26 +1,60 @@
 # Project State
 
-> State of record. Updated 2026-10-17 by the scribe after the **Phase 7 remainder** increment
-> (public order tracking page + durable owner alerts) was COMMITTED in three slices
-> (`814b4b8` tracking, `726a00f` owner alerts, `02fbba7` skeptic-review hardening). It sits on
-> top of the rider-flow + U19 money-path increment and the Phase 7b delivery-API increment.
-> If this contradicts MAP.md or the filesystem, check `git log` and `docs/plans/`.
+> State of record. Updated 2026-10-18 by the scribe after the **Phase 8a CRM memory** increment
+> (`713a135`) and the **U29 signed tracking tokens** increment (`19d88ff`) were COMMITTED, on top
+> of the docs commit `0541d83` (ADR 0017 + plans 8b/8c/10) and `214069c` (Phase 9 plan). A solo
+> `make check` at HEAD is green (626 tests). The skeptic verdict is **SHIP-WITH-FIXES**: four
+> HIGH/MED erasure-and-export completeness gaps in the privacy protected zone are **OPEN and
+> awaiting human approval** (U30–U33) — do not treat them as fixed. See UNCERTAINTY.md.
+> This sits on top of the Phase 7 remainder (tracking + owner alerts) and the rider-flow /
+> Phase 7b increments. If this contradicts MAP.md or the filesystem, check `git log` and
+> `docs/plans/`.
 
 ## Current Phase
-**Phase 7 remainder — public tracking + owner alerts — COMMITTED 2026-10-17**
-(`814b4b8`, `726a00f`, `02fbba7`). Phase 7 (delivery) is now feature-complete for its planned
-scope: zones/fees, rider WhatsApp quick replies, POD STK trigger, delivery API, tracking page
-and owner alerting all exist and are tested. Remaining Phase 7 residuals are the honest gaps
-U22/U25/U26/U27/U29 (see UNCERTAINTY.md).
+**Phase 8a — CRM memory — COMMITTED 2026-10-18** (`713a135`), with **U29 signed tracking tokens**
+also **COMMITTED** (`19d88ff`), and **plans written** for 8b/8c/9/10 (`0541d83`, `214069c`).
+Phase 8a gives the system a customer memory that is explainable, consent-gated and erasable; U29
+closes the Phase 7 public-tracking fail-closed gap. The immediately following work is a **fix
+pass** on U30–U33 (protected-zone erasure/export completeness) once the human approves, then
+Phase 8b.
+
+- **Phase 8a — CRM memory** (`packages/core/crm/` service + repository, `packages/core/models/crm.py`,
+  migration `0012_crm`, `apps/api/routes/crm.py`, `main.py` wiring). Three tenant tables with RLS
+  plus an append-only trigger (`customer_events`, `consent_records`, `customer_traits`; the test
+  schema in `tests/conftest.py` mirrors the trigger, +3 tables). Invariants: a **closed trait
+  allow-list** (`ALLOWED_TRAITS`; `SENSITIVE_TRAIT_NAMES` refused at two layers), every trait
+  carries **non-empty evidence + a monotonic version**, consent is **latest-wins and default-deny**
+  (`opt_out` appends a marketing denial), and **erasure is owner-approved and audited**. Arithmetic
+  (RFM, LTV, reorder cycle, churn) is deterministic plain code; the LLM never computes a trait.
+  Endpoints (all tenant-scoped): `GET …/memory`, `GET …/events`, `GET …/traits`, `POST …/consent`,
+  `POST …/opt-out`, `POST …/derive` (staff) and `GET …/export`, `DELETE /customers/{id}` (owner,
+  DSR). Two Chief fixes found by the tests: the erasure tombstone was 43 chars against a
+  `String(20)` column (now `erasure_tombstone()` = `erased-<12hex>` = 19 chars, shared by service
+  + tests), and `/memory` `recent_events` returned the oldest 200 sliced ascending (the repository
+  now has `recent_events` = newest-N, returned chronological). `tests/crm/` (6 files, 56 tests:
+  traits/consent/immutability/export-erasure/api/rls).
+- **U29 — signed expiring tracking tokens** (`packages/core/delivery/tracking_token.py`; `tracking.py`
+  and `apps/api/routes/tracking.py` take a `?t=` param; additive settings `TRACKING_TOKEN_SECRET`
+  falling back to `SECRET_KEY` + `TRACKING_TOKEN_TTL_DAYS` = 30). The token is HMAC-SHA256 over
+  `v1:{tenant_id.hex}:{order_id.hex}:{expires_unix}`, bound to BOTH tenant and order, verified
+  constant-time (`hmac.compare_digest`), and the routes fail closed — a missing/malformed/
+  tampered/expired/wrong-tenant token returns the same bare 404 as an unknown order. All prior
+  PII invariants kept. `tests/delivery/test_tracking_token.py` (25 tests).
+
+### Phase 7 remainder — prior current phase (COMMITTED 2026-10-17)
+**Public tracking + owner alerts** (`814b4b8`, `726a00f`, `02fbba7`). Phase 7 (delivery) is
+feature-complete for its planned scope: zones/fees, rider WhatsApp quick replies, POD STK trigger,
+delivery API, tracking page and owner alerting all exist and are tested. Remaining Phase 7
+residuals are the honest gaps U22/U25/U26/U27 (and U29, now RESOLVED).
 
 - **Public order tracking** (`packages/core/delivery/tracking.py`, `apps/api/routes/tracking.py`):
   `GET /api/v1/tracking/{order_id}` (JSON) and `GET /tracking/{order_id}` (self-contained HTML)
   are PUBLIC and deliberately PII-free — order status, delivery status, zone name, payment
   method and a timestamped timeline only; never customer name/phone/address, never rider
   identity/location. Unknown order → 404; malformed id → 422. Tests seed conspicuous PII and
-  assert it (plus a normalised-phone regex) never appears. **Known deviation:** the lookup has no
-  tenant context, so it does NOT fail closed for a foreign order UUID — a capability-URL design,
-  tracked as **U29** (the Phase 7 plan AC is amended to record this).
+  assert it (plus a normalised-phone regex) never appears. The one-time deviation — no tenant
+  context, so it did not fail closed for a foreign order UUID — was **U29**, now fixed by
+  `19d88ff` (signed tokens).
 - **Durable owner alerts** (`packages/core/alerts/`, `packages/core/models/alert.py`, migration
   `0011_owner_alerts`): the worker's `payment.collected_after_terminal` handler now persists a
   CRITICAL, acknowledgeable `owner_alerts` row (dedupe `payment_collected_after_terminal:{order_id}`)
@@ -30,6 +64,24 @@ U22/U25/U26/U27/U29 (see UNCERTAINTY.md).
   and has a dedicated non-owner-role RLS test. `raise_alert` is idempotent per dedupe key AND
   race-safe (savepoint absorbs a lost race), with a test proving the unique-constraint backstop.
 
+
+## Measured Results (real output, 2026-10-18, at HEAD after `19d88ff` — Phase 8a CRM + U29)
+| Gate | Command | Result |
+|---|---|---|
+| Lint | `uv run ruff check .` | **All checks passed!** |
+| Types | `uv run mypy packages apps` (strict) | **Success: no issues found in 106 source files** |
+| Tests | `uv run pytest` (via `make check`) | **626 passed, 154 warnings in 834.22s (0:13:54)** |
+| Evals | `uv run python -m evals.runner` | **8/8 cases pass; wrong-price/stock hallucinations: 0** |
+| Full gate | `make check` | **✅ All checks passed! (EXIT=0)** |
+
+The full gate is `make check` (ruff + `mypy packages apps` + `pytest` + evals, per AGENTS.md §14);
+raw log at `/var/folders/df/s80j3y3s6jbfszkl4tklxdqm0000gn/T/opencode/makecheck-112818.log`.
+**One test runner at a time:** the first gate attempt failed on a shared-test-DB collision because
+a skeptic ran `pytest` concurrently; the clean *solo* re-run above is the measurement of record
+(see `docs/LEARNINGS.md`, 2026-10-18).
+New tests this increment: `tests/crm/` (56: traits, consent, event immutability, export/erasure,
+API, RLS) and `tests/delivery/test_tracking_token.py` (25). Prior measurement (2026-10-17, Phase 7
+remainder): 545 passed.
 
 ## Measured Results (real output, 2026-10-17, after commit `02fbba7` Phase 7 remainder)
 | Gate | Command | Result |
@@ -319,6 +371,30 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
   renumbered in a docs pass.
 
 ## Known Gaps / Not Yet Done
+- **Phase 8a / U29 — skeptic must-fix items AWAITING HUMAN APPROVAL (do not claim fixed).** The
+  2026-10-18 skeptic verdict on the committed CRM work is **SHIP-WITH-FIXES**. Must-fix-before-
+  pilot, all in the **privacy protected zone** (`packages/core/crm/`) so they need human approval:
+  (U30) erasure leaves `payments.phone_number` intact; (U31) erasure leaves `orders.customer_email`
+  + `delivery_address` intact (contradicts ADR 0017 §6); (U32) the erasure audit row stores the
+  pre-erasure phone in the append-only `audit_log` (2555-day retention); (U33) `export_customer`
+  truncates at the oldest 200 events with no truncation marker (DSR completeness). Should-fix /
+  filed LOW: U34 `typical_order_hour` is UTC not Nairobi; U35 the tracking `?t=` token is logged
+  in span attrs/access logs; U36 `delete_customer` does not set the tenancy GUC (silent no-op when
+  U23's RLS lands); U37 role tests stub auth; U38 event tie-break / oldest-N; U39 concurrent-derive
+  `IntegrityError` + no freshness policy; U40 model-vs-migration index drift; U41 48-bit tombstone
+  collision. Verified clean by the skeptic: erasure tenant scoping, no GUC leak, RLS tests are real
+  (positive control), router wiring, JWT/tracking key domain separation.
+- **Plans written but NOT started:** Phase 8b (segments/insights) and 8c (owner console)
+  (`docs/plans/2026-10-18-phase-8b-segments-insights.md`, `…-8c-owner-console.md`), Phase 9
+  (Instagram + 30-minute onboarding wizard, `…-9-instagram-onboarding.md`) and Phase 10 (TikTok
+  assisted + billing + hardening, `…-10-tiktok-billing-hardening.md`) all exist and await a "go".
+- **Docs freshness (skeptic S13):** ADR 0017 still says Status "Proposed"/"uncommitted" (COMMITTED
+  in `713a135`) and plans 8b/Phase-10 carry stale line refs (Phase-10 A1 wrongly cites ADR 0017
+  for TikTok evidence). A follow-up docs pass is owed (outside the 2026-10-18 scribe's four-file
+  scope).
+- **DB-collision lesson (2026-10-18):** the first gate run failed because a skeptic ran `pytest`
+  concurrently against the shared test DB (`socialerp-pg-test`). **Rule: one test runner at a
+  time on the shared DB**; a gate measurement is only valid from a clean solo run.
 - **Phase 7b (committed `0bb16be`):** delivery API routes + POD trigger (lazy provider resolution,
   idempotent arrived→STK) are implemented. **Resolved in the 2026-10-17 commit (`7102d1c`)**:
   (was MED) two concurrent arrivals double-pushing STK — now serialized by the delivery-row
@@ -331,10 +407,11 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
   UUIDs and unauthenticated access are not explicitly tested for these routes. (See UNCERTAINTY.md)
 - **Phases 7–10 remainder:** Phase 7 (delivery) **DONE** — zones/fees, rider WhatsApp quick
   replies, POD trigger, delivery API, public tracking page and owner alerting all committed
-  2026-10-16/17. Honest Phase 7 residuals remain open: U22 (re-arrival key reuse), U25 (POD
-  callback URL must be explicit in prod), U26/U27 (no in-chat POD close / no media ingestion),
-  U29 (tracking does not fail closed cross-tenant). Next: Phase 8 CRM memory/segments/insights
-  + owner WhatsApp console, then Phase 9 Instagram + onboarding wizard, Phase 10 TikTok
+  2026-10-16/17; the tracking fail-closed gap **U29 is now RESOLVED** (`19d88ff`, signed
+  tokens). Honest Phase 7 residuals remain open: U22 (re-arrival key reuse), U25 (POD callback URL
+  must be explicit in prod), U26/U27 (no in-chat POD close / no media ingestion). **Phase 8a
+  (CRM memory) DONE-pending-skeptic-fixes** (`713a135`); Phase 8 in full (segments/insights/owner
+  console) is planned for 8b/8c, then Phase 9 Instagram + onboarding wizard, Phase 10 TikTok
   assisted mode + billing + hardening, plus the owner dashboard
   (`docs/plans/2026-10-15-program-phases-7-10-dashboard.md`).
 - **Phase 6 remainder — conversation pipeline: DONE** (Phase 6b landed 2026-10-15, commit
@@ -372,9 +449,10 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
   `DatabaseSessionMiddleware` exist but are not added in `main.py`; the payments callback
   route sets `app.current_tenant_id` manually. Authenticated routes still rely on the DB
   connection role. To be addressed with a tenancy middleware pass.
-- Working tree as of 2026-10-17: the Phase 7 remainder increment is **COMMITTED**
-  (`814b4b8` tracking, `726a00f` owner alerts, `02fbba7` skeptic-review hardening). Docs
-  (this file, MAP, UNCERTAINTY) updated in a following docs commit.
+- Working tree as of 2026-10-18: the **Phase 8a CRM memory** increment (`713a135`) and **U29
+  signed tracking tokens** (`19d88ff`), plus the docs commits `0541d83` (ADR 0017 + plans) and
+  `214069c` (Phase 9 plan), are **COMMITTED**; a solo `make check` is green (626 tests). This
+  scribe update (STATE/MAP/UNCERTAINTY) follows as a docs commit.
 
 ## Risks
 - Two-generation duplication can silently ship wrong tenant/schema behaviour until fully retired
@@ -398,18 +476,31 @@ Build-gate code fixes (all under the root `pyproject.toml` configuration):
   timeout can truncate a run (use ≥15 min when running `make check` locally).
 
 ## Next Steps
-1. ~~Agent + commit the Phase 7 remainder (tracking page + owner alerts)~~ **DONE 2026-10-17**
-   (`814b4b8`, `726a00f`, `02fbba7`; skeptic review applied; U29 recorded).
-2. **Phase 8 — CRM memory, segments, owner insights, owner WhatsApp console** per
-   `docs/plans/2026-10-15-program-phases-7-10-dashboard.md` (plan the slice first, tests-first).
-3. Phase 9 — Instagram channel + 30-minute instrumented onboarding wizard; Phase 10 — TikTok
-   assisted mode (flagged), billing, hardening/load/security review; owner dashboard.
-4. Money-path liveness/observability gaps: auto-cancel or expiry bound for orders left
+1. **HUMAN DECISION — approve (or defer) the protected-zone fix pass** for the skeptic's
+   must-fix erasure/DRS items U30–U33 (payments phone, order email/address, audit-log phone,
+   export truncation). Nothing here may be self-edited; it needs approval first (CONSTITUTION §5).
+2. ~~Phase 8a — CRM memory (events, consent, versioned traits, export, erasure)~~ **DONE
+   2026-10-18** (`713a135`); ~~U29 signed tracking tokens~~ **DONE** (`19d88ff`). Both committed;
+   U30–U41 recorded.
+3. **Phase 8b** — segments + insights, then **Phase 8c** — owner WhatsApp console
+   (`docs/plans/2026-10-18-phase-8b-segments-insights.md`, `…-8c-owner-console.md`); plan the
+   slice first, tests-first.
+4. Phase 9 — Instagram channel + 30-minute instrumented onboarding wizard
+   (`docs/plans/2026-10-18-phase-9-instagram-onboarding.md`); Phase 10 — TikTok assisted mode
+   (flagged, off by default), billing, hardening/load/security review, pilot checklist
+   (`docs/plans/2026-10-18-phase-10-tiktok-billing-hardening.md`); owner dashboard.
+5. Money-path liveness/observability gaps: auto-cancel or expiry bound for orders left
    `awaiting_payment` by a deferred cancel (U13); idempotent replay for concurrent initiate (U14);
    push/paging on `payment.collected_after_terminal` (U15 — durability done, notification open);
    partial unique index for single completion (U18).
-5. Reconcile docker-compose files; verify `make migrate`/`make run-api` from root; wire tenancy
-   middleware into `main.py` (U23) — and wire the public tracking path deliberately (U29).
+6. Reconcile docker-compose files; verify `make migrate`/`make run-api` from root; wire tenancy
+   middleware into `main.py` (U23) — and ensure the now-token-gated public tracking path is
+   allow-listed deliberately (U29 is resolved; the token-in-logs aspect is U35). Add
+   `TRACKING_TOKEN_SECRET` to `.env.example` and require it in prod (skeptic S14).
+7. Docs freshness pass (skeptic S13): update ADR 0017 status to Accepted/committed and fix stale
+   line refs in plans 8b and Phase-10.
+8. **Process:** one test runner at a time on the shared test DB; prefer human approval *before*
+   protected-zone edits, not flag-at-commit (skeptic S15).
 ## Phase 6b — conversation pipeline wiring (agent on inbound WhatsApp) (2026-10-15)
 - **ADR 0014** (`docs/adr/0014-agent-conversation-pipeline.md`): outbox→worker pipeline; webhook
   enqueues `inbound_message` event with `provider_message_id`, `conversation_id`, `contact_id`,
