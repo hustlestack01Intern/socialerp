@@ -94,7 +94,7 @@ class ApiKeyManager:
         result = await self.session.execute(
             select(ApiKeyModel)
             .where(ApiKeyModel.revoked_at.is_(None))
-            .where(ApiKeyModel.expires_at.is_(None) | (ApiKeyModel.expires_at > datetime.now(UTC)))
+            .where(ApiKeyModel.expires_at.is_(None) | (ApiKeyModel.expires_at > datetime.now(UTC))),
         )
         keys = result.scalars().all()
 
@@ -104,7 +104,7 @@ class ApiKeyManager:
                 await self.session.execute(
                     update(ApiKeyModel)
                     .where(ApiKeyModel.id == key.id)
-                    .values(last_used_at=datetime.now(UTC))
+                    .values(last_used_at=datetime.now(UTC)),
                 )
                 return key
 
@@ -118,7 +118,7 @@ class ApiKeyManager:
             update(ApiKeyModel)
             .where(ApiKeyModel.id == key_id)
             .where(ApiKeyModel.tenant_id == tenant_id)
-            .values(revoked_at=datetime.now(UTC))
+            .values(revoked_at=datetime.now(UTC)),
         )
         rowcount = getattr(result, "rowcount", 0) or 0
         return bool(rowcount > 0)
@@ -131,7 +131,7 @@ class ApiKeyManager:
             update(ApiKeyModel)
             .where(ApiKeyModel.tenant_id == tenant_id)
             .where(ApiKeyModel.revoked_at.is_(None))
-            .values(revoked_at=datetime.now(UTC))
+            .values(revoked_at=datetime.now(UTC)),
         )
         rowcount = getattr(result, "rowcount", 0) or 0
         return int(rowcount)

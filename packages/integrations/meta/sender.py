@@ -43,7 +43,7 @@ class WhatsAppSender:
     """
 
     def __init__(
-        self, session: AsyncSession, limits_manager: WhatsAppLimitsManager | None = None
+        self, session: AsyncSession, limits_manager: WhatsAppLimitsManager | None = None,
     ) -> None:
         self.session = session
         self.limits = limits_manager or WhatsAppLimitsManager(session)
@@ -150,7 +150,7 @@ class WhatsAppSender:
 
         # Build components
         payload_components: list[dict[str, Any]] = list(
-            components or template.body.get("components", [])
+            components or template.body.get("components", []),
         )
         if template.header:
             payload_components.insert(0, dict(template.header))
@@ -367,7 +367,7 @@ class WhatsAppSender:
             raise
 
     async def _get_or_create_contact(
-        self, tenant_id: TenantId, phone: CustomerPhone
+        self, tenant_id: TenantId, phone: CustomerPhone,
     ) -> WhatsAppContact:
         """Get existing contact or create new one."""
         from sqlalchemy import select
@@ -376,7 +376,7 @@ class WhatsAppSender:
             select(WhatsAppContact).where(
                 WhatsAppContact.tenant_id == tenant_id,
                 WhatsAppContact.phone == str(phone),
-            )
+            ),
         )
         contact = result.scalar_one_or_none()
 
@@ -408,7 +408,7 @@ class WhatsAppSender:
                 select(WhatsAppConversation).where(
                     WhatsAppConversation.id == conversation_id,
                     WhatsAppConversation.tenant_id == tenant_id,
-                )
+                ),
             )
             conversation = result.scalar_one_or_none()
             if conversation:
@@ -427,7 +427,7 @@ class WhatsAppSender:
                     WhatsAppConversationState.HANDOFF_ACTIVE,
                 ]),
             )
-            .order_by(WhatsAppConversation.created_at.desc())
+            .order_by(WhatsAppConversation.created_at.desc()),
         )
         conversation = result.scalar_one_or_none()
 
@@ -461,7 +461,7 @@ class WhatsAppSender:
                 WhatsAppTemplate.name == template_name,
                 WhatsAppTemplate.language == language_code,
                 WhatsAppTemplate.status == WhatsAppTemplateStatus.APPROVED,
-            )
+            ),
         )
         return result.scalar_one_or_none()
 
@@ -559,7 +559,7 @@ class TemplateManager:
             select(WhatsAppTemplate).where(
                 WhatsAppTemplate.id == template_id,
                 WhatsAppTemplate.tenant_id == tenant_id,
-            )
+            ),
         )
         template = result.scalar_one_or_none()
         if not template:

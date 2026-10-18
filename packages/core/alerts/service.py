@@ -131,7 +131,7 @@ class AlertService:
         return alert
 
     async def list_alerts(
-        self, tenant_id: TenantId, *, status: str | None = None, limit: int = 100
+        self, tenant_id: TenantId, *, status: str | None = None, limit: int = 100,
     ) -> list[OwnerAlert]:
         return await self.alerts.list_alerts(tenant_id, status=status, limit=limit)
 

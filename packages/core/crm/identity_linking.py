@@ -17,8 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from packages.core.audit.logger import AuditLogger
 from packages.core.domain import TenantId
 from packages.core.models.crm import CustomerIdentity
-from packages.core.models.order import Customer
 from packages.core.models.instagram import InstagramContact
+from packages.core.models.order import Customer
 from packages.core.models.whatsapp import WhatsAppContact
 
 
@@ -72,7 +72,6 @@ class IdentityLinkingService:
         if channel not in valid_channels:
             raise ValueError(f"Invalid channel: {channel}. Must be one of {valid_channels}")
 
-        valid_types = {"phone", "handle", "user_id"}
         if channel == "whatsapp" and channel_identity_type != "phone":
             raise ValueError("WhatsApp channel must use 'phone' identity type")
         if channel == "instagram" and channel_identity_type != "handle":
@@ -87,12 +86,12 @@ class IdentityLinkingService:
                 CustomerIdentity.customer_id == customer_id,
                 CustomerIdentity.channel == channel,
                 CustomerIdentity.channel_identity == channel_identity,
-            )
+            ),
         )
         existing = result.scalar_one_or_none()
         if existing:
             raise ValueError(
-                f"Identity link already exists for {channel}:{channel_identity}"
+                f"Identity link already exists for {channel}:{channel_identity}",
             )
 
         # If this is primary, unset any existing primary for this channel
@@ -106,7 +105,7 @@ class IdentityLinkingService:
                     CustomerIdentity.customer_id == customer_id,
                     CustomerIdentity.channel == channel,
                 )
-                .values(is_primary=False)
+                .values(is_primary=False),
             )
 
         # Create identity link
@@ -142,7 +141,7 @@ class IdentityLinkingService:
         return identity
 
     async def get_unified_customer(
-        self, tenant_id: TenantId, channel: str, channel_identity: str
+        self, tenant_id: TenantId, channel: str, channel_identity: str,
     ) -> Customer | None:
         """
         Resolve a channel identity to a unified CRM customer.
@@ -160,7 +159,7 @@ class IdentityLinkingService:
                 CustomerIdentity.tenant_id == tenant_id,
                 CustomerIdentity.channel == channel,
                 CustomerIdentity.channel_identity == channel_identity,
-            )
+            ),
         )
         identity = result.scalar_one_or_none()
         if not identity:
@@ -172,25 +171,25 @@ class IdentityLinkingService:
             select(CustomerModel).where(
                 CustomerModel.id == identity.customer_id,
                 CustomerModel.tenant_id == tenant_id,
-            )
+            ),
         )
         customer_obj: CustomerModel | None = result.scalar_one_or_none()  # type: ignore[assignment]
         return customer_obj
 
     async def get_all_identities(
-        self, tenant_id: TenantId, customer_id: UUID
+        self, tenant_id: TenantId, customer_id: UUID,
     ) -> list[CustomerIdentity]:
         """Get all channel identities for a customer."""
         result = await self.session.execute(
             select(CustomerIdentity).where(
                 CustomerIdentity.tenant_id == tenant_id,
                 CustomerIdentity.customer_id == customer_id,
-            ).order_by(CustomerIdentity.channel, CustomerIdentity.channel_identity)
+            ).order_by(CustomerIdentity.channel, CustomerIdentity.channel_identity),
         )
         return list(result.scalars().all())
 
     async def unlink_identity(
-        self, tenant_id: TenantId, identity_id: UUID
+        self, tenant_id: TenantId, identity_id: UUID,
     ) -> bool:
         """
         Unlink a channel identity from a customer (withdraw consent).
@@ -201,7 +200,7 @@ class IdentityLinkingService:
             select(CustomerIdentity).where(
                 CustomerIdentity.tenant_id == tenant_id,
                 CustomerIdentity.id == identity_id,
-            )
+            ),
         )
         identity = result.scalar_one_or_none()
         if not identity:
@@ -287,19 +286,19 @@ class IdentityLinkingService:
         )
 
     async def resolve_whatsapp(
-        self, tenant_id: TenantId, phone: str
+        self, tenant_id: TenantId, phone: str,
     ) -> Customer | None:
         """Resolve WhatsApp phone to unified customer."""
         return await self.get_unified_customer(tenant_id, "whatsapp", phone)
 
     async def resolve_instagram(
-        self, tenant_id: TenantId, ig_handle: str
+        self, tenant_id: TenantId, ig_handle: str,
     ) -> Customer | None:
         """Resolve Instagram handle to unified customer."""
         return await self.get_unified_customer(tenant_id, "instagram", ig_handle)
 
     async def resolve_tiktok(
-        self, tenant_id: TenantId, tiktok_user_id: str
+        self, tenant_id: TenantId, tiktok_user_id: str,
     ) -> Customer | None:
         """Resolve TikTok user ID to unified customer."""
         return await self.get_unified_customer(tenant_id, "tiktok", tiktok_user_id)
@@ -326,17 +325,17 @@ class IdentityLinkingService:
 
         if whatsapp_phone:
             results["whatsapp"] = await self.link_whatsapp(
-                tenant_id, customer_id, whatsapp_phone, consent_source
+                tenant_id, customer_id, whatsapp_phone, consent_source,
             )
 
         if instagram_handle:
             results["instagram"] = await self.link_instagram(
-                tenant_id, customer_id, instagram_handle, consent_source
+                tenant_id, customer_id, instagram_handle, consent_source,
             )
 
         if tiktok_user_id:
             results["tiktok"] = await self.link_tiktok(
-                tenant_id, customer_id, tiktok_user_id, consent_source
+                tenant_id, customer_id, tiktok_user_id, consent_source,
             )
 
         return results
@@ -346,13 +345,13 @@ class IdentityLinkingService:
     # =============================================================================
 
     async def resolve_from_whatsapp_contact(
-        self, tenant_id: TenantId, whatsapp_contact: WhatsAppContact
+        self, tenant_id: TenantId, whatsapp_contact: WhatsAppContact,
     ) -> Customer | None:
         """Resolve customer from WhatsApp contact."""
         return await self.resolve_whatsapp(tenant_id, whatsapp_contact.phone)
 
     async def resolve_from_instagram_contact(
-        self, tenant_id: TenantId, instagram_contact: InstagramContact
+        self, tenant_id: TenantId, instagram_contact: InstagramContact,
     ) -> Customer | None:
         """Resolve customer from Instagram contact."""
         if not instagram_contact.ig_handle:

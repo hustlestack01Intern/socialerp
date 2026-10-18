@@ -95,7 +95,7 @@ class AggregatorPaymentProvider(PaymentProvider):
             raise PaymentProviderError("Amount must be positive")
         if amount_cents % 100 != 0:
             raise PaymentProviderError(
-                "M-Pesa only supports whole shillings; amount_cents must be a multiple of 100"
+                "M-Pesa only supports whole shillings; amount_cents must be a multiple of 100",
             )
         return amount_cents // 100
 

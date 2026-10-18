@@ -114,7 +114,7 @@ class PaymentService:
     # -- helpers -----------------------------------------------------------
 
     async def _get_order(
-        self, tenant_id: UUID, order_id: UUID, *, for_update: bool = False
+        self, tenant_id: UUID, order_id: UUID, *, for_update: bool = False,
     ) -> Order:
         stmt = select(Order).where(Order.id == order_id, Order.tenant_id == tenant_id)
         if for_update:
@@ -136,7 +136,7 @@ class PaymentService:
 
     @staticmethod
     def _record_order_collection(
-        order: Order, reference: str | None, amount_cents: int, now: datetime
+        order: Order, reference: str | None, amount_cents: int, now: datetime,
     ) -> None:
         order.payment_status = "completed"
         order.payment_reference = reference
@@ -169,14 +169,14 @@ class PaymentService:
         # payment_status and paid_at so a stale failure callback cannot reopen it.
         if is_order_paid(order):
             raise OrderNotPayableError(
-                f"Order {order_id} is already paid; refusing another STK push"
+                f"Order {order_id} is already paid; refusing another STK push",
             )
         # Payable: awaiting_payment (prepay) or a pay-on-delivery order already
         # out_for_delivery (STK fires at rider arrival; see is_pod_in_transit).
         if order.status != OrderStatus.AWAITING_PAYMENT.value and not is_pod_in_transit(order):
             raise OrderNotPayableError(
                 f"Order {order_id} is {order.status!r}, expected 'awaiting_payment' "
-                "or pay-on-delivery in transit"
+                "or pay-on-delivery in transit",
             )
 
         # Reuse an in-flight attempt for the same idempotency key (double-tap
@@ -217,7 +217,7 @@ class PaymentService:
                     transaction_desc=f"Order {str(order_id)[:8]}",
                     callback_url=callback_url,
                     idempotency_key=idempotency_key,
-                )
+                ),
             )
         except PaymentProviderError as exc:
             payment.status = PaymentRecordStatus.FAILED
@@ -265,7 +265,7 @@ class PaymentService:
     # -- callback ----------------------------------------------------------
 
     async def _load_payment_for_update(
-        self, tenant_id: UUID, checkout_request_id: str
+        self, tenant_id: UUID, checkout_request_id: str,
     ) -> Payment | None:
         stmt = (
             select(Payment)
@@ -292,7 +292,7 @@ class PaymentService:
         payment = await self._load_payment_for_update(tenant_id, result.checkout_request_id)
         if payment is None:
             raise PaymentNotFoundError(
-                f"No payment for checkout_request_id {result.checkout_request_id!r}"
+                f"No payment for checkout_request_id {result.checkout_request_id!r}",
             )
 
         # Duplicate / late callback: already terminal -> safe no-op.
@@ -320,7 +320,7 @@ class PaymentService:
         payment = await self._load_payment_for_update(tenant_id, result.checkout_request_id)
         if payment is None:
             raise PaymentNotFoundError(
-                f"No payment for checkout_request_id {result.checkout_request_id!r}"
+                f"No payment for checkout_request_id {result.checkout_request_id!r}",
             )
         if PaymentRecordStatus(payment.status) in _TERMINAL_STATES:
             return payment
@@ -347,7 +347,7 @@ class PaymentService:
         if result.status is ProviderPaymentStatus.COMPLETED:
             if trusted_amount:
                 await self._complete_payment(
-                    payment, order, result.amount_cents, result.mpesa_receipt_number
+                    payment, order, result.amount_cents, result.mpesa_receipt_number,
                 )
             else:
                 # Cannot verify the amount from a status query: never auto-credit.
@@ -562,7 +562,7 @@ class PaymentService:
             return
         order.payment_status = "failed"
         await self._emit_failure(
-            payment, order, payment.failure_reason or FailureReason.UNKNOWN.value
+            payment, order, payment.failure_reason or FailureReason.UNKNOWN.value,
         )
 
     async def _audit_stale_failure(self, payment: Payment, order: Order, outcome: str) -> None:
@@ -647,13 +647,13 @@ class PaymentService:
 
         if PaymentRecordStatus(payment.status) is not PaymentRecordStatus.COMPLETED:
             raise RefundNotAllowedError(
-                f"Only completed payments can be refunded (status={payment.status!r})"
+                f"Only completed payments can be refunded (status={payment.status!r})",
             )
 
         order = await self._get_order(tenant_id, payment.order_id)
         if not is_legal_transition(OrderStatus(order.status), OrderStatus.REFUNDED):
             raise RefundNotAllowedError(
-                f"Order {order.id} is {order.status!r} and cannot be refunded"
+                f"Order {order.id} is {order.status!r} and cannot be refunded",
             )
 
         amount = payment.amount_cents if amount_cents is None else amount_cents

@@ -54,7 +54,7 @@ async def _count_as_tenant(session: AsyncSession, tenant_id: UUID) -> int:
 
 
 async def test_owner_alerts_are_isolated_between_tenants(
-    session_factory, rls_session_factory
+    session_factory, rls_session_factory,
 ) -> None:
     async with session_factory() as session, session.begin():
         tenant_a = await _make_tenant(session)
@@ -74,7 +74,7 @@ async def test_owner_alerts_are_isolated_between_tenants(
 
 
 async def test_owner_alerts_rls_blocks_cross_tenant_insert(
-    session_factory, rls_session_factory
+    session_factory, rls_session_factory,
 ) -> None:
     """A tenant cannot INSERT an alert stamped with another tenant's id (WITH CHECK)."""
     async with session_factory() as session, session.begin():
@@ -91,7 +91,7 @@ async def test_owner_alerts_rls_blocks_cross_tenant_insert(
                 title="forged",
                 body="",
                 metadata_json={},
-            )
+            ),
         )
         try:
             await session.flush()

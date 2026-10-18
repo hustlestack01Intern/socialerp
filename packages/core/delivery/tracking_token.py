@@ -115,7 +115,7 @@ def verify_tracking_token(
         # Re-pad: the token strips ``=`` padding for URL-safety.
         # ``binascii.Error`` (invalid base64) is a ValueError subclass.
         candidate = base64.b64decode(
-            signature + "=" * (-len(signature) % 4), altchars=b"-_", validate=True
+            signature + "=" * (-len(signature) % 4), altchars=b"-_", validate=True,
         )
     except ValueError:
         return False

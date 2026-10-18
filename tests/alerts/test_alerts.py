@@ -49,7 +49,7 @@ async def _seed_user(session_factory, tenant, user_id: UUID) -> None:
                 full_name="Actor",
                 role=UserRole.STAFF,
                 is_active=True,
-            )
+            ),
         )
 
 
@@ -138,7 +138,7 @@ async def test_raise_alert_backstop_unique_constraint(tenant, session_factory) -
                     text(
                         "INSERT INTO owner_alerts "
                         "(tenant_id, kind, severity, title, body, metadata_json, dedupe_key) "
-                        "VALUES (:t, 'k', 'warning', 'second', '', '{}'::jsonb, 'dupe')"
+                        "VALUES (:t, 'k', 'warning', 'second', '', '{}'::jsonb, 'dupe')",
                     ),
                     {"t": str(tenant.id)},
                 )
@@ -150,7 +150,7 @@ async def test_raise_alert_is_race_safe(tenant, session_factory) -> None:
     async def _raise() -> None:
         async with session_factory() as session, session.begin():
             await AlertService(session).raise_alert(
-                tenant.id, kind="k", title="race", dedupe_key="race-key"
+                tenant.id, kind="k", title="race", dedupe_key="race-key",
             )
 
     await asyncio.gather(_raise(), _raise())
@@ -200,7 +200,7 @@ async def test_alerts_api_list_and_ack(alerts_client: AsyncClient, tenant, sessi
 
 
 async def test_alerts_api_404_for_foreign_alert(
-    alerts_client: AsyncClient, tenant, session_factory
+    alerts_client: AsyncClient, tenant, session_factory,
 ) -> None:
     """An alert belonging to another tenant is invisible and unacknowledgeable."""
     other_tenant_id = uuid4()
@@ -214,12 +214,12 @@ async def test_alerts_api_404_for_foreign_alert(
                 owner_email="other@example.com",
                 is_active=True,
                 settings={},
-            )
+            ),
         )
         await session.flush()
         service = AlertService(session)
         foreign = await service.raise_alert(
-            other_tenant_id, kind="k", title="Foreign alert", dedupe_key="foreign-1"
+            other_tenant_id, kind="k", title="Foreign alert", dedupe_key="foreign-1",
         )
 
     resp = await alerts_client.post(f"/api/v1/alerts/{foreign.id}/ack")
@@ -254,7 +254,7 @@ async def test_worker_handler_raises_alert_and_is_replay_safe(tenant, session_fa
                     select(OwnerAlert).where(
                         OwnerAlert.tenant_id == tenant.id,
                         OwnerAlert.kind == "payment.collected_after_terminal",
-                    )
+                    ),
                 )
             )
             .scalars()

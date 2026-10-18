@@ -172,7 +172,7 @@ class ConversationAgentService:
 
     async def _load_settings(self) -> dict[str, object]:
         result = await self.session.execute(
-            select(Tenant.settings).where(Tenant.id == self.tenant_id)
+            select(Tenant.settings).where(Tenant.id == self.tenant_id),
         )
         settings = result.scalar_one_or_none()
         return dict(settings or {})
@@ -185,7 +185,7 @@ class ConversationAgentService:
                 ProductVariant.tenant_id == self.tenant_id,
                 ProductVariant.is_active.is_(True),
                 Product.status == ProductStatus.ACTIVE.value,
-            )
+            ),
         )
         items = [
             CatalogItem(

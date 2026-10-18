@@ -26,13 +26,13 @@ async def test_stock_alerts_list_variants_below_reorder_level(
     product = await add_product(db_session, tenant.id, name="Hoodie")
 
     below = await add_variant(
-        db_session, tenant.id, product, sku="A-LOW", quantity=2, reorder_level=5
+        db_session, tenant.id, product, sku="A-LOW", quantity=2, reorder_level=5,
     )
     at_level = await add_variant(
-        db_session, tenant.id, product, sku="B-EQUAL", quantity=5, reorder_level=5
+        db_session, tenant.id, product, sku="B-EQUAL", quantity=5, reorder_level=5,
     )
     healthy = await add_variant(
-        db_session, tenant.id, product, sku="C-OK", quantity=50, reorder_level=5
+        db_session, tenant.id, product, sku="C-OK", quantity=50, reorder_level=5,
     )
     inactive = await add_variant(
         db_session,
@@ -89,16 +89,16 @@ async def test_stock_alerts_raise_no_durable_alerts(db_session: AsyncSession) ->
 
     before = int(
         await db_session.scalar(
-            select(func.count()).select_from(OwnerAlert).where(OwnerAlert.tenant_id == tenant.id)
+            select(func.count()).select_from(OwnerAlert).where(OwnerAlert.tenant_id == tenant.id),
         )
-        or 0
+        or 0,
     )
     alerts = await InsightsService(db_session).stock_alerts(TenantId(tenant.id))
     after = int(
         await db_session.scalar(
-            select(func.count()).select_from(OwnerAlert).where(OwnerAlert.tenant_id == tenant.id)
+            select(func.count()).select_from(OwnerAlert).where(OwnerAlert.tenant_id == tenant.id),
         )
-        or 0
+        or 0,
     )
 
     assert len(alerts) == 1

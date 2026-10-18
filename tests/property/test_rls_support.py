@@ -35,7 +35,7 @@ def get_test_connection():
 def get_superuser_connection():
     """Get a superuser connection for test setup (bypasses RLS)."""
     conn = psycopg2.connect(
-        "postgresql://socialerp:socialerp@localhost:5432/socialerp", cursor_factory=RealDictCursor
+        "postgresql://socialerp:socialerp@localhost:5432/socialerp", cursor_factory=RealDictCursor,
     )
     conn.autocommit = True
     try:

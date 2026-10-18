@@ -258,25 +258,25 @@ class InsightsService:
 
     # ------------------------------------------------------------- reports
     async def daily_report(
-        self, tenant_id: TenantId, on_date: date, *, top_k: int = DEFAULT_TOP_K
+        self, tenant_id: TenantId, on_date: date, *, top_k: int = DEFAULT_TOP_K,
     ) -> DailyReport:
         """The report for one UTC calendar day, plus its order anomaly."""
         period = await self._report_for_window(
-            tenant_id, on_date, on_date + timedelta(days=1), top_k=top_k
+            tenant_id, on_date, on_date + timedelta(days=1), top_k=top_k,
         )
         anomaly = await self.detect_anomaly(tenant_id, on_date)
         return DailyReport(period=period, anomaly=anomaly)
 
     async def weekly_report(
-        self, tenant_id: TenantId, week_start: date, *, top_k: int = DEFAULT_TOP_K
+        self, tenant_id: TenantId, week_start: date, *, top_k: int = DEFAULT_TOP_K,
     ) -> PeriodReport:
         """The report for the 7-day window [week_start, week_start + 7)."""
         return await self._report_for_window(
-            tenant_id, week_start, week_start + timedelta(days=7), top_k=top_k
+            tenant_id, week_start, week_start + timedelta(days=7), top_k=top_k,
         )
 
     async def _report_for_window(
-        self, tenant_id: TenantId, start: date, end: date, *, top_k: int
+        self, tenant_id: TenantId, start: date, end: date, *, top_k: int,
     ) -> PeriodReport:
         start_dt = datetime.combine(start, time.min, tzinfo=UTC)
         end_dt = datetime.combine(end, time.min, tzinfo=UTC)
@@ -288,11 +288,11 @@ class InsightsService:
                         Order.tenant_id == tenant_id,
                         Order.created_at >= start_dt,
                         Order.created_at < end_dt,
-                    )
+                    ),
                 )
             )
             .scalars()
-            .all()
+            .all(),
         )
 
         # Financial guard: only paid, NON-refunded orders count as revenue
@@ -342,7 +342,7 @@ class InsightsService:
         return {row[0]: row[1] for row in rows}
 
     async def _top_items(
-        self, tenant_id: TenantId, paid_order_ids: Sequence[UUID], *, top_k: int
+        self, tenant_id: TenantId, paid_order_ids: Sequence[UUID], *, top_k: int,
     ) -> tuple[TopItem, ...]:
         """Top-k items by quantity sold across the given paid, non-refunded orders."""
         if not paid_order_ids or top_k <= 0:
@@ -353,11 +353,11 @@ class InsightsService:
                     select(OrderItem).where(
                         OrderItem.tenant_id == tenant_id,
                         OrderItem.order_id.in_(list(paid_order_ids)),
-                    )
+                    ),
                 )
             )
             .scalars()
-            .all()
+            .all(),
         )
         quantity: dict[tuple[UUID, str, str], int] = {}
         for item in items:
@@ -432,7 +432,7 @@ class InsightsService:
                     Order.tenant_id == tenant_id,
                     Order.created_at >= window_start,
                     Order.created_at < window_end,
-                )
+                ),
             )
         ).all()
 

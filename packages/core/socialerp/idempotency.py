@@ -57,7 +57,7 @@ class IdempotencyRecord(Base, TenantMixin):
     __table_args__ = (
         Index("ix_idempotency_tenant_scope_key", "tenant_id", "scope", "key", unique=True),
         Index(
-            "ix_idempotency_tenant_scope_hash", "tenant_id", "scope", "request_hash", unique=True
+            "ix_idempotency_tenant_scope_hash", "tenant_id", "scope", "request_hash", unique=True,
         ),
         Index("ix_idempotency_expires", "expires_at"),
     )
@@ -205,14 +205,14 @@ async def cleanup_expired_idempotency_keys() -> int:
     """Clean up expired idempotency keys (run as scheduled job)."""
     async with get_session() as session:
         result = await session.execute(
-            delete(IdempotencyRecord).where(IdempotencyRecord.expires_at < datetime.utcnow())
+            delete(IdempotencyRecord).where(IdempotencyRecord.expires_at < datetime.utcnow()),
         )
         return cast("CursorResult[Any]", result).rowcount
 
 
 # Decorator for automatic idempotency handling
 def idempotent(
-    scope: str, key_param: str = "idempotency_key", ttl_seconds: int = DEFAULT_TTL_SECONDS
+    scope: str, key_param: str = "idempotency_key", ttl_seconds: int = DEFAULT_TTL_SECONDS,
 ) -> Callable[[Callable[..., Awaitable[Any]]], Callable[..., Awaitable[Any]]]:
     """
     Decorator to make an async function idempotent.

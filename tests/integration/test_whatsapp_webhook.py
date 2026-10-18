@@ -143,7 +143,7 @@ async def db_session():
 
 
 def create_valid_webhook_payload(
-    phone_number_id: str, message_id: str = "wamid.test123"
+    phone_number_id: str, message_id: str = "wamid.test123",
 ) -> dict[str, Any]:
     """Create a valid WhatsApp webhook payload."""
     return {
@@ -160,7 +160,7 @@ def create_valid_webhook_payload(
                                 "phone_number_id": phone_number_id,
                             },
                             "contacts": [
-                                {"profile": {"name": "Test User"}, "wa_id": "254712345678"}
+                                {"profile": {"name": "Test User"}, "wa_id": "254712345678"},
                             ],
                             "messages": [
                                 {
@@ -169,13 +169,13 @@ def create_valid_webhook_payload(
                                     "timestamp": str(int(datetime.now(UTC).timestamp())),
                                     "text": {"body": "Hello, I want to order"},
                                     "type": "text",
-                                }
+                                },
                             ],
                         },
                         "field": "messages",
-                    }
+                    },
                 ],
-            }
+            },
         ],
     }
 
@@ -201,7 +201,7 @@ class TestWebhookSignatureVerification:
         signature = sign_payload(payload, test_settings.meta_app_secret)
 
         response = client.post(
-            "/api/v1/webhooks/whatsapp", json=payload, headers={"X-Hub-Signature-256": signature}
+            "/api/v1/webhooks/whatsapp", json=payload, headers={"X-Hub-Signature-256": signature},
         )
 
         assert response.status_code == 200
@@ -215,7 +215,7 @@ class TestWebhookSignatureVerification:
         signature = sign_payload(payload, "wrong-secret")
 
         response = client.post(
-            "/api/v1/webhooks/whatsapp", json=payload, headers={"X-Hub-Signature-256": signature}
+            "/api/v1/webhooks/whatsapp", json=payload, headers={"X-Hub-Signature-256": signature},
         )
 
         assert response.status_code == 401
@@ -237,7 +237,7 @@ class TestWebhookSignatureVerification:
 
         # Modify payload but use same signature
         modified_payload = create_valid_webhook_payload(
-            phone_number_id=test_phone_number_id, message_id="wamid.different"
+            phone_number_id=test_phone_number_id, message_id="wamid.different",
         )
 
         response = client.post(
@@ -253,7 +253,7 @@ class TestWebhookSignatureVerification:
         payload = create_valid_webhook_payload(phone_number_id=test_phone_number_id)
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
         signature = hmac.new(
-            test_settings.meta_app_secret.encode("utf-8"), body, hashlib.sha256
+            test_settings.meta_app_secret.encode("utf-8"), body, hashlib.sha256,
         ).hexdigest()
 
         response = client.post(
@@ -271,7 +271,7 @@ class TestWebhookDedupe:
     def test_duplicate_message_ignored(self, client, test_phone_number_id, test_settings):
         """Duplicate message (same provider_message_id) is ignored."""
         payload = create_valid_webhook_payload(
-            phone_number_id=test_phone_number_id, message_id="wamid.duplicate_test"
+            phone_number_id=test_phone_number_id, message_id="wamid.duplicate_test",
         )
         sign_payload(payload, test_settings.meta_app_secret)
 
@@ -298,10 +298,10 @@ class TestWebhookDedupe:
         """Different message IDs are both processed."""
 
         payload1 = create_valid_webhook_payload(
-            phone_number_id=test_phone_number_id, message_id="wamid.msg1"
+            phone_number_id=test_phone_number_id, message_id="wamid.msg1",
         )
         payload2 = create_valid_webhook_payload(
-            phone_number_id=test_phone_number_id, message_id="wamid.msg2"
+            phone_number_id=test_phone_number_id, message_id="wamid.msg2",
         )
 
         response1 = client.post(
@@ -328,7 +328,7 @@ class TestWebhookParsing:
         signature = sign_payload(payload, test_settings.meta_app_secret)
 
         response = client.post(
-            "/api/v1/webhooks/whatsapp", json=payload, headers={"X-Hub-Signature-256": signature}
+            "/api/v1/webhooks/whatsapp", json=payload, headers={"X-Hub-Signature-256": signature},
         )
 
         assert response.status_code == 200
@@ -350,7 +350,7 @@ class TestWebhookParsing:
                                     "phone_number_id": test_phone_number_id,
                                 },
                                 "contacts": [
-                                    {"profile": {"name": "Test User"}, "wa_id": "254712345678"}
+                                    {"profile": {"name": "Test User"}, "wa_id": "254712345678"},
                                 ],
                                 "messages": [
                                     {
@@ -370,15 +370,15 @@ class TestWebhookParsing:
                                 ],
                             },
                             "field": "messages",
-                        }
+                        },
                     ],
-                }
+                },
             ],
         }
         signature = sign_payload(payload, test_settings.meta_app_secret)
 
         response = client.post(
-            "/api/v1/webhooks/whatsapp", json=payload, headers={"X-Hub-Signature-256": signature}
+            "/api/v1/webhooks/whatsapp", json=payload, headers={"X-Hub-Signature-256": signature},
         )
 
         assert response.status_code == 200

@@ -13,10 +13,8 @@ from packages.core.domain import TenantId
 from packages.core.models.instagram import (
     InstagramContact,
     InstagramConversation,
-    InstagramConversationState,
     InstagramDmEligibility,
     InstagramMessage,
-    InstagramMessageStatus,
     InstagramMessageType,
 )
 
@@ -26,16 +24,14 @@ class TestInstagramChannelE2E:
 
     @pytest.mark.asyncio
     async def test_instagram_dm_happy_path(
-        self, api_client: AsyncClient, db_session, fake_meta_server
+        self, api_client: AsyncClient, db_session, fake_meta_server,
     ):
         """Test Instagram DM happy path: inbound → normalize → pipeline → reply."""
-        from packages.core.models.core import Tenant
-        from uuid import uuid4
         from sqlalchemy import text
 
         # Get or create tenant
         result = await db_session.execute(
-            text("SELECT * FROM tenants LIMIT 1")
+            text("SELECT * FROM tenants LIMIT 1"),
         )
         tenant_row = result.first()
         tenant_id = TenantId(tenant_row.id)
@@ -54,10 +50,10 @@ class TestInstagramChannelE2E:
                     "message": {
                         "mid": "ig_msg_1",
                         "text": "Hello, I want to order a black hoodie",
-                        "type": "text"
-                    }
-                }]
-            }]
+                        "type": "text",
+                    },
+                }],
+            }],
         }
 
         # Send to our webhook endpoint
@@ -70,26 +66,24 @@ class TestInstagramChannelE2E:
         # Verify the message was processed through our pipeline
         # Check that InstagramContact was created
         from sqlalchemy import select
-        from packages.core.models.instagram import InstagramContact
 
         result = await db_session.execute(
             select(InstagramContact).where(
                 InstagramContact.tenant_id == tenant_id,
                 InstagramContact.ig_scoped_user_id == "ig_user_123",
-            )
+            ),
         )
         contact = result.scalar_one_or_none()
         assert contact is not None
         assert contact.ig_scoped_user_id == "ig_user_123"
 
         # Check that InstagramMessage was created
-        from packages.core.models.instagram import InstagramMessage
 
         result = await db_session.execute(
             select(InstagramMessage).where(
                 InstagramMessage.tenant_id == tenant_id,
                 InstagramMessage.meta_message_id == "ig_msg_1",
-            )
+            ),
         )
         message = result.scalar_one_or_none()
         assert message is not None
@@ -97,28 +91,25 @@ class TestInstagramChannelE2E:
         assert message.message_type == InstagramMessageType.TEXT
 
         # Check that conversation was created
-        from packages.core.models.instagram import InstagramConversation
 
         result = await db_session.execute(
             select(InstagramConversation).where(
                 InstagramConversation.tenant_id == tenant_id,
                 InstagramConversation.contact_id == contact.id,
-            )
+            ),
         )
         conversation = result.scalar_one_or_none()
         assert conversation is not None
 
     @pytest.mark.asyncio
     async def test_instagram_comment_to_dm_flow(
-        self, api_client: AsyncClient, db_session, fake_meta_server
+        self, api_client: AsyncClient, db_session, fake_meta_server,
     ):
         """Test comment-to-DM private reply flow."""
-        from packages.core.models.core import Tenant
-        from uuid import uuid4
 
         # Get tenant
         result = await db_session.execute(
-            "SELECT * FROM tenants LIMIT 1"
+            "SELECT * FROM tenants LIMIT 1",
         )
         tenant_row = result.first()
         tenant_id = TenantId(tenant_row.id)
@@ -136,11 +127,11 @@ class TestInstagramChannelE2E:
                     "media": {
                         "id": "media_789",
                         "permalink": "https://instagram.com/p/ABC123/",
-                        "media_type": "IMAGE"
+                        "media_type": "IMAGE",
                     },
-                    "timestamp": "2024-01-15T10:30:00+0000"
-                }]
-            }]
+                    "timestamp": "2024-01-15T10:30:00+0000",
+                }],
+            }],
         }
 
         response = await fake_meta_server.post(
@@ -151,13 +142,12 @@ class TestInstagramChannelE2E:
 
         # Check eligibility was created
         from sqlalchemy import select
-        from packages.core.models.instagram import InstagramDmEligibility
 
         result = await db_session.execute(
             select(InstagramDmEligibility).where(
                 InstagramDmEligibility.tenant_id == tenant_id,
                 InstagramDmEligibility.comment_id == "comment_123",
-            )
+            ),
         )
         eligibility = result.scalar_one_or_none()
         assert eligibility is not None
@@ -166,7 +156,7 @@ class TestInstagramChannelE2E:
 
         # Send private reply
         reply_payload = {
-            "message": {"text": "The hoodie is KES 2,500"}
+            "message": {"text": "The hoodie is KES 2,500"},
         }
 
         response = await fake_meta_server.post(
@@ -180,7 +170,7 @@ class TestInstagramChannelE2E:
         result = await db_session.execute(
             select(InstagramDmEligibility).where(
                 InstagramDmEligibility.comment_id == "comment_123",
-            )
+            ),
         )
         eligibility = result.scalar_one_or_none()
         assert eligibility.consumed
@@ -188,7 +178,7 @@ class TestInstagramChannelE2E:
 
     @pytest.mark.asyncio
     async def test_instagram_comment_rate_limit(
-        self, fake_meta_server
+        self, fake_meta_server,
     ):
         """Test rate limiting on private replies."""
         # Create eligibility
@@ -221,7 +211,7 @@ class TestInstagramChannelE2E:
 
     @pytest.mark.asyncio
     async def test_instagram_eligibility_expiry(
-        self, fake_meta_server
+        self, fake_meta_server,
     ):
         """Test that expired eligibility cannot be used."""
         import time
@@ -261,8 +251,8 @@ class TestInstagramWebhookShapes:
             "message": {
                 "mid": "msg_1",
                 "text": "Hello world",
-                "type": "text"
-            }
+                "type": "text",
+            },
         }
 
         normalized = normalize_instagram_dm(msg, "123456789")
@@ -288,11 +278,11 @@ class TestInstagramWebhookShapes:
                     "type": "image",
                     "payload": {
                         "url": "https://example.com/image.jpg",
-                        "mime_type": "image/jpeg"
-                    }
+                        "mime_type": "image/jpeg",
+                    },
                 }],
-                "text": "Nice photo!"
-            }
+                "text": "Nice photo!",
+            },
         }
 
         normalized = normalize_instagram_dm(msg, "123456789")
@@ -315,9 +305,9 @@ class TestInstagramWebhookShapes:
             "media": {
                 "id": "media_1",
                 "permalink": "https://instagram.com/p/ABC123/",
-                "media_type": "IMAGE"
+                "media_type": "IMAGE",
             },
-            "timestamp": "2024-01-15T10:30:00+0000"
+            "timestamp": "2024-01-15T10:30:00+0000",
         }
 
         normalized = normalize_instagram_comment(comment, "123456789")
@@ -340,7 +330,7 @@ class TestInstagramWebhookShapes:
             "story": {"id": "story_456"},
             "from": {"id": "user_111", "username": "viewer_alex"},
             "message": {"text": "Nice story!"},
-            "timestamp": 1700000000
+            "timestamp": 1700000000,
         }
 
         normalized = normalize_instagram_story_reply(story_reply, "123456789")

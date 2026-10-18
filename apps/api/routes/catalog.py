@@ -226,7 +226,7 @@ async def get_category(
         select(CategoryModel).where(
             CategoryModel.id == category_id,
             CategoryModel.tenant_id == tenant_id,
-        )
+        ),
     )
     category = result.scalar_one_or_none()
 
@@ -392,7 +392,7 @@ async def get_product(
         select(ProductModel).where(
             ProductModel.id == product_id,
             ProductModel.tenant_id == tenant_id,
-        )
+        ),
     )
     product = result.scalar_one_or_none()
 
@@ -483,7 +483,7 @@ async def create_variant(
         select(ProductVariantModel).where(
             ProductVariantModel.tenant_id == tenant_id,
             ProductVariantModel.sku == data.sku,
-        )
+        ),
     )
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="SKU already exists")
@@ -532,7 +532,7 @@ async def list_variants(
             ProductVariantModel.product_id == product_id,
             ProductVariantModel.tenant_id == tenant_id,
         )
-        .order_by(ProductVariantModel.created_at)
+        .order_by(ProductVariantModel.created_at),
     )
     variants = result.scalars().all()
 

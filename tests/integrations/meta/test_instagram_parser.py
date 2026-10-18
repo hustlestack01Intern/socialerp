@@ -42,9 +42,9 @@ class TestParseInstagramWebhook:
                     "sender": {"id": "user_123"},
                     "recipient": {"id": "123456789"},
                     "timestamp": 1700000000,
-                    "message": {"mid": "msg_1", "text": "Hello"}
-                }]
-            }]
+                    "message": {"mid": "msg_1", "text": "Hello"},
+                }],
+            }],
         }
         result = parse_instagram_webhook(payload)
         assert len(result) == 1
@@ -68,9 +68,9 @@ class TestParseInstagramWebhook:
                             "media_type": "IMAGE",
                         },
                         "timestamp": "2024-01-01T12:00:00+0000",
-                    }
-                ]
-            }]
+                    },
+                ],
+            }],
         }
         result = parse_instagram_webhook(payload)
         assert len(result) == 1
@@ -88,9 +88,9 @@ class TestParseInstagramWebhook:
                     "story": {"id": "story_1"},
                     "from": {"id": "user_123", "username": "customer_handle"},
                     "message": {"text": "Nice story!"},
-                    "timestamp": 1700000000
-                }]
-            }]
+                    "timestamp": 1700000000,
+                }],
+            }],
         }
         result = parse_instagram_webhook(payload)
         assert len(result) == 1
@@ -104,7 +104,7 @@ class TestParseInstagramWebhook:
                 "id": "123456789",
                 "time": 1700000000,
                 "messaging": [
-                    {"sender": {"id": "user_1"}, "message": {"mid": "m1", "text": "DM"}}
+                    {"sender": {"id": "user_1"}, "message": {"mid": "m1", "text": "DM"}},
                 ],
                 "comments": [
                     {
@@ -113,7 +113,7 @@ class TestParseInstagramWebhook:
                         "from": {"id": "user_2", "username": "h2"},
                         "media": {"id": "m1"},
                         "timestamp": "2024-01-01T12:00:00+0000",
-                    }
+                    },
                 ],
                 "story_replies": [
                     {
@@ -122,9 +122,9 @@ class TestParseInstagramWebhook:
                         "from": {"id": "user_3", "username": "h3"},
                         "message": {"text": "Reply"},
                         "timestamp": 1700000000,
-                    }
+                    },
                 ],
-            }]
+            }],
         }
         result = parse_instagram_webhook(payload)
         assert len(result) == 3
@@ -143,8 +143,8 @@ class TestNormalizeInstagramDM:
             "message": {
                 "mid": "msg_1",
                 "text": "Hello, I want to order",
-                "type": "text"
-            }
+                "type": "text",
+            },
         }
         normalized = normalize_instagram_dm(msg, "123456789")
 
@@ -171,10 +171,10 @@ class TestNormalizeInstagramDM:
                             "url": "https://example.com/image.jpg",
                             "mime_type": "image/jpeg",
                         },
-                    }
+                    },
                 ],
                 "text": "Nice shirt!",
-            }
+            },
         }
         normalized = normalize_instagram_dm(msg, "123456789")
 
@@ -192,8 +192,8 @@ class TestNormalizeInstagramDM:
                 "mid": "msg_3",
                 "type": "text",
                 "text": "Yes, please",
-                "quick_reply": {"payload": "ORDER_CONFIRMED"}
-            }
+                "quick_reply": {"payload": "ORDER_CONFIRMED"},
+            },
         }
         normalized = normalize_instagram_dm(msg, "123456789")
 
@@ -214,9 +214,9 @@ class TestNormalizeInstagramDM:
                     "type": "feed",
                     "ref": "campaign_123",
                     "ad_id": "ad_456",
-                    "campaign_id": "camp_789"
-                }
-            }
+                    "campaign_id": "camp_789",
+                },
+            },
         }
         normalized = normalize_instagram_dm(msg, "123456789")
 
@@ -232,8 +232,8 @@ class TestNormalizeInstagramDM:
             "message": {
                 "mid": "msg_5",
                 "text": "Replying to your question",
-                "context": {"id": "original_msg_123"}
-            }
+                "context": {"id": "original_msg_123"},
+            },
         }
         normalized = normalize_instagram_dm(msg, "123456789")
 
@@ -248,8 +248,8 @@ class TestNormalizeInstagramDM:
             "message": {
                 "mid": "msg_6",
                 "text": "Business reply",
-                "is_echo": True
-            }
+                "is_echo": True,
+            },
         }
         normalized = normalize_instagram_dm(msg, "123456789")
 
@@ -267,12 +267,12 @@ class TestNormalizeInstagramComment:
                 "id": "media_789",
                 "permalink": "https://instagram.com/p/ABC123/",
                 "media_type": "IMAGE",
-                "owner": {"id": "123456789"}
+                "owner": {"id": "123456789"},
             },
             "timestamp": "2024-01-15T10:30:00+0000",
             "like_count": 5,
             "parent_id": None,
-            "is_hidden": False
+            "is_hidden": False,
         }
         normalized = normalize_instagram_comment(comment, "123456789")
 
@@ -294,12 +294,12 @@ class TestNormalizeInstagramComment:
                 "id": "reel_123",
                 "permalink": "https://instagram.com/reel/XYZ/",
                 "media_type": "REELS",
-                "owner": {"id": "123456789"}
+                "owner": {"id": "123456789"},
             },
             "timestamp": "2024-01-16T14:00:00+0000",
             "like_count": 100,
             "parent_id": None,
-            "is_hidden": False
+            "is_hidden": False,
         }
         normalized = normalize_instagram_comment(comment, "123456789")
 
@@ -314,12 +314,12 @@ class TestNormalizeInstagramComment:
                 "id": "ad_creative_123",
                 "permalink": "https://instagram.com/p/AD123/",
                 "media_type": "IMAGE",
-                "owner": {"id": "123456789"}
+                "owner": {"id": "123456789"},
             },
             "timestamp": "2024-01-17T09:00:00+0000",
             "like_count": 2,
             "parent_id": None,
-            "is_hidden": False
+            "is_hidden": False,
         }
         normalized = normalize_instagram_comment(comment, "123456789")
 
@@ -333,7 +333,7 @@ class TestNormalizeInstagramStoryReply:
             "story": {"id": "story_456"},
             "from": {"id": "user_111", "username": "viewer_alex"},
             "message": {"text": "Nice story!"},
-            "timestamp": 1700000000
+            "timestamp": 1700000000,
         }
         normalized = normalize_instagram_story_reply(story_reply, "123456789")
 
@@ -358,7 +358,7 @@ class TestNormalizeInstagramStoryReply:
                             "url": "https://example.com/story_reply.jpg",
                             "mime_type": "image/jpeg",
                         },
-                    }
+                    },
                 ],
             },
             "timestamp": 1700000001,

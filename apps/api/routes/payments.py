@@ -253,7 +253,7 @@ async def stk_callback(
 
     # Attribute the callback to a tenant, then enforce RLS for the lookup.
     await db.execute(
-        text("SELECT set_config('app.current_tenant_id', :tid, true)"), {"tid": str(tenant_id)}
+        text("SELECT set_config('app.current_tenant_id', :tid, true)"), {"tid": str(tenant_id)},
     )
 
     service = PaymentService(db, provider)

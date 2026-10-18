@@ -40,7 +40,7 @@ class CRMRepository:
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
     async def list_events(
-        self, tenant_id: UUID, customer_id: UUID, *, limit: int = 200
+        self, tenant_id: UUID, customer_id: UUID, *, limit: int = 200,
     ) -> list[CustomerEvent]:
         stmt = (
             select(CustomerEvent)
@@ -72,7 +72,7 @@ class CRMRepository:
         return list((await self.session.execute(stmt)).scalars().all())
 
     async def recent_events(
-        self, tenant_id: UUID, customer_id: UUID, *, limit: int = 20
+        self, tenant_id: UUID, customer_id: UUID, *, limit: int = 20,
     ) -> list[CustomerEvent]:
         """The most recent events, returned oldest-first (chronological).
 
@@ -100,7 +100,7 @@ class CRMRepository:
         return record
 
     async def latest_consent(
-        self, tenant_id: UUID, customer_id: UUID, purpose: str
+        self, tenant_id: UUID, customer_id: UUID, purpose: str,
     ) -> ConsentRecord | None:
         stmt = (
             select(ConsentRecord)
@@ -177,7 +177,7 @@ class CRMRepository:
         if not order_ids:
             return []
         stmt = select(OrderItem).where(
-            OrderItem.tenant_id == tenant_id, OrderItem.order_id.in_(list(order_ids))
+            OrderItem.tenant_id == tenant_id, OrderItem.order_id.in_(list(order_ids)),
         )
         return list((await self.session.execute(stmt)).scalars().all())
 

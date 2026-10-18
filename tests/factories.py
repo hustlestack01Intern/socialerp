@@ -51,12 +51,12 @@ class AuditLogFactory(SQLAlchemyModelFactory):
         lambda _: {
             "test": "data",
             "value": Faker("random_int", min=1, max=1000).evaluate(None, None, {}),
-        }
+        },
     )
     decision = factory.Iterator(["allowed", "denied", "handed_off", "error"])
     rule_ref = factory.LazyAttribute(lambda _: f"policy:{Faker('word').evaluate(None, None, {})}")
     confidence = factory.LazyAttribute(
-        lambda _: round(Faker("pyfloat", min_value=0.5, max_value=1.0).evaluate(None, None, {}), 2)
+        lambda _: round(Faker("pyfloat", min_value=0.5, max_value=1.0).evaluate(None, None, {}), 2),
     )
     correlation_id = factory.LazyAttribute(lambda _: str(uuid4()))
     created_at = factory.LazyAttribute(lambda _: datetime.utcnow())

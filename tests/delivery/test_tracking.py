@@ -101,7 +101,7 @@ async def _seed_order_with_delivery(session_factory, tenant, *, with_delivery: b
                     fee_cents=20000,
                     status="out_for_delivery",
                     picked_up_at=datetime.now(UTC),
-                )
+                ),
             )
             await session.flush()
 
@@ -128,7 +128,7 @@ async def test_unknown_order_is_404(tracking_client: AsyncClient) -> None:
 
     signed_for_unknown = sign_tracking_token(uuid4(), unknown)
     json_resp = await tracking_client.get(
-        f"/api/v1/tracking/{unknown}", params={"t": signed_for_unknown}
+        f"/api/v1/tracking/{unknown}", params={"t": signed_for_unknown},
     )
     assert json_resp.status_code == 404
     page_resp = await tracking_client.get(f"/tracking/{unknown}", params={"t": signed_for_unknown})
@@ -137,12 +137,12 @@ async def test_unknown_order_is_404(tracking_client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_tracking_json_exposes_status_but_never_pii(
-    tracking_client: AsyncClient, tenant, session_factory
+    tracking_client: AsyncClient, tenant, session_factory,
 ) -> None:
     order_id = await _seed_order_with_delivery(session_factory, tenant, with_delivery=True)
 
     resp = await tracking_client.get(
-        f"/api/v1/tracking/{order_id}", params={"t": _token_for(tenant, order_id)}
+        f"/api/v1/tracking/{order_id}", params={"t": _token_for(tenant, order_id)},
     )
     assert resp.status_code == 200, resp.text
 
@@ -166,12 +166,12 @@ async def test_tracking_json_exposes_status_but_never_pii(
 
 @pytest.mark.asyncio
 async def test_tracking_page_is_html_and_never_pii(
-    tracking_client: AsyncClient, tenant, session_factory
+    tracking_client: AsyncClient, tenant, session_factory,
 ) -> None:
     order_id = await _seed_order_with_delivery(session_factory, tenant, with_delivery=True)
 
     resp = await tracking_client.get(
-        f"/tracking/{order_id}", params={"t": _token_for(tenant, order_id)}
+        f"/tracking/{order_id}", params={"t": _token_for(tenant, order_id)},
     )
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("text/html")
@@ -184,13 +184,13 @@ async def test_tracking_page_is_html_and_never_pii(
 
 @pytest.mark.asyncio
 async def test_tracking_json_order_without_delivery(
-    tracking_client: AsyncClient, tenant, session_factory
+    tracking_client: AsyncClient, tenant, session_factory,
 ) -> None:
     """An order with no delivery yet reports delivery_status None, still no PII."""
     order_id = await _seed_order_with_delivery(session_factory, tenant, with_delivery=False)
 
     resp = await tracking_client.get(
-        f"/api/v1/tracking/{order_id}", params={"t": _token_for(tenant, order_id)}
+        f"/api/v1/tracking/{order_id}", params={"t": _token_for(tenant, order_id)},
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()

@@ -24,10 +24,10 @@ from tests.property.test_rls_support import (
 
 # Reduce examples for faster feedback in CI; disable deadline for DB tests
 settings.register_profile(
-    "ci", max_examples=50, deadline=None, suppress_health_check=[HealthCheck.too_slow]
+    "ci", max_examples=50, deadline=None, suppress_health_check=[HealthCheck.too_slow],
 )
 settings.register_profile(
-    "dev", max_examples=200, deadline=None, suppress_health_check=[HealthCheck.too_slow]
+    "dev", max_examples=200, deadline=None, suppress_health_check=[HealthCheck.too_slow],
 )
 settings.load_profile("ci")
 

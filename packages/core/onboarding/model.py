@@ -12,17 +12,14 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import (
-    JSON,
-    Column,
     DateTime,
     Enum,
     ForeignKey,
     Index,
-    String,
-    Text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.orm import Mapped, mapped_column
 
 from packages.core.models.base import Base
 
@@ -71,7 +68,7 @@ class OnboardingWizardProgress(Base):
     )
 
     current_step: Mapped[int] = mapped_column(
-        default=0, nullable=False
+        default=0, nullable=False,
     )  # 0 = not started, 1-6 = step number
 
     # Per-step timing data (JSONB)
@@ -118,12 +115,12 @@ class OnboardingWizardProgress(Base):
 
     # Launch approval (zero-interference gate)
     launch_approved_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        DateTime(timezone=True), nullable=True,
     )
 
     # Completion timestamp
     completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        DateTime(timezone=True), nullable=True,
     )
 
     # Standard timestamps

@@ -75,7 +75,7 @@ class FakeMetaState:
 
     # Rate limiting: {client_ip: [(timestamp, count)]}
     rate_limit_buckets: dict[str, list[tuple[float, int]]] = field(
-        default_factory=lambda: defaultdict(list)
+        default_factory=lambda: defaultdict(list),
     )
 
     # 24h window tracking: {identity: last_customer_message_timestamp}
@@ -343,7 +343,7 @@ async def send_message(
         # Free-form message - check window
         if not is_within_24h_window(to_phone):
             raise HTTPException(
-                status_code=400, detail="Outside 24h customer service window. Use template message."
+                status_code=400, detail="Outside 24h customer service window. Use template message.",
             )
     elif message.type == "template":
         # Template messages allowed outside window
@@ -548,8 +548,8 @@ async def instagram_get_accounts(
                 "username": "test_business",
                 "name": "Test Business",
                 "profile_picture_url": "https://example.com/profile.jpg",
-            }
-        ]
+            },
+        ],
     }
 
 
@@ -566,8 +566,8 @@ async def instagram_get_ig_users(
                 "username": "test_business",
                 "name": "Test Business",
                 "tasks": ["MODERATE"],
-            }
-        ]
+            },
+        ],
     }
 
 

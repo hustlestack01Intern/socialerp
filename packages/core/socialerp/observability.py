@@ -177,7 +177,7 @@ def configure_logging() -> None:
         JsonFormatter(
             "%(asctime)s %(levelname)s %(name)s %(message)s",
             rename_fields={"asctime": "timestamp", "levelname": "level"},
-        )
+        ),
     )
 
     root_logger = logging.getLogger()
@@ -292,7 +292,7 @@ def get_meter(name: str) -> metrics.Meter:
 
 @contextmanager
 def trace_operation(
-    name: str, attributes: dict[str, Any] | None = None
+    name: str, attributes: dict[str, Any] | None = None,
 ) -> Generator[trace.Span, None, None]:
     """Context manager for tracing a synchronous operation."""
     tracer = get_tracer(__name__)
@@ -310,7 +310,7 @@ def trace_operation(
 
 @asynccontextmanager
 async def trace_async_operation(
-    name: str, attributes: dict[str, Any] | None = None
+    name: str, attributes: dict[str, Any] | None = None,
 ) -> AsyncGenerator[trace.Span, None]:
     """Context manager for tracing an async operation."""
     tracer = get_tracer(__name__)
@@ -383,7 +383,7 @@ def redact_server_span_urls(span: trace.Span, scope: dict[str, Any]) -> None:
 
 
 async def observability_middleware(
-    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    request: Request, call_next: Callable[[Request], Awaitable[Response]],
 ) -> Response:
     """FastAPI middleware for request tracing and metrics."""
     import time

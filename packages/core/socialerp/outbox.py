@@ -59,12 +59,12 @@ class Outbox(Base, TenantMixin):
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     idempotency_key: Mapped[str | None] = mapped_column(String(200), nullable=True, unique=True)
     status: Mapped[str] = mapped_column(
-        String(20), nullable=False, default=OutboxEventStatus.PENDING.value, index=True
+        String(20), nullable=False, default=OutboxEventStatus.PENDING.value, index=True,
     )
     retry_count: Mapped[int] = mapped_column(default=0, nullable=False)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        nullable=False, default=datetime.utcnow, index=True
+        nullable=False, default=datetime.utcnow, index=True,
     )
     published_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
@@ -106,7 +106,7 @@ async def add_outbox_event(
         from sqlalchemy import select
 
         existing = await session.execute(
-            select(Outbox).where(Outbox.idempotency_key == idempotency_key)
+            select(Outbox).where(Outbox.idempotency_key == idempotency_key),
         )
         existing_event = existing.scalar_one_or_none()
         if existing_event:
@@ -127,7 +127,7 @@ async def add_outbox_event(
             from sqlalchemy import select
 
             existing = await new_session.execute(
-                select(Outbox).where(Outbox.idempotency_key == idempotency_key)
+                select(Outbox).where(Outbox.idempotency_key == idempotency_key),
             )
             if existing.scalar_one_or_none():
                 return existing.scalar_one().id
@@ -145,7 +145,7 @@ async def add_outbox_event(
 
 # Convenience functions for common event types
 async def publish_order_created(
-    order_id: UUID, order_data: dict[str, Any], tenant_id: UUID, session: AsyncSession | None = None
+    order_id: UUID, order_data: dict[str, Any], tenant_id: UUID, session: AsyncSession | None = None,
 ) -> UUID:
     return await add_outbox_event(
         event_type="order.created",
@@ -261,7 +261,7 @@ class OutboxRelay:
                 .where(Outbox.status == OutboxEventStatus.PENDING.value)
                 .order_by(Outbox.created_at)
                 .limit(self.batch_size)
-                .with_for_update(skip_locked=True)
+                .with_for_update(skip_locked=True),
             )
             events = result.scalars().all()
 
@@ -277,7 +277,7 @@ class OutboxRelay:
                     .where(Outbox.status == OutboxEventStatus.PENDING.value)
                     .order_by(Outbox.created_at)
                     .limit(self.batch_size)
-                    .with_for_update(skip_locked=True)
+                    .with_for_update(skip_locked=True),
                 )
                 events = result.scalars().all()
 

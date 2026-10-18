@@ -111,7 +111,7 @@ class TestOutbox:
 
         async with async_session() as session, session.begin():
             await add_outbox_event(
-                "event.fail", {"data": "fail"}, tenant_id=tenant.id, session=session
+                "event.fail", {"data": "fail"}, tenant_id=tenant.id, session=session,
             )
 
         call_count = 0
@@ -160,7 +160,7 @@ class TestOutbox:
             from sqlalchemy import select
 
             result = await session.execute(
-                select(Outbox).where(Outbox.event_type == "unknown.event")
+                select(Outbox).where(Outbox.event_type == "unknown.event"),
             )
             event = result.scalar_one()
             assert event.status == OutboxEventStatus.FAILED.value

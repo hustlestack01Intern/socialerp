@@ -215,7 +215,7 @@ class Agent:
                     sku=item.sku,
                     quantity=slot.quantity,
                     expected_unit_price_cents=item.price_cents,
-                )
+                ),
             )
 
         if unresolved or not resolved:

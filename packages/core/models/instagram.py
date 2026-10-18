@@ -28,7 +28,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from packages.core.models.base import Base
 
-
 # =============================================================================
 # Enums
 # =============================================================================
@@ -548,7 +547,7 @@ class InstagramDedupe(Base):
     # Constraints
     __table_args__ = (
         UniqueConstraint(
-            "tenant_id", "provider_message_id", name="uq_instagram_dedupe_tenant_provider_id"
+            "tenant_id", "provider_message_id", name="uq_instagram_dedupe_tenant_provider_id",
         ),
         Index("ix_instagram_dedupe_tenant_processed", "tenant_id", "processed_at"),
     )

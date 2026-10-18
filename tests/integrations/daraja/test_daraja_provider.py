@@ -122,7 +122,7 @@ class TestInitiateStkPush:
     async def test_raises_when_daraja_rejects(self) -> None:
         handler = _router({
             "/oauth/v1/generate": httpx.Response(
-                200, json={"access_token": "tok", "expires_in": "3599"}
+                200, json={"access_token": "tok", "expires_in": "3599"},
             ),
             "/mpesa/stkpush/v1/processrequest": httpx.Response(
                 200,
@@ -151,7 +151,7 @@ class TestQueryStatus:
     async def test_success(self) -> None:
         handler = _router({
             "/oauth/v1/generate": httpx.Response(
-                200, json={"access_token": "tok", "expires_in": "3599"}
+                200, json={"access_token": "tok", "expires_in": "3599"},
             ),
             "/mpesa/stkpushquery/v1/query": httpx.Response(
                 200,
@@ -171,10 +171,10 @@ class TestQueryStatus:
     async def test_missing_result_code_is_pending(self) -> None:
         handler = _router({
             "/oauth/v1/generate": httpx.Response(
-                200, json={"access_token": "tok", "expires_in": "3599"}
+                200, json={"access_token": "tok", "expires_in": "3599"},
             ),
             "/mpesa/stkpushquery/v1/query": httpx.Response(
-                500, json={"errorMessage": "still processing"}
+                500, json={"errorMessage": "still processing"},
             ),
         })
         provider = _make_provider(handler)
@@ -196,8 +196,8 @@ def _callback(result_code: int, items: list[dict[str, Any]] | None = None) -> di
                 "ResultCode": result_code,
                 "ResultDesc": "desc",
                 "CallbackMetadata": {"Item": items or []},
-            }
-        }
+            },
+        },
     }
 
 
@@ -232,7 +232,7 @@ class TestParseCallback:
         ],
     )
     async def test_failure_codes(
-        self, code: int, status: ProviderPaymentStatus, reason: FailureReason
+        self, code: int, status: ProviderPaymentStatus, reason: FailureReason,
     ) -> None:
         provider = _make_provider(_router({}))
         result = await provider.parse_callback(_callback(code))
@@ -275,7 +275,7 @@ class TestValidateCallback:
         with pytest.raises(CallbackVerificationError):
             await provider.validate_callback(_callback(0), {"x-real-ip": "10.0.0.1"})
         assert await provider.validate_callback(
-            _callback(0), {"x-forwarded-for": "196.201.214.200, 10.0.0.1"}
+            _callback(0), {"x-forwarded-for": "196.201.214.200, 10.0.0.1"},
         )
 
 

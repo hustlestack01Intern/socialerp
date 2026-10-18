@@ -38,7 +38,7 @@ DAY = date(2026, 10, 10)
 
 def test_spike_fires_at_more_than_double_the_median() -> None:
     anomaly = detect_anomaly_from_counts(
-        11, [5, 5, 5, 6, 5], factor=2.0, min_baseline=5, metric="orders", period=DAY
+        11, [5, 5, 5, 6, 5], factor=2.0, min_baseline=5, metric="orders", period=DAY,
     )
     assert anomaly is not None
     assert anomaly.direction == "spike"
@@ -53,7 +53,7 @@ def test_exact_double_is_not_a_spike() -> None:
     """Boundary is strict: today == median * factor is normal, not a spike."""
     assert (
         detect_anomaly_from_counts(
-            10, [5, 5, 5, 5, 5], factor=2.0, min_baseline=5, metric="orders", period=DAY
+            10, [5, 5, 5, 5, 5], factor=2.0, min_baseline=5, metric="orders", period=DAY,
         )
         is None
     )
@@ -61,7 +61,7 @@ def test_exact_double_is_not_a_spike() -> None:
 
 def test_drop_fires_below_half_the_median() -> None:
     anomaly = detect_anomaly_from_counts(
-        2, [5, 6, 5, 5, 6], factor=2.0, min_baseline=5, metric="orders", period=DAY
+        2, [5, 6, 5, 5, 6], factor=2.0, min_baseline=5, metric="orders", period=DAY,
     )
     assert anomaly is not None
     assert anomaly.direction == "drop"
@@ -71,7 +71,7 @@ def test_drop_fires_below_half_the_median() -> None:
 def test_exact_half_is_not_a_drop() -> None:
     assert (
         detect_anomaly_from_counts(
-            3, [6, 6, 6, 6, 6], factor=2.0, min_baseline=5, metric="orders", period=DAY
+            3, [6, 6, 6, 6, 6], factor=2.0, min_baseline=5, metric="orders", period=DAY,
         )
         is None
     )
@@ -81,13 +81,13 @@ def test_small_baseline_refuses_both_branches() -> None:
     """min_baseline guards noise: a spike AND a drop from a tiny baseline."""
     assert (
         detect_anomaly_from_counts(
-            50, [1, 1, 1, 1], factor=2.0, min_baseline=5, metric="orders", period=DAY
+            50, [1, 1, 1, 1], factor=2.0, min_baseline=5, metric="orders", period=DAY,
         )
         is None
     )
     assert (
         detect_anomaly_from_counts(
-            0, [2, 2, 2, 2], factor=2.0, min_baseline=5, metric="orders", period=DAY
+            0, [2, 2, 2, 2], factor=2.0, min_baseline=5, metric="orders", period=DAY,
         )
         is None
     )
@@ -116,7 +116,7 @@ def test_normal_day_is_none_including_zeros_in_baseline() -> None:
     # Trailing median 5 (zeros included as real data), today 5 => normal.
     assert (
         detect_anomaly_from_counts(
-            5, [0, 5, 0, 10, 5], factor=2.0, min_baseline=5, metric="orders", period=DAY
+            5, [0, 5, 0, 10, 5], factor=2.0, min_baseline=5, metric="orders", period=DAY,
         )
         is None
     )
@@ -148,7 +148,7 @@ async def test_detect_anomaly_counts_trailing_days_from_orders(
         await add_order(db_session, tenant.id, customer, created_at=utc_day(2026, 10, 10, 9))
 
     anomaly = await InsightsService(db_session).detect_anomaly(
-        TenantId(tenant.id), DAY, window_days=3
+        TenantId(tenant.id), DAY, window_days=3,
     )
     assert anomaly is not None
     assert anomaly.direction == "spike"
@@ -170,7 +170,7 @@ async def test_detect_anomaly_missing_trailing_days_count_as_zero(
 
     # Baseline [0, 0, 0, 0, 5] => median 0 < min_baseline => refused (noise guard).
     anomaly = await InsightsService(db_session).detect_anomaly(
-        TenantId(tenant.id), DAY, window_days=4
+        TenantId(tenant.id), DAY, window_days=4,
     )
     assert anomaly is None
 
@@ -185,7 +185,7 @@ async def test_detect_anomaly_is_tenant_scoped(db_session: AsyncSession) -> None
     for day in (7, 8, 9):
         for _ in range(6):
             await add_order(
-                db_session, tenant_b.id, customer_b, created_at=utc_day(2026, 10, day, 9)
+                db_session, tenant_b.id, customer_b, created_at=utc_day(2026, 10, day, 9),
             )
     for _ in range(20):
         await add_order(db_session, tenant_b.id, customer_b, created_at=utc_day(2026, 10, 10, 9))

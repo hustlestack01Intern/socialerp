@@ -54,7 +54,7 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
         self.settings = get_settings()
 
     async def dispatch(
-        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
+        self, request: Request, call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
         # Skip authentication for public paths
         if request.url.path in self.exclude_paths:
@@ -105,7 +105,7 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
         # Log for debugging (in development)
         if self.settings.app_debug:
             logger.debug(
-                f"Tenant context set: tenant_id={tenant_id}, user_id={user_id}, roles={roles}"
+                f"Tenant context set: tenant_id={tenant_id}, user_id={user_id}, roles={roles}",
             )
 
         # Continue to next middleware/route
@@ -148,7 +148,7 @@ class DatabaseSessionMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
 
     async def dispatch(
-        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
+        self, request: Request, call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
         # Get tenant_id from request state (set by TenantContextMiddleware)
         tenant_id = getattr(request.state, "tenant_id", None)

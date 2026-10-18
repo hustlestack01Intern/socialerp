@@ -141,7 +141,7 @@ def normalize_instagram_dm(msg: dict[str, Any], ig_professional_account_id: str)
 
 
 def normalize_instagram_comment(
-    comment: dict[str, Any], ig_professional_account_id: str
+    comment: dict[str, Any], ig_professional_account_id: str,
 ) -> dict[str, Any]:
     """Normalize Instagram comment (eligible for private reply)."""
     return {
@@ -174,7 +174,7 @@ def normalize_instagram_comment(
 
 
 def normalize_instagram_story_reply(
-    story_reply: dict[str, Any], ig_professional_account_id: str
+    story_reply: dict[str, Any], ig_professional_account_id: str,
 ) -> dict[str, Any]:
     """Normalize Instagram story reply."""
     message = story_reply.get("message", {})

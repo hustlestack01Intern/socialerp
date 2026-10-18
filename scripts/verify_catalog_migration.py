@@ -10,19 +10,19 @@ def main():
 
     # Check Catalog tables exist
     cur.execute(
-        "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename IN ('categories', 'products', 'product_variants', 'suppliers', 'locations')"
+        "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename IN ('categories', 'products', 'product_variants', 'suppliers', 'locations')",
     )
     cur.fetchall()
 
     # Check RLS enabled
     cur.execute(
-        "SELECT tablename, rowsecurity FROM pg_tables WHERE schemaname = 'public' AND tablename IN ('categories', 'products', 'product_variants', 'suppliers', 'locations')"
+        "SELECT tablename, rowsecurity FROM pg_tables WHERE schemaname = 'public' AND tablename IN ('categories', 'products', 'product_variants', 'suppliers', 'locations')",
     )
     cur.fetchall()
 
     # Check policies
     cur.execute(
-        "SELECT schemaname, tablename, policyname FROM pg_policies WHERE schemaname = 'public' AND tablename IN ('categories', 'products', 'product_variants', 'suppliers', 'locations')"
+        "SELECT schemaname, tablename, policyname FROM pg_policies WHERE schemaname = 'public' AND tablename IN ('categories', 'products', 'product_variants', 'suppliers', 'locations')",
     )
     policies = cur.fetchall()
     for _p in policies:
@@ -30,7 +30,7 @@ def main():
 
     # Check grants
     cur.execute(
-        "SELECT grantee, table_name, privilege_type FROM information_schema.table_privileges WHERE grantee = 'socialerp_app' AND table_name IN ('categories', 'products', 'product_variants', 'suppliers', 'locations')"
+        "SELECT grantee, table_name, privilege_type FROM information_schema.table_privileges WHERE grantee = 'socialerp_app' AND table_name IN ('categories', 'products', 'product_variants', 'suppliers', 'locations')",
     )
     grants = cur.fetchall()
     for _g in grants:

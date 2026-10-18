@@ -57,7 +57,7 @@ async def _seed_owner(session_factory: async_sessionmaker[AsyncSession], tenant:
 
 @pytest.fixture
 async def owner_client(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> AsyncGenerator[AsyncClient, None]:
     user_id = await _seed_owner(session_factory, tenant)
     _install_overrides(tenant, user_id, session_factory)
@@ -72,7 +72,7 @@ async def owner_client(
 
 @pytest.fixture
 async def staff_client(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> AsyncGenerator[AsyncClient, None]:
     user_id = await _seed_owner(session_factory, tenant)
     _install_overrides(tenant, user_id, session_factory)
@@ -112,7 +112,7 @@ async def test_segments_denied_for_non_owner(staff_client: AsyncClient) -> None:
 
 
 async def test_members_endpoint_pagination_and_content(
-    owner_client: AsyncClient, tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    owner_client: AsyncClient, tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with session_factory() as session, session.begin():
         ids = []
@@ -123,7 +123,7 @@ async def test_members_endpoint_pagination_and_content(
         expected_first_time = [c for i, c in enumerate(ids) if i % 2 == 0]
 
     resp = await owner_client.get(
-        "/api/v1/segments/first_time/members", params={"limit": 10, "offset": 0}
+        "/api/v1/segments/first_time/members", params={"limit": 10, "offset": 0},
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
@@ -132,7 +132,7 @@ async def test_members_endpoint_pagination_and_content(
     assert set(body["customer_ids"]) == {str(cid) for cid in expected_first_time}
 
     page = await owner_client.get(
-        "/api/v1/segments/first_time/members", params={"limit": 1, "offset": 1}
+        "/api/v1/segments/first_time/members", params={"limit": 1, "offset": 1},
     )
     assert page.status_code == 200, page.text
     assert page.json()["total"] == len(expected_first_time)
@@ -150,7 +150,7 @@ async def test_members_endpoint_422_for_invalid_pagination(owner_client: AsyncCl
 
 
 async def test_members_endpoint_is_tenant_scoped(
-    owner_client: AsyncClient, tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    owner_client: AsyncClient, tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """Tenant B's customers never appear in tenant A's member listing."""
     async with session_factory() as session, session.begin():
@@ -168,12 +168,12 @@ async def test_members_endpoint_is_tenant_scoped(
 
 
 async def test_members_payload_carries_no_pii(
-    owner_client: AsyncClient, tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    owner_client: AsyncClient, tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """Plan invariant 4: no new PII — ids only, no phone/name in the payload."""
     async with session_factory() as session, session.begin():
         customer = await make_customer(
-            session, tenant.id, phone="254711122233", name="Jane Confidential"
+            session, tenant.id, phone="254711122233", name="Jane Confidential",
         )
         await add_trait(session, tenant.id, customer.id, "order_count", 1)
 

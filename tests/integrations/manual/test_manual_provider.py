@@ -60,7 +60,7 @@ async def test_validate_callback_rejects_malformed_payload() -> None:
     provider = ManualPaymentProvider(callback_token="tok")
     assert (
         await provider.validate_callback(
-            {"checkout_request_id": "MANUAL-abc"}, {"x-callback-token": "tok"}
+            {"checkout_request_id": "MANUAL-abc"}, {"x-callback-token": "tok"},
         )
         is False
     )

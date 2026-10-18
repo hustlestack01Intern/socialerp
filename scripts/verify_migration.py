@@ -18,7 +18,7 @@ def main():
 
     # Check policies
     cur.execute(
-        "SELECT schemaname, tablename, policyname, permissive, roles, cmd, qual FROM pg_policies WHERE schemaname = 'public'"
+        "SELECT schemaname, tablename, policyname, permissive, roles, cmd, qual FROM pg_policies WHERE schemaname = 'public'",
     )
     policies = cur.fetchall()
     for _p in policies:
@@ -31,7 +31,7 @@ def main():
 
     # Check grants
     cur.execute(
-        "SELECT grantee, table_name, privilege_type FROM information_schema.table_privileges WHERE grantee = 'socialerp_app'"
+        "SELECT grantee, table_name, privilege_type FROM information_schema.table_privileges WHERE grantee = 'socialerp_app'",
     )
     grants = cur.fetchall()
     for _g in grants:

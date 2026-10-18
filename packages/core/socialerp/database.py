@@ -106,7 +106,7 @@ def reset_db() -> None:
 # Event listener for connection validation
 @event.listens_for(Pool, "connect")
 def set_postgresql_timezone(
-    dbapi_connection: DBAPIConnection, connection_record: ConnectionPoolEntry
+    dbapi_connection: DBAPIConnection, connection_record: ConnectionPoolEntry,
 ) -> None:
     """Set timezone to UTC for all connections."""
     cursor = dbapi_connection.cursor()

@@ -86,7 +86,7 @@ def fake_provider() -> _FakeProvider:
 
 @pytest.fixture
 async def delivery_client(
-    tenant, session_factory, fake_provider, monkeypatch
+    tenant, session_factory, fake_provider, monkeypatch,
 ) -> AsyncGenerator[AsyncClient, None]:
     """Client whose POD provider resolution is stubbed with the fake.
 
@@ -143,7 +143,7 @@ async def _create_order(client: AsyncClient, variant_id: str) -> str:
 
 
 async def _seed_order(
-    client, session_factory, tenant, *, status: str, payment_method: str = "mpesa_stk"
+    client, session_factory, tenant, *, status: str, payment_method: str = "mpesa_stk",
 ) -> str:
     async with session_factory() as session, session.begin():
         variant = await _seed_variant(session, tenant.id)
@@ -165,11 +165,11 @@ async def _seed_order(
 
 async def _make_zone_and_rider(client: AsyncClient) -> tuple[str, str]:
     zone = await client.post(
-        "/api/v1/delivery/zones", json={"name": "Kilimani", "fee_cents": 20000}
+        "/api/v1/delivery/zones", json={"name": "Kilimani", "fee_cents": 20000},
     )
     assert zone.status_code == 201, zone.text
     rider = await client.post(
-        "/api/v1/delivery/riders", json={"phone": "254700000001", "name": "Rider A"}
+        "/api/v1/delivery/riders", json={"phone": "254700000001", "name": "Rider A"},
     )
     assert rider.status_code == 201, rider.text
     return zone.json()["id"], rider.json()["id"]
@@ -177,7 +177,7 @@ async def _make_zone_and_rider(client: AsyncClient) -> tuple[str, str]:
 
 async def test_zone_crud(delivery_client: AsyncClient) -> None:
     created = await delivery_client.post(
-        "/api/v1/delivery/zones", json={"name": "Westlands", "fee_cents": 25000}
+        "/api/v1/delivery/zones", json={"name": "Westlands", "fee_cents": 25000},
     )
     assert created.status_code == 201, created.text
     body = created.json()
@@ -190,7 +190,7 @@ async def test_zone_crud(delivery_client: AsyncClient) -> None:
     assert any(z["id"] == body["id"] for z in listing.json())
 
     updated = await delivery_client.patch(
-        f"/api/v1/delivery/zones/{body['id']}", json={"fee_cents": 30000, "active": False}
+        f"/api/v1/delivery/zones/{body['id']}", json={"fee_cents": 30000, "active": False},
     )
     assert updated.status_code == 200, updated.text
     assert updated.json()["fee_cents"] == 30000
@@ -199,7 +199,7 @@ async def test_zone_crud(delivery_client: AsyncClient) -> None:
 
 async def test_rider_crud_and_deactivate(delivery_client: AsyncClient) -> None:
     created = await delivery_client.post(
-        "/api/v1/delivery/riders", json={"phone": "254711111111", "name": "Rider B"}
+        "/api/v1/delivery/riders", json={"phone": "254711111111", "name": "Rider B"},
     )
     assert created.status_code == 201, created.text
     rider_id = created.json()["id"]
@@ -214,10 +214,10 @@ async def test_rider_crud_and_deactivate(delivery_client: AsyncClient) -> None:
 
 
 async def test_dispatch_requires_packed(
-    delivery_client: AsyncClient, tenant, session_factory
+    delivery_client: AsyncClient, tenant, session_factory,
 ) -> None:
     order_id = await _seed_order(
-        delivery_client, session_factory, tenant, status="awaiting_payment"
+        delivery_client, session_factory, tenant, status="awaiting_payment",
     )
     async with session_factory() as session, session.begin():
         order = (
@@ -235,7 +235,7 @@ async def test_dispatch_requires_packed(
 
 
 async def test_full_delivery_lifecycle(
-    delivery_client: AsyncClient, tenant, session_factory
+    delivery_client: AsyncClient, tenant, session_factory,
 ) -> None:
     order_id = await _seed_order(delivery_client, session_factory, tenant, status="packed")
     zone_id, rider_id = await _make_zone_and_rider(delivery_client)
@@ -277,7 +277,7 @@ async def test_full_delivery_lifecycle(
 
 
 async def test_delivery_illegal_transition_returns_409(
-    delivery_client: AsyncClient, session_factory, tenant
+    delivery_client: AsyncClient, session_factory, tenant,
 ) -> None:
     order_id = await _seed_order(delivery_client, session_factory, tenant, status="packed")
     zone_id, rider_id = await _make_zone_and_rider(delivery_client)
@@ -293,7 +293,7 @@ async def test_delivery_illegal_transition_returns_409(
 
 
 async def test_pod_arrived_triggers_stk(
-    delivery_client: AsyncClient, session_factory, tenant, fake_provider
+    delivery_client: AsyncClient, session_factory, tenant, fake_provider,
 ) -> None:
     order_id = await _seed_order(
         delivery_client,
@@ -330,7 +330,7 @@ async def test_pod_arrived_triggers_stk(
 
 
 async def test_failed_on_assigned_keeps_order_packed(
-    delivery_client: AsyncClient, session_factory, tenant
+    delivery_client: AsyncClient, session_factory, tenant,
 ) -> None:
     """Failing an assigned delivery must NOT 500 (order packed -> failed_delivery
     is not a legal edge). The delivery fails; the order stays packed so it can be
@@ -344,7 +344,7 @@ async def test_failed_on_assigned_keeps_order_packed(
     delivery_id = dispatched.json()["id"]
 
     failed = await delivery_client.post(
-        f"/api/v1/delivery/deliveries/{delivery_id}/failed", json={"reason": "no stock"}
+        f"/api/v1/delivery/deliveries/{delivery_id}/failed", json={"reason": "no stock"},
     )
     assert failed.status_code == 200, failed.text
     assert failed.json()["status"] == "failed"
@@ -360,7 +360,7 @@ async def test_failed_on_assigned_keeps_order_packed(
 
 
 async def test_prepay_arrival_never_resolves_a_provider(
-    plain_client: AsyncClient, session_factory, tenant
+    plain_client: AsyncClient, session_factory, tenant,
 ) -> None:
     """A prepay arrival must work with no payment provider configured at all.
 
@@ -400,7 +400,7 @@ async def test_arrival_is_once_only(delivery_client: AsyncClient, session_factor
 
 
 async def test_concurrent_arrivals_fire_exactly_one_stk(
-    delivery_client: AsyncClient, session_factory, tenant, fake_provider
+    delivery_client: AsyncClient, session_factory, tenant, fake_provider,
 ) -> None:
     """Two simultaneous arrivals must not double-push STK (U19).
 
@@ -408,7 +408,7 @@ async def test_concurrent_arrivals_fire_exactly_one_stk(
     the route is what serializes them: one 200, one 409, one provider call.
     """
     order_id = await _seed_order(
-        delivery_client, session_factory, tenant, status="packed", payment_method="mpesa_pod"
+        delivery_client, session_factory, tenant, status="packed", payment_method="mpesa_pod",
     )
     zone_id, rider_id = await _make_zone_and_rider(delivery_client)
     dispatched = await delivery_client.post(
@@ -428,36 +428,36 @@ async def test_concurrent_arrivals_fire_exactly_one_stk(
 
 async def test_duplicate_zone_name_returns_409(delivery_client: AsyncClient) -> None:
     first = await delivery_client.post(
-        "/api/v1/delivery/zones", json={"name": "Karen", "fee_cents": 30000}
+        "/api/v1/delivery/zones", json={"name": "Karen", "fee_cents": 30000},
     )
     assert first.status_code == 201, first.text
     dup = await delivery_client.post(
-        "/api/v1/delivery/zones", json={"name": "Karen", "fee_cents": 35000}
+        "/api/v1/delivery/zones", json={"name": "Karen", "fee_cents": 35000},
     )
     assert dup.status_code == 409, dup.text
 
 
 async def test_duplicate_rider_phone_returns_409(delivery_client: AsyncClient) -> None:
     first = await delivery_client.post(
-        "/api/v1/delivery/riders", json={"phone": "254733333333", "name": "Rider C"}
+        "/api/v1/delivery/riders", json={"phone": "254733333333", "name": "Rider C"},
     )
     assert first.status_code == 201, first.text
     # A different spelling of the same MSISDN normalizes to the same value.
     dup = await delivery_client.post(
-        "/api/v1/delivery/riders", json={"phone": "0733 333 333", "name": "Rider C2"}
+        "/api/v1/delivery/riders", json={"phone": "0733 333 333", "name": "Rider C2"},
     )
     assert dup.status_code == 409, dup.text
 
 
 async def test_invalid_rider_phone_returns_422(delivery_client: AsyncClient) -> None:
     resp = await delivery_client.post(
-        "/api/v1/delivery/riders", json={"phone": "not-a-phone", "name": "Bad"}
+        "/api/v1/delivery/riders", json={"phone": "not-a-phone", "name": "Bad"},
     )
     assert resp.status_code == 422, resp.text
 
 
 async def test_delivery_is_tenant_scoped(
-    delivery_client: AsyncClient, session_factory, tenant
+    delivery_client: AsyncClient, session_factory, tenant,
 ) -> None:
     """A delivery created by tenant A is invisible to tenant B."""
     from socialerp.tenancy import Tenant

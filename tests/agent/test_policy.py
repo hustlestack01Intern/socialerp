@@ -20,7 +20,7 @@ def _result(intent: Intent, confidence: float = 0.9, **kw: object) -> IntentResu
 def test_injection_escalates_even_at_l3() -> None:
     engine = PolicyEngine()
     decision = engine.decide(
-        _result(Intent.FAQ, injection_detected=True), autonomy=AutonomyLevel.L3_OPTIMIZE
+        _result(Intent.FAQ, injection_detected=True), autonomy=AutonomyLevel.L3_OPTIMIZE,
     )
     assert decision.action is PolicyAction.ESCALATE_HUMAN
     assert decision.risk is RiskLevel.HIGH
@@ -30,7 +30,7 @@ def test_injection_escalates_even_at_l3() -> None:
 def test_sensitive_action_always_human() -> None:
     engine = PolicyEngine()
     decision = engine.decide(
-        _result(Intent.FAQ), autonomy=AutonomyLevel.L3_OPTIMIZE, sensitive_action="refund"
+        _result(Intent.FAQ), autonomy=AutonomyLevel.L3_OPTIMIZE, sensitive_action="refund",
     )
     assert decision.action is PolicyAction.ESCALATE_HUMAN
     assert decision.requires_human
@@ -47,14 +47,14 @@ def test_risk_flags_escalate_at_any_level() -> None:
 
 def test_low_confidence_escalates() -> None:
     decision = PolicyEngine().decide(
-        _result(Intent.FAQ, confidence=0.2), autonomy=AutonomyLevel.L1_ANSWER
+        _result(Intent.FAQ, confidence=0.2), autonomy=AutonomyLevel.L1_ANSWER,
     )
     assert decision.action is PolicyAction.ESCALATE_HUMAN
 
 
 def test_unknown_intent_escalates() -> None:
     decision = PolicyEngine().decide(
-        _result(Intent.UNKNOWN, confidence=0.9), autonomy=AutonomyLevel.L1_ANSWER
+        _result(Intent.UNKNOWN, confidence=0.9), autonomy=AutonomyLevel.L1_ANSWER,
     )
     assert decision.action is PolicyAction.ESCALATE_HUMAN
 
@@ -99,7 +99,7 @@ def test_injection_blocks_l2_order_execution() -> None:
 
 def test_low_confidence_blocks_l2_order_execution() -> None:
     decision = PolicyEngine().decide(
-        _result(Intent.CREATE_ORDER, confidence=0.2), autonomy=AutonomyLevel.L2_TRANSACT
+        _result(Intent.CREATE_ORDER, confidence=0.2), autonomy=AutonomyLevel.L2_TRANSACT,
     )
     assert decision.action is PolicyAction.ESCALATE_HUMAN
     assert not decision.may_execute

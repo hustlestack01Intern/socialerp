@@ -147,7 +147,7 @@ class TestMoney:
         assert Money.from_kes(raw_kes).cents == expected_cents
 
     @given(
-        st.integers(min_value=0, max_value=1_000_000), st.integers(min_value=0, max_value=1_000_000)
+        st.integers(min_value=0, max_value=1_000_000), st.integers(min_value=0, max_value=1_000_000),
     )
     def test_addition_commutative(self, a: int, b: int):
         """Money addition is commutative."""
@@ -156,7 +156,7 @@ class TestMoney:
         assert (m1 + m2).cents == (m2 + m1).cents
 
     @given(
-        st.integers(min_value=0, max_value=1_000_000), st.integers(min_value=0, max_value=1_000_000)
+        st.integers(min_value=0, max_value=1_000_000), st.integers(min_value=0, max_value=1_000_000),
     )
     def test_addition_associative(self, a: int, b: int):
         """Money addition is associative."""
@@ -180,7 +180,7 @@ class TestMoney:
         assert result.cents == cents // divisor
 
     @given(
-        st.integers(min_value=0, max_value=1_000_000), st.integers(min_value=0, max_value=1_000_000)
+        st.integers(min_value=0, max_value=1_000_000), st.integers(min_value=0, max_value=1_000_000),
     )
     def test_subtraction_no_negative(self, a: int, b: int):
         """Subtraction never produces negative (raises instead)."""
@@ -199,7 +199,7 @@ class TestMoney:
             Money.from_cents(-1)
 
     @given(
-        st.integers(min_value=0, max_value=1_000_000), st.integers(min_value=0, max_value=1_000_000)
+        st.integers(min_value=0, max_value=1_000_000), st.integers(min_value=0, max_value=1_000_000),
     )
     def test_comparison_operators(self, a: int, b: int):
         """Comparison operators work correctly."""
@@ -294,7 +294,7 @@ class TestSKU:
             ),
             min_size=1,
             max_size=50,
-        )
+        ),
     )
     def test_valid_sku_constructs(self, value: str):
         """Valid SKUs construct and normalize to uppercase."""

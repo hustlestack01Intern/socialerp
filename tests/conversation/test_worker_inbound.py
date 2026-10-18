@@ -98,7 +98,7 @@ async def test_handler_runs_agent_and_creates_order(tenant, session_factory, mon
 
     def _factory(session, tenant_id):
         return ConversationAgentService(
-            session, tenant_id, extractor=HeuristicIntentExtractor(), sender=sender
+            session, tenant_id, extractor=HeuristicIntentExtractor(), sender=sender,
         )
 
     monkeypatch.setattr(worker, "build_conversation_agent_service", _factory)
@@ -137,7 +137,7 @@ async def test_handler_runs_agent_and_creates_order(tenant, session_factory, mon
                     select(WhatsAppMessage).where(
                         WhatsAppMessage.conversation_id == conversation_id,
                         WhatsAppMessage.direction == "outbound",
-                    )
+                    ),
                 )
             )
             .scalars()
@@ -148,7 +148,7 @@ async def test_handler_runs_agent_and_creates_order(tenant, session_factory, mon
 
 
 async def test_replayed_event_does_not_create_a_second_order(
-    tenant, session_factory, monkeypatch
+    tenant, session_factory, monkeypatch,
 ) -> None:
     async with session_factory() as session:
         contact_id, conversation_id = await _seed(session, tenant.id)
@@ -158,7 +158,7 @@ async def test_replayed_event_does_not_create_a_second_order(
         worker,
         "build_conversation_agent_service",
         lambda session, tenant_id: ConversationAgentService(
-            session, tenant_id, extractor=HeuristicIntentExtractor(), sender=sender
+            session, tenant_id, extractor=HeuristicIntentExtractor(), sender=sender,
         ),
     )
 
@@ -237,7 +237,7 @@ async def _seed_rider_delivery(session, tenant_id, *, payment_method="mpesa_stk"
     session.add(order)
     await session.flush()
     delivery = await DeliveryService(session).dispatch(
-        tenant_id, order_id=order.id, rider_id=rider.id, zone_id=zone.id
+        tenant_id, order_id=order.id, rider_id=rider.id, zone_id=zone.id,
     )
     await session.commit()
     return delivery.id
@@ -292,7 +292,7 @@ async def test_rider_quick_reply_bypasses_agent(tenant, session_factory, monkeyp
 
 
 async def test_pod_arrival_triggers_collection_after_commit(
-    tenant, session_factory, monkeypatch
+    tenant, session_factory, monkeypatch,
 ) -> None:
     """The STK trigger fires only after the arrival is committed and visible."""
     sender = RecordingSender()
@@ -350,7 +350,7 @@ async def test_pod_arrival_triggers_collection_after_commit(
 
 
 async def test_replayed_rider_arrival_does_not_prompt_twice(
-    tenant, session_factory, monkeypatch
+    tenant, session_factory, monkeypatch,
 ) -> None:
     """A redelivered arrived event re-runs the flow, is rejected, and never prompts."""
     sender = RecordingSender()

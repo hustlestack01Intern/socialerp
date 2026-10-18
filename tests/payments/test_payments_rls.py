@@ -89,6 +89,6 @@ async def test_payments_insert_wrong_tenant_blocked(session_factory, rls_session
                     amount_cents=500_000,
                     status=PaymentRecordStatus.INITIATED,
                     checkout_request_id="ws_CO_forbidden",
-                )
+                ),
             )
             await session.flush()

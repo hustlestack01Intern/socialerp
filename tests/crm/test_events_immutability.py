@@ -50,7 +50,7 @@ async def _record(
 
 
 async def test_record_event_appends_summarised_event(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with session_factory() as session, session.begin():
         customer = await make_customer(session, tenant.id)
@@ -70,7 +70,7 @@ async def test_record_event_appends_summarised_event(
 
 
 async def test_record_event_truncates_summary_to_300_chars(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """Plan invariant 3: events summarise; raw bodies are never stored wholesale."""
     long_summary = "x" * 400
@@ -84,7 +84,7 @@ async def test_record_event_truncates_summary_to_300_chars(
 
 
 async def test_record_event_is_idempotent_per_dedupe_key(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with session_factory() as session, session.begin():
         customer = await make_customer(session, tenant.id)
@@ -97,7 +97,7 @@ async def test_record_event_is_idempotent_per_dedupe_key(
         stored = (
             (
                 await session.execute(
-                    select(CustomerEvent).where(CustomerEvent.customer_id == customer.id)
+                    select(CustomerEvent).where(CustomerEvent.customer_id == customer.id),
                 )
             )
             .scalars()
@@ -110,13 +110,13 @@ async def test_record_event_is_idempotent_per_dedupe_key(
 
 
 async def test_dedupe_unique_constraint_is_the_race_backstop(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """Bypassing the service pre-check hits the (tenant_id, dedupe_key) constraint."""
     async with session_factory() as session, session.begin():
         customer = await make_customer(session, tenant.id)
         await CRMService(session).record_event(
-            TenantId(tenant.id), customer.id, "k", dedupe_key="dupe"
+            TenantId(tenant.id), customer.id, "k", dedupe_key="dupe",
         )
         with pytest.raises(IntegrityError):
             async with session.begin_nested():
@@ -124,14 +124,14 @@ async def test_dedupe_unique_constraint_is_the_race_backstop(
                     text(
                         "INSERT INTO customer_events "
                         "(tenant_id, customer_id, event_type, dedupe_key) "
-                        "VALUES (:t, :c, 'k', 'dupe')"
+                        "VALUES (:t, :c, 'k', 'dupe')",
                     ),
                     {"t": str(tenant.id), "c": str(customer.id)},
                 )
 
 
 async def test_record_event_is_race_safe(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """Two concurrent appends with the same dedupe key yield exactly one event."""
     async with session_factory() as setup, setup.begin():
@@ -141,7 +141,7 @@ async def test_record_event_is_race_safe(
     async def _append() -> None:
         async with session_factory() as session, session.begin():
             await CRMService(session).record_event(
-                TenantId(tenant.id), customer_id, "k", dedupe_key="race-key"
+                TenantId(tenant.id), customer_id, "k", dedupe_key="race-key",
             )
 
     await asyncio.gather(_append(), _append())
@@ -150,7 +150,7 @@ async def test_record_event_is_race_safe(
         rows = (
             (
                 await session.execute(
-                    select(CustomerEvent).where(CustomerEvent.dedupe_key == "race-key")
+                    select(CustomerEvent).where(CustomerEvent.dedupe_key == "race-key"),
                 )
             )
             .scalars()
@@ -160,7 +160,7 @@ async def test_record_event_is_race_safe(
 
 
 async def test_record_event_is_audited(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with session_factory() as session, session.begin():
         customer = await make_customer(session, tenant.id)
@@ -168,8 +168,8 @@ async def test_record_event_is_audited(
         audit = (
             await session.execute(
                 select(AuditLog).where(
-                    AuditLog.tenant_id == tenant.id, AuditLog.action == "crm.event_recorded"
-                )
+                    AuditLog.tenant_id == tenant.id, AuditLog.action == "crm.event_recorded",
+                ),
             )
         ).scalar_one()
 
@@ -179,7 +179,7 @@ async def test_record_event_is_audited(
 
 
 async def test_raw_sql_update_and_delete_are_rejected_by_trigger(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """Plan invariant 3: the log cannot be rewritten or erased via raw SQL."""
     async with session_factory() as session, session.begin():
@@ -210,7 +210,7 @@ async def test_raw_sql_update_and_delete_are_rejected_by_trigger(
 
 
 async def test_delete_allowed_only_with_erasure_session_flag(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """The erasure backstop: DELETE succeeds only when the session flag is set."""
     async with session_factory() as session, session.begin():
@@ -219,7 +219,7 @@ async def test_delete_allowed_only_with_erasure_session_flag(
 
         await session.execute(text("SELECT set_config('app.allow_event_erasure', 'on', true)"))
         result = await session.execute(
-            text("DELETE FROM customer_events WHERE id = :id"), {"id": str(event.id)}
+            text("DELETE FROM customer_events WHERE id = :id"), {"id": str(event.id)},
         )
         assert isinstance(result, CursorResult)
         assert result.rowcount == 1
@@ -227,7 +227,7 @@ async def test_delete_allowed_only_with_erasure_session_flag(
         remaining = (
             (
                 await session.execute(
-                    select(CustomerEvent).where(CustomerEvent.customer_id == customer.id)
+                    select(CustomerEvent).where(CustomerEvent.customer_id == customer.id),
                 )
             )
             .scalars()
@@ -245,7 +245,7 @@ async def test_service_and_repository_expose_no_event_mutation_path() -> None:
 
 
 async def test_record_event_requires_existing_customer(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with session_factory() as session, session.begin():
         service = CRMService(session)
@@ -254,7 +254,7 @@ async def test_record_event_requires_existing_customer(
 
 
 async def test_event_dedupe_is_tenant_scoped(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """The same dedupe key may be reused by different tenants independently."""
     from tests.crm.helpers import make_tenant
@@ -265,10 +265,10 @@ async def test_event_dedupe_is_tenant_scoped(
         customer_b = await make_customer(session, tenant_b.id, phone="254799999999")
         service = CRMService(session)
         event_a = await service.record_event(
-            TenantId(tenant.id), customer_a.id, "k", dedupe_key="shared-key"
+            TenantId(tenant.id), customer_a.id, "k", dedupe_key="shared-key",
         )
         event_b = await service.record_event(
-            TenantId(tenant_b.id), customer_b.id, "k", dedupe_key="shared-key"
+            TenantId(tenant_b.id), customer_b.id, "k", dedupe_key="shared-key",
         )
 
     assert event_a.id != event_b.id

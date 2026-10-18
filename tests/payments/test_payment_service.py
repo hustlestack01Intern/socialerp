@@ -312,7 +312,7 @@ async def test_initiate_refuses_stk_for_already_paid_pod_order(tenant_session, t
 
 
 async def _two_attempts_with_first_paid(
-    tenant_session, tenant
+    tenant_session, tenant,
 ) -> tuple[PaymentService, Order, Payment, Payment]:
     provider = FakeProvider()
     order = await _make_order(tenant_session, tenant.id)
@@ -402,7 +402,7 @@ def _cancelled_result(checkout_request_id: str) -> ProviderPaymentResult:
     [OrderStatus.CANCELLED, OrderStatus.FAILED_DELIVERY],
 )
 async def test_success_callback_on_terminal_order_is_captured_not_lost(
-    tenant_session, tenant, terminal_status
+    tenant_session, tenant, terminal_status,
 ) -> None:
     """A late success on a cancelled/failed order must not 500 or vanish.
 
@@ -439,7 +439,7 @@ async def test_success_callback_on_terminal_order_is_captured_not_lost(
 
 
 async def test_pod_packed_late_success_is_captured_and_not_collected(
-    tenant_session, tenant
+    tenant_session, tenant,
 ) -> None:
     """POD order packed before transit + late success: capture, keep gate closed.
 
@@ -502,7 +502,7 @@ async def test_cancel_of_retry_attempt_does_not_cancel_order(tenant_session, ten
 
 
 async def test_concurrent_success_and_cancel_callbacks_cannot_downgrade_paid_order(
-    session_factory, tenant
+    session_factory, tenant,
 ) -> None:
     """A cancel callback must not downgrade an order a success callback paid.
 

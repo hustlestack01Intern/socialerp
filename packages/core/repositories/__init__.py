@@ -108,7 +108,7 @@ class TenantRepository:
     async def get_by_email(self, email: str) -> Tenant | None:
         """Get tenant by owner email."""
         result = await self.session.execute(
-            select(TenantModel).where(TenantModel.owner_email == email)
+            select(TenantModel).where(TenantModel.owner_email == email),
         )
         tenant = result.scalar_one_or_none()
         return self._to_domain(tenant) if tenant else None
@@ -136,7 +136,7 @@ class TenantRepository:
         result = await self.session.execute(
             update(TenantModel)
             .where(TenantModel.id == tenant_id)
-            .values(is_active=False, updated_at=datetime.now())
+            .values(is_active=False, updated_at=datetime.now()),
         )
         rowcount = result.rowcount if hasattr(result, "rowcount") else 0
         return bool(rowcount > 0)
@@ -153,7 +153,7 @@ class TenantRepository:
             select(TenantModel)
             .order_by(TenantModel.created_at.desc())
             .offset(offset)
-            .limit(page_size)
+            .limit(page_size),
         )
         tenants = result.scalars().all()
 
@@ -208,7 +208,7 @@ class UserRepository:
         result = await self.session.execute(
             select(UserModel)
             .where(UserModel.tenant_id == tenant_id)
-            .where(UserModel.email == email)
+            .where(UserModel.email == email),
         )
         user = result.scalar_one_or_none()
         return self._to_domain(user) if user else None
@@ -220,7 +220,7 @@ class UserRepository:
         return self._to_domain(user) if user else None
 
     async def update(
-        self, user_id: UUID, data: UserUpdate, password_hash: str | None = None
+        self, user_id: UUID, data: UserUpdate, password_hash: str | None = None,
     ) -> User | None:
         """Update user."""
         user = await self.session.get(UserModel, user_id)
@@ -242,7 +242,7 @@ class UserRepository:
     async def update_last_login(self, user_id: UUID) -> None:
         """Update user's last login timestamp."""
         await self.session.execute(
-            update(UserModel).where(UserModel.id == user_id).values(last_login_at=datetime.now())
+            update(UserModel).where(UserModel.id == user_id).values(last_login_at=datetime.now()),
         )
 
     async def deactivate(self, user_id: UUID) -> bool:
@@ -250,7 +250,7 @@ class UserRepository:
         result = await self.session.execute(
             update(UserModel)
             .where(UserModel.id == user_id)
-            .values(is_active=False, updated_at=datetime.now())
+            .values(is_active=False, updated_at=datetime.now()),
         )
         rowcount = result.rowcount if hasattr(result, "rowcount") else 0
         return bool(rowcount > 0)
@@ -259,7 +259,7 @@ class UserRepository:
         """List users in tenant."""
         # Count total
         count_result = await self.session.execute(
-            select(func.count(UserModel.id)).where(UserModel.tenant_id == tenant_id)
+            select(func.count(UserModel.id)).where(UserModel.tenant_id == tenant_id),
         )
         total = count_result.scalar()
 
@@ -270,7 +270,7 @@ class UserRepository:
             .where(UserModel.tenant_id == tenant_id)
             .order_by(UserModel.created_at.desc())
             .offset(offset)
-            .limit(page_size)
+            .limit(page_size),
         )
         users = result.scalars().all()
 
@@ -346,7 +346,7 @@ class ApiKeyRepository:
     async def get_by_prefix(self, key_prefix: str) -> ApiKeyResponse | None:
         """Get API key by prefix (for validation)."""
         result = await self.session.execute(
-            select(ApiKeyModel).where(ApiKeyModel.key_hash.like(f"{key_prefix}%"))
+            select(ApiKeyModel).where(ApiKeyModel.key_hash.like(f"{key_prefix}%")),
         )
         api_key = result.scalar_one_or_none()
         return self._to_domain(api_key) if api_key else None
@@ -356,7 +356,7 @@ class ApiKeyRepository:
         result = await self.session.execute(
             update(ApiKeyModel)
             .where(ApiKeyModel.id == api_key_id)
-            .values(revoked_at=datetime.now())
+            .values(revoked_at=datetime.now()),
         )
         return _affected_rows(result) > 0
 
@@ -365,14 +365,14 @@ class ApiKeyRepository:
         await self.session.execute(
             update(ApiKeyModel)
             .where(ApiKeyModel.id == api_key_id)
-            .values(last_used_at=datetime.now())
+            .values(last_used_at=datetime.now()),
         )
 
     async def list(self, tenant_id: UUID, page: int = 1, page_size: int = 20) -> ApiKeyList:
         """List API keys in tenant."""
         # Count total
         count_result = await self.session.execute(
-            select(func.count(ApiKeyModel.id)).where(ApiKeyModel.tenant_id == tenant_id)
+            select(func.count(ApiKeyModel.id)).where(ApiKeyModel.tenant_id == tenant_id),
         )
         total = count_result.scalar()
 
@@ -383,7 +383,7 @@ class ApiKeyRepository:
             .where(ApiKeyModel.tenant_id == tenant_id)
             .order_by(ApiKeyModel.created_at.desc())
             .offset(offset)
-            .limit(page_size)
+            .limit(page_size),
         )
         api_keys = result.scalars().all()
 
@@ -520,7 +520,7 @@ class ProductRepository:
     async def get(self, product_id: UUID) -> Product | None:
         """Get product by ID."""
         result = await self.session.execute(
-            select(ProductModel).where(ProductModel.id == product_id)
+            select(ProductModel).where(ProductModel.id == product_id),
         )
         product = result.scalar_one_or_none()
         return self._to_domain(product) if product else None
@@ -530,7 +530,7 @@ class ProductRepository:
         result = await self.session.execute(
             select(ProductModel)
             .where(ProductModel.tenant_id == tenant_id)
-            .where(ProductModel.base_sku == str(sku))
+            .where(ProductModel.base_sku == str(sku)),
         )
         product = result.scalar_one_or_none()
         return self._to_domain(product) if product else None
@@ -574,7 +574,7 @@ class ProductRepository:
         result = await self.session.execute(
             update(ProductModel)
             .where(ProductModel.id == product_id)
-            .values(status=ProductStatus.DISCONTINUED.value, updated_at=datetime.now())
+            .values(status=ProductStatus.DISCONTINUED.value, updated_at=datetime.now()),
         )
         return _affected_rows(result) > 0
 
@@ -608,7 +608,7 @@ class ProductRepository:
         return [self._to_domain(p) for p in products]
 
     async def add_variant(
-        self, tenant_id: UUID, product_id: UUID, data: CreateVariantRequest
+        self, tenant_id: UUID, product_id: UUID, data: CreateVariantRequest,
     ) -> ProductVariant:
         """Add variant to product."""
         variant = ProductVariantModel(
@@ -698,7 +698,7 @@ class CategoryRepository:
     async def get(self, category_id: UUID) -> Category | None:
         """Get category by ID."""
         result = await self.session.execute(
-            select(CategoryModel).where(CategoryModel.id == category_id)
+            select(CategoryModel).where(CategoryModel.id == category_id),
         )
         category = result.scalar_one_or_none()
         return self._to_domain(category) if category else None
@@ -738,12 +738,12 @@ class CategoryRepository:
         result = await self.session.execute(
             update(CategoryModel)
             .where(CategoryModel.id == category_id)
-            .values(is_active=False, updated_at=datetime.now())
+            .values(is_active=False, updated_at=datetime.now()),
         )
         return _affected_rows(result) > 0
 
     async def list(
-        self, tenant_id: UUID, is_active: bool | None = None, page: int = 1, page_size: int = 20
+        self, tenant_id: UUID, is_active: bool | None = None, page: int = 1, page_size: int = 20,
     ) -> list[Category]:
         """List categories in tenant."""
         query = select(CategoryModel).where(CategoryModel.tenant_id == tenant_id)
@@ -788,7 +788,7 @@ class CustomerRepository:
             select(CustomerModel).where(
                 CustomerModel.id == customer_id,
                 CustomerModel.tenant_id == tenant_id,
-            )
+            ),
         )
         return result.scalar_one_or_none()
 
@@ -798,7 +798,7 @@ class CustomerRepository:
             select(CustomerModel).where(
                 CustomerModel.tenant_id == tenant_id,
                 CustomerModel.phone == phone,
-            )
+            ),
         )
         return result.scalar_one_or_none()
 
@@ -857,19 +857,19 @@ class OrderRepository:
             select(OrderModel).where(
                 OrderModel.id == order_id,
                 OrderModel.tenant_id == tenant_id,
-            )
+            ),
         )
         return result.scalar_one_or_none()
 
     async def get_by_idempotency_key(
-        self, tenant_id: UUID, idempotency_key: str
+        self, tenant_id: UUID, idempotency_key: str,
     ) -> OrderModel | None:
         """Get an order previously created with the same idempotency key."""
         result = await self.session.execute(
             select(OrderModel).where(
                 OrderModel.tenant_id == tenant_id,
                 OrderModel.metadata_json["idempotency_key"].astext == idempotency_key,
-            )
+            ),
         )
         return result.scalar_one_or_none()
 
@@ -881,7 +881,7 @@ class OrderRepository:
                 OrderItemModel.tenant_id == tenant_id,
                 OrderItemModel.order_id == order_id,
             )
-            .order_by(OrderItemModel.created_at)
+            .order_by(OrderItemModel.created_at),
         )
         return list(result.scalars().all())
 

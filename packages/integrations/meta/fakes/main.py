@@ -158,7 +158,7 @@ def check_rate_limit(key: str) -> bool:
     window_start = now - timedelta(seconds=1)
 
     row = conn.execute(
-        "SELECT count, window_start FROM rate_limits WHERE key = ?", (key,)
+        "SELECT count, window_start FROM rate_limits WHERE key = ?", (key,),
     ).fetchone()
 
     if row:
@@ -186,7 +186,7 @@ def check_rate_limit(key: str) -> bool:
 
 
 def get_or_create_conversation(
-    tenant_id: str, channel: str, customer_id: str, business_id: str
+    tenant_id: str, channel: str, customer_id: str, business_id: str,
 ) -> dict:
     """Get or create conversation, update 24h window."""
     conn = get_db()
@@ -462,7 +462,7 @@ async def _send_whatsapp_message(phone_number_id: str, message: WhatsAppMessage)
         if not is_window_open(tenant_id, "whatsapp", customer_id, phone_number_id):
             # Outside window - only templates allowed
             raise HTTPException(
-                status_code=400, detail="Outside 24h customer service window. Use template message."
+                status_code=400, detail="Outside 24h customer service window. Use template message.",
             )
 
     # Generate Meta message ID
@@ -514,7 +514,7 @@ async def _send_instagram_message(page_id: str, message: InstagramMessage):
     # Check 24h window
     if not is_window_open(tenant_id, "instagram", recipient_id, page_id):
         raise HTTPException(
-            status_code=400, detail="Outside 24h reply window. User must initiate conversation."
+            status_code=400, detail="Outside 24h reply window. User must initiate conversation.",
         )
 
     meta_msg_id = f"igmid.{uuid.uuid4().hex}"
@@ -552,7 +552,7 @@ async def list_templates(business_account_id: str):
     """List message templates."""
     conn = get_db()
     rows = conn.execute(
-        "SELECT * FROM templates WHERE tenant_id = ?", (business_account_id,)
+        "SELECT * FROM templates WHERE tenant_id = ?", (business_account_id,),
     ).fetchall()
     conn.close()
 

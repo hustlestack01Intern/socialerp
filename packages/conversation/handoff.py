@@ -212,7 +212,7 @@ class HandoffManager:
                 User.tenant_id == tenant_id,
                 User.role.in_(["owner", "staff"]),
                 User.is_active,
-            )
+            ),
         )
         return list(result.scalars().all())
 
@@ -255,7 +255,7 @@ class HandoffManager:
                 WhatsAppConversation.first_response_due_at.is_not(None),
                 WhatsAppConversation.first_response_due_at < now,
             )
-            .order_by(WhatsAppConversation.first_response_due_at)
+            .order_by(WhatsAppConversation.first_response_due_at),
         )
 
         overdue: list[dict[str, Any]] = []
@@ -284,7 +284,7 @@ class HandoffManager:
                     User.tenant_id == tenant_id,
                     User.role == "owner",
                     User.is_active,
-                )
+                ),
             )
             senior_owners = list(result.scalars().all())
 
@@ -316,7 +316,7 @@ class HandoffManager:
                 select(func.count(WhatsAppConversation.id)).where(
                     WhatsAppConversation.tenant_id == tenant_id,
                     WhatsAppConversation.handoff_requested_at.is_not(None),
-                )
+                ),
             )
         ).scalar() or 0
 
@@ -329,7 +329,7 @@ class HandoffManager:
                         WhatsAppConversationState.HANDOFF_REQUESTED,
                         WhatsAppConversationState.HANDOFF_ACTIVE,
                     ]),
-                )
+                ),
             )
         ).scalar() or 0
 
@@ -343,7 +343,7 @@ class HandoffManager:
                         WhatsAppConversationState.AWAITING_RESPONSE,
                     ]),
                     WhatsAppConversation.handoff_requested_at.is_not(None),
-                )
+                ),
             )
         ).scalar() or 0
 

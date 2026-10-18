@@ -188,7 +188,7 @@ def test_type_mismatch_compares_as_no_match() -> None:
     # Ordered op on non-numeric traits is refused as a match.
     assert (
         evaluate_predicate(
-            {"field": "preferred_size", "op": "<", "value": "N"}, {"preferred_size": "M"}
+            {"field": "preferred_size", "op": "<", "value": "N"}, {"preferred_size": "M"},
         )
         is False
     )
@@ -207,13 +207,13 @@ def test_type_mismatch_compares_as_no_match() -> None:
 def test_string_equality_matches_preference_traits() -> None:
     assert (
         evaluate_predicate(
-            {"field": "preferred_size", "op": "==", "value": "M"}, {"preferred_size": "M"}
+            {"field": "preferred_size", "op": "==", "value": "M"}, {"preferred_size": "M"},
         )
         is True
     )
     assert (
         evaluate_predicate(
-            {"field": "preferred_color", "op": "==", "value": "black"}, {"preferred_size": "M"}
+            {"field": "preferred_color", "op": "==", "value": "black"}, {"preferred_size": "M"},
         )
         is False
     )  # preferred_color missing => no match

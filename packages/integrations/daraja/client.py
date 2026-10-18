@@ -98,7 +98,7 @@ class DirectDarajaProvider(PaymentProvider):
             raise PaymentProviderError("Amount must be positive")
         if amount_cents % 100 != 0:
             raise PaymentProviderError(
-                "M-Pesa only supports whole shillings; amount_cents must be a multiple of 100"
+                "M-Pesa only supports whole shillings; amount_cents must be a multiple of 100",
             )
         return amount_cents // 100
 
@@ -179,7 +179,7 @@ class DirectDarajaProvider(PaymentProvider):
         response_code = str(data.get("ResponseCode", ""))
         if response_code != "0":
             raise PaymentProviderError(
-                f"Daraja rejected STK push: {data.get('ResponseDescription', 'unknown error')}"
+                f"Daraja rejected STK push: {data.get('ResponseDescription', 'unknown error')}",
             )
 
         checkout_request_id = data.get("CheckoutRequestID")
@@ -303,7 +303,7 @@ class DirectDarajaProvider(PaymentProvider):
     async def refund(self, mpesa_receipt_number: str, amount_cents: int, reason: str) -> bool:
         raise NotSupportedError(
             "DirectDarajaProvider refunds require the Daraja Reversal API and "
-            "initiator credentials; use the reconciliation runbook (human-approved)."
+            "initiator credentials; use the reconciliation runbook (human-approved).",
         )
 
     @staticmethod

@@ -222,7 +222,7 @@ async def update_zone(
     service = DeliveryService(db)
     try:
         zone = await service.update_zone(
-            tenant_id, zone_id, name=body.name, fee_cents=body.fee_cents, active=body.active
+            tenant_id, zone_id, name=body.name, fee_cents=body.fee_cents, active=body.active,
         )
     except ZoneNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -252,7 +252,7 @@ async def create_rider(
         # Same normalized phone already has a rider for this tenant.
         await db.rollback()
         raise HTTPException(
-            status_code=409, detail="A rider with this phone already exists"
+            status_code=409, detail="A rider with this phone already exists",
         ) from exc
     await db.commit()
     return _rider(rider)
@@ -432,7 +432,7 @@ async def mark_delivered(
     service = DeliveryService(db)
     try:
         delivery = await service.mark_delivered(
-            tenant_id, delivery_id, proof_photo=body.proof_photo, notes=body.notes
+            tenant_id, delivery_id, proof_photo=body.proof_photo, notes=body.notes,
         )
     except (PaymentNotCollectedError, ProofOfDeliveryRequiredError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -454,7 +454,7 @@ async def mark_failed(
     service = DeliveryService(db)
     try:
         delivery = await service.mark_failed(
-            tenant_id, delivery_id, reason=body.reason, notes=body.notes
+            tenant_id, delivery_id, reason=body.reason, notes=body.notes,
         )
     except (IllegalDeliveryTransitionError, IllegalTransitionError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

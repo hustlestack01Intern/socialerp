@@ -89,7 +89,7 @@ async def init_db() -> None:
             for index in table.indexes:
                 try:
                     await conn.run_sync(
-                        lambda sync_conn, index=index: index.create(sync_conn, checkfirst=True)
+                        lambda sync_conn, index=index: index.create(sync_conn, checkfirst=True),
                     )
                 except ProgrammingError as e:
                     if "already exists" not in str(e):

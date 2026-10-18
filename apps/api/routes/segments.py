@@ -90,7 +90,7 @@ async def segment_members(
     except ValueError as exc:
         raise HTTPException(status_code=404, detail="Unknown segment") from exc
     page = await SegmentService(db).list_members(
-        TenantId(tenant_id), key, limit=limit, offset=offset
+        TenantId(tenant_id), key, limit=limit, offset=offset,
     )
     return SegmentMembersView(
         segment=page.segment.value,

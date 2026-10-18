@@ -110,7 +110,7 @@ class EvalSummary:
 
 class EvalRunner:
     def __init__(
-        self, sets_dir: Path = SETS_DIR, *, autonomy: AutonomyLevel = AutonomyLevel.L1_ANSWER
+        self, sets_dir: Path = SETS_DIR, *, autonomy: AutonomyLevel = AutonomyLevel.L1_ANSWER,
     ):
         self.sets_dir = sets_dir
         self.autonomy = autonomy
@@ -139,7 +139,7 @@ class EvalRunner:
                         expected_outcome=data["expected_outcome"],
                         tags=data.get("tags", []),
                         phone=data.get("phone", DEFAULT_EVAL_PHONE),
-                    )
+                    ),
                 )
         return cases
 
@@ -168,7 +168,7 @@ class EvalRunner:
         try:
             for message in case.customer_messages:
                 outcome = await agent.handle_message(
-                    message, customer_phone=case.phone if is_l2 else None
+                    message, customer_phone=case.phone if is_l2 else None,
                 )
                 outcomes.append(outcome)
                 for raw in _PRICE_RE.findall(outcome.reply_text):
@@ -326,7 +326,7 @@ async def _main() -> int:
                     "results": [asdict(r) for r in results],
                 },
                 indent=2,
-            )
+            ),
         )
 
     if summary.wrong_price_stock_count > 0:

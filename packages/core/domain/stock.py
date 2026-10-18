@@ -249,7 +249,7 @@ class StockLedger:
             raise ValueError("Reserve quantity must be positive")
         if not self.can_reserve(quantity):
             raise ValueError(
-                f"Insufficient stock: available={self.available}, requested={quantity}"
+                f"Insufficient stock: available={self.available}, requested={quantity}",
             )
 
         prev = self.available
@@ -297,7 +297,7 @@ class StockLedger:
         if quantity > remaining:
             raise ValueError(
                 f"Cannot release {quantity}; only {remaining} "
-                f"remaining reserved for reference {reference_id}"
+                f"remaining reserved for reference {reference_id}",
             )
 
         prev = self.available
@@ -338,7 +338,7 @@ class StockLedger:
             raise ValueError("Sell quantity must be positive")
         if self.on_hand < quantity:
             raise ValueError(
-                f"Insufficient on-hand stock: on_hand={self.on_hand}, requested={quantity}"
+                f"Insufficient on-hand stock: on_hand={self.on_hand}, requested={quantity}",
             )
 
         prev = self.available
@@ -373,7 +373,7 @@ class StockLedger:
         """Adjust stock to a specific quantity (manual count)."""
         if not isinstance(new_quantity, int):
             raise TypeError(
-                f"Adjust quantity must be an integer, got {type(new_quantity).__name__}"
+                f"Adjust quantity must be an integer, got {type(new_quantity).__name__}",
             )
         prev = self.available
         quantity_change = new_quantity - prev

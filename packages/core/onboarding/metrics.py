@@ -110,10 +110,10 @@ def record_step_complete(
 ) -> None:
     """Record step completion."""
     ONBOARDING_STEP_DURATION.labels(
-        step=step, status=status, fallback_type=fallback_type
+        step=step, status=status, fallback_type=fallback_type,
     ).observe(duration_seconds)
     ONBOARDING_STEP_COMPLETED.labels(
-        step=step, status=status, fallback_type=fallback_type
+        step=step, status=status, fallback_type=fallback_type,
     ).inc()
     ONBOARDING_ACTIVE_SESSIONS.dec()
 
@@ -148,7 +148,7 @@ def record_total_duration(
 ) -> None:
     """Record total wizard duration."""
     ONBOARDING_TOTAL_DURATION.labels(
-        status=status, fallback_type=fallback_type
+        status=status, fallback_type=fallback_type,
     ).observe(duration_seconds)
 
     # Check overall SLO
@@ -175,8 +175,8 @@ groups:
 
   - alert: OnboardingStepMedianExceeds2xTarget
     expr: |
-      sum by (step) (histogram_quantile(0.50, sum(rate(onboarding_wizard_step_duration_seconds_bucket{status="COMPLETED"}[1h])) by (le, step))) 
-      > 
+      sum by (step) (histogram_quantile(0.50, sum(rate(onboarding_wizard_step_duration_seconds_bucket{status="COMPLETED"}[1h])) by (le, step)))
+      >
       sum by (step) (onboarding_wizard_step_target_seconds * 2)
     for: 10m
     labels: {severity: "warning", team: "onboarding"}
@@ -185,8 +185,8 @@ groups:
 
   - alert: OnboardingFallbackRateHigh
     expr: |
-      sum by (step, fallback_type) (rate(onboarding_wizard_fallback_total[1h])) 
-      / 
+      sum by (step, fallback_type) (rate(onboarding_wizard_fallback_total[1h]))
+      /
       sum by (step) (rate(onboarding_wizard_step_started_total[1h])) > 0.2
     for: 5m
     labels: {severity: "critical", team: "onboarding"}

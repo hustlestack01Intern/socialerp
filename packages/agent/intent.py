@@ -198,7 +198,7 @@ async def extract_intent(
             temperature=0.0,
             response_schema=IntentResult.model_json_schema(),
             tenant_id=tenant_id,
-        )
+        ),
     )
     try:
         data = json.loads(_strip_code_fence(response.text))

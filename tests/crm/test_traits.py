@@ -57,7 +57,7 @@ async def test_allowed_trait_set_matches_plan() -> None:
 
 
 async def test_derive_traits_produces_allow_listed_traits_with_evidence(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with session_factory() as session, session.begin():
         customer, orders, _product = await seed_paid_history(session, tenant.id)
@@ -115,7 +115,7 @@ async def test_derive_traits_produces_allow_listed_traits_with_evidence(
 
 
 async def test_derive_traits_typical_hour_is_the_mode(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """The typical order hour is the most frequent hour, not the first or last."""
     base = datetime(2026, 9, 1, 0, 0, 0, tzinfo=UTC)
@@ -140,7 +140,7 @@ async def test_derive_traits_typical_hour_is_the_mode(
 
 
 async def test_derive_traits_counts_only_paid_orders_in_ltv(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     now = datetime.now(UTC)
     async with session_factory() as session, session.begin():
@@ -182,7 +182,7 @@ async def test_derive_traits_counts_only_paid_orders_in_ltv(
 
 
 async def test_derive_traits_customer_with_no_orders(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """A customer with no history still gets count/LTV zero traits, with evidence."""
     async with session_factory() as session, session.begin():
@@ -200,7 +200,7 @@ async def test_derive_traits_customer_with_no_orders(
 
 
 async def test_rederivation_appends_version_and_keeps_old(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """Re-deriving appends a new version per trait; prior versions are kept."""
     async with session_factory() as session, session.begin():
@@ -228,7 +228,7 @@ async def test_rederivation_appends_version_and_keeps_old(
 
 
 async def test_derived_trait_names_stay_allow_listed_after_rederive(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with session_factory() as session, session.begin():
         customer, _orders, _product = await seed_paid_history(session, tenant.id)
@@ -244,7 +244,7 @@ async def test_derived_trait_names_stay_allow_listed_after_rederive(
 
 
 async def test_record_trait_refuses_every_sensitive_name(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """Plan invariant 1: no inferred sensitive attribute can ever be stored."""
     async with session_factory() as session, session.begin():
@@ -254,7 +254,7 @@ async def test_record_trait_refuses_every_sensitive_name(
         for name in sorted(SENSITIVE_TRAIT_NAMES):
             with pytest.raises(TraitNotAllowedError):
                 await service.record_trait(
-                    tid, customer.id, name, "value", evidence={"source": "synthetic"}
+                    tid, customer.id, name, "value", evidence={"source": "synthetic"},
                 )
 
         stored = await service.repo.list_traits(tid, customer.id)
@@ -262,7 +262,7 @@ async def test_record_trait_refuses_every_sensitive_name(
 
 
 async def test_record_trait_refuses_any_non_allow_listed_name(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with session_factory() as session, session.begin():
         customer = await make_customer(session, tenant.id)
@@ -277,7 +277,7 @@ async def test_record_trait_refuses_any_non_allow_listed_name(
 
 
 async def test_record_trait_refuses_empty_evidence(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """Plan invariant 2: a trait with no evidence is refused."""
     async with session_factory() as session, session.begin():
@@ -285,12 +285,12 @@ async def test_record_trait_refuses_empty_evidence(
         service = CRMService(session)
         with pytest.raises(TraitNotAllowedError, match="must carry evidence"):
             await service.record_trait(
-                TenantId(tenant.id), customer.id, "order_count", 5, evidence={}
+                TenantId(tenant.id), customer.id, "order_count", 5, evidence={},
             )
 
 
 async def test_record_trait_versions_increment_per_name(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with session_factory() as session, session.begin():
         customer = await make_customer(session, tenant.id)
@@ -299,7 +299,7 @@ async def test_record_trait_versions_increment_per_name(
         t1 = await service.record_trait(tid, customer.id, "order_count", 1, evidence={"n": 1})
         t2 = await service.record_trait(tid, customer.id, "order_count", 2, evidence={"n": 2})
         o1 = await service.record_trait(
-            tid, customer.id, "lifetime_value_cents", 100, evidence={"n": 1}
+            tid, customer.id, "lifetime_value_cents", 100, evidence={"n": 1},
         )
     assert t1.version == 1
     assert t2.version == 2
@@ -307,19 +307,19 @@ async def test_record_trait_versions_increment_per_name(
 
 
 async def test_record_trait_requires_existing_customer(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """Trait storage fails closed on a foreign/unknown customer id (FK)."""
     async with session_factory() as session, session.begin():
         service = CRMService(session)
         with pytest.raises(IntegrityError):
             await service.record_trait(
-                TenantId(tenant.id), uuid4(), "order_count", 1, evidence={"x": 1}
+                TenantId(tenant.id), uuid4(), "order_count", 1, evidence={"x": 1},
             )
 
 
 async def test_typical_order_hour_is_tenant_local_nairobi_time(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """U34: the hour must be tenant-local (Nairobi/EAT), not UTC.
 

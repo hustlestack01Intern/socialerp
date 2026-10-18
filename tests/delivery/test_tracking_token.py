@@ -177,7 +177,7 @@ def test_build_tracking_url_embeds_token() -> None:
 
 @pytest.mark.asyncio
 async def test_missing_token_is_404_for_known_order(
-    tracking_client: AsyncClient, tenant, session_factory
+    tracking_client: AsyncClient, tenant, session_factory,
 ) -> None:
     """A bare order UUID (the old capability URL) now fails closed."""
     order_id = await _seed_order(session_factory, tenant)
@@ -193,14 +193,14 @@ async def test_missing_token_is_404_for_known_order(
 
 @pytest.mark.asyncio
 async def test_wrong_tenant_token_is_404(
-    tracking_client: AsyncClient, tenant, session_factory
+    tracking_client: AsyncClient, tenant, session_factory,
 ) -> None:
     """A token minted for another tenant never unlocks this tenant's order."""
     order_id = await _seed_order(session_factory, tenant)
     foreign_token = sign_tracking_token(uuid4(), UUID(order_id))
 
     json_resp = await tracking_client.get(
-        f"/api/v1/tracking/{order_id}", params={"t": foreign_token}
+        f"/api/v1/tracking/{order_id}", params={"t": foreign_token},
     )
     assert json_resp.status_code == 404
     page_resp = await tracking_client.get(f"/tracking/{order_id}", params={"t": foreign_token})
@@ -209,7 +209,7 @@ async def test_wrong_tenant_token_is_404(
 
 @pytest.mark.asyncio
 async def test_token_for_other_order_is_404(
-    tracking_client: AsyncClient, tenant, session_factory
+    tracking_client: AsyncClient, tenant, session_factory,
 ) -> None:
     """A valid token for order X does not unlock order Y (same tenant)."""
     order_x = await _seed_order(session_factory, tenant, phone="254733333340")
@@ -248,7 +248,7 @@ async def test_expired_token_is_404(tracking_client: AsyncClient, tenant, sessio
 
 @pytest.mark.asyncio
 async def test_malformed_token_is_404(
-    tracking_client: AsyncClient, tenant, session_factory
+    tracking_client: AsyncClient, tenant, session_factory,
 ) -> None:
     order_id = await _seed_order(session_factory, tenant)
 
@@ -259,7 +259,7 @@ async def test_malformed_token_is_404(
 
 @pytest.mark.asyncio
 async def test_valid_token_serves_pii_free_projection(
-    tracking_client: AsyncClient, tenant, session_factory
+    tracking_client: AsyncClient, tenant, session_factory,
 ) -> None:
     """The happy path with a valid token: 200 on both endpoints, still no PII."""
     order_id = await _seed_order(session_factory, tenant)

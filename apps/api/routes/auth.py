@@ -278,7 +278,7 @@ async def login(
     matches. Otherwise the caller must disambiguate via a tenant-scoped login.
     """
     result = await session.execute(
-        select(User).where(User.email == form_data.username, User.is_active.is_(True))
+        select(User).where(User.email == form_data.username, User.is_active.is_(True)),
     )
     candidates = list(result.scalars().all())
 
@@ -467,7 +467,7 @@ async def create_tenant_user(
         )
 
     existing = await session.execute(
-        select(User).where(User.tenant_id == tenant_id, User.email == user_data.email)
+        select(User).where(User.tenant_id == tenant_id, User.email == user_data.email),
     )
     if existing.scalars().first():
         raise HTTPException(
@@ -526,7 +526,7 @@ async def update_tenant_user(
         )
 
     result = await session.execute(
-        select(User).where(User.id == user_id, User.tenant_id == tenant_id)
+        select(User).where(User.id == user_id, User.tenant_id == tenant_id),
     )
     user = result.scalar_one_or_none()
     if user is None:

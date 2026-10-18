@@ -131,7 +131,7 @@ SCENARIOS = {
                 {"Name": "Balance", "Value": ""},
                 {"Name": "TransactionDate", "Value": None},  # Generated
                 {"Name": "PhoneNumber", "Value": None},  # From request
-            ]
+            ],
         },
     },
     "insufficient_funds": {
@@ -223,8 +223,8 @@ def build_callback(record: STKRequestRecord, scenario: str) -> dict[str, Any]:
                 "ResultCode": int(str(scenario_config["result_code"])),
                 "ResultDesc": str(scenario_config["result_desc"]),
                 "CallbackMetadata": metadata,
-            }
-        }
+            },
+        },
     }
 
 

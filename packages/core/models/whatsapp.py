@@ -524,7 +524,7 @@ class WhatsAppTemplate(Base):
     # Indexes
     __table_args__ = (
         UniqueConstraint(
-            "tenant_id", "name", "language", name="uq_whatsapp_templates_tenant_name_lang"
+            "tenant_id", "name", "language", name="uq_whatsapp_templates_tenant_name_lang",
         ),
         Index("ix_whatsapp_templates_tenant_status", "tenant_id", "status"),
     )
@@ -567,7 +567,7 @@ class WhatsAppDedupe(Base):
     # Constraints
     __table_args__ = (
         UniqueConstraint(
-            "tenant_id", "provider_message_id", name="uq_whatsapp_dedupe_tenant_provider_id"
+            "tenant_id", "provider_message_id", name="uq_whatsapp_dedupe_tenant_provider_id",
         ),
         Index("ix_whatsapp_dedupe_tenant_processed", "tenant_id", "processed_at"),
     )

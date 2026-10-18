@@ -183,7 +183,7 @@ class CRMService:
     async def opt_out(self, tenant_id: TenantId, customer_id: UUID) -> ConsentRecord:
         """Record a marketing opt-out (denial)."""
         return await self.record_consent(
-            tenant_id, customer_id, purpose=PURPOSE_MARKETING, granted=False, source="opt_out"
+            tenant_id, customer_id, purpose=PURPOSE_MARKETING, granted=False, source="opt_out",
         )
 
     # ---------------------------------------------------------------- traits
@@ -235,7 +235,7 @@ class CRMService:
                 order_count,
                 evidence={"order_ids": [str(o.id) for o in orders]},
                 confidence=1.0,
-            )
+            ),
         )
         derived.append(
             await self.record_trait(
@@ -248,7 +248,7 @@ class CRMService:
                     "paid_count": len(paid),
                 },
                 confidence=1.0,
-            )
+            ),
         )
 
         if orders:
@@ -266,7 +266,7 @@ class CRMService:
                     int(typical_hour),
                     evidence={"hours": hours},
                     confidence=min(1.0, order_count / 3),
-                )
+                ),
             )
 
             if order_count >= 2:
@@ -286,7 +286,7 @@ class CRMService:
                             median_gap,
                             evidence={"gaps_days": gaps},
                             confidence=min(1.0, len(gaps) / 3),
-                        )
+                        ),
                     )
 
             last_order = max(o.created_at for o in orders)
@@ -306,7 +306,7 @@ class CRMService:
                         "lifetime_value_cents": ltv_cents,
                     },
                     confidence=min(1.0, order_count / 3),
-                )
+                ),
             )
 
             expected_cycle = 30
@@ -326,7 +326,7 @@ class CRMService:
                         "expected_cycle_days": expected_cycle,
                     },
                     confidence=min(1.0, order_count / 3),
-                )
+                ),
             )
 
         size, size_evidence = _modal_variant_attribute(items, {"size"})
@@ -339,7 +339,7 @@ class CRMService:
                     size,
                     evidence=size_evidence,
                     confidence=min(1.0, size_evidence["occurrences"] / 3),
-                )
+                ),
             )
         color, color_evidence = _modal_variant_attribute(items, {"color", "colour"})
         if color is not None:
@@ -351,7 +351,7 @@ class CRMService:
                     color,
                     evidence=color_evidence,
                     confidence=min(1.0, color_evidence["occurrences"] / 3),
-                )
+                ),
             )
 
         return derived
@@ -418,7 +418,7 @@ class CRMService:
         }
 
     async def delete_customer(
-        self, tenant_id: TenantId, customer_id: UUID, *, approved_by: UUID
+        self, tenant_id: TenantId, customer_id: UUID, *, approved_by: UUID,
     ) -> None:
         """Erase a customer's CRM memory (human-approved, audited).
 
@@ -462,7 +462,7 @@ class CRMService:
             text(
                 "UPDATE customers SET phone = :p, name = NULL, email = NULL, "
                 "default_address = NULL, default_area = NULL, is_active = false "
-                "WHERE tenant_id = :t AND id = :c"
+                "WHERE tenant_id = :t AND id = :c",
             ),
             {"p": tombstone, "t": str(tenant_id), "c": str(customer_id)},
         )
@@ -475,7 +475,7 @@ class CRMService:
                 "customer_email = NULL, delivery_address = NULL, "
                 "delivery_area = NULL, delivery_lat = NULL, delivery_lng = NULL, "
                 "delivery_instructions = NULL, notes = NULL "
-                "WHERE tenant_id = :t AND customer_id = :c"
+                "WHERE tenant_id = :t AND customer_id = :c",
             ),
             {"p": tombstone, "t": str(tenant_id), "c": str(customer_id)},
         )
@@ -489,7 +489,7 @@ class CRMService:
                 "WHERE tenant_id = :t "
                 "AND order_id IN ("
                 "SELECT id FROM orders WHERE tenant_id = :t AND customer_id = :c"
-                ")"
+                ")",
             ),
             {"p": tombstone, "t": str(tenant_id), "c": str(customer_id)},
         )
@@ -502,7 +502,7 @@ class CRMService:
                 "UPDATE outbox SET payload = payload - 'phone' "
                 "WHERE tenant_id = :t "
                 "AND payload ? 'phone' "
-                "AND payload->>'phone' = :phone"
+                "AND payload->>'phone' = :phone",
             ),
             {"t": str(tenant_id), "phone": original_phone},
         )
@@ -517,15 +517,15 @@ class CRMService:
                     select(WhatsAppContact.id).where(
                         WhatsAppContact.phone == original_phone,
                         WhatsAppContact.tenant_id == tenant_id,
-                    )
-                )
-            )
+                    ),
+                ),
+            ),
         )
         await self.session.execute(
             delete(WhatsAppContact).where(
                 WhatsAppContact.phone == original_phone,
                 WhatsAppContact.tenant_id == tenant_id,
-            )
+            ),
         )
         # U32: the audit_log is append-only for 2555 days — a plaintext phone
         # in `before` would survive the erasure. Record presence, not value.
@@ -580,7 +580,7 @@ def _monetary_bucket(ltv_cents: int) -> int:
 
 
 def _modal_variant_attribute(
-    items: list[Any], names: set[str]
+    items: list[Any], names: set[str],
 ) -> tuple[str | None, dict[str, Any]]:
     """Most common variant attribute value whose attribute name is in ``names``."""
     counter: Counter[str] = Counter()

@@ -313,7 +313,7 @@ async def stk_push(
     """Process STK Push request."""
     # Verify password
     if not verify_password(
-        request.BusinessShortCode, settings.PASSKEY, request.Timestamp, request.Password
+        request.BusinessShortCode, settings.PASSKEY, request.Timestamp, request.Password,
     ):
         raise HTTPException(status_code=400, detail="Invalid password")
 
@@ -402,7 +402,7 @@ async def simulate_callback(
     """Simulate a callback for a checkout request (for testing)."""
     conn = get_db()
     row = conn.execute(
-        "SELECT * FROM stk_push_requests WHERE checkout_request_id = ?", (checkout_request_id,)
+        "SELECT * FROM stk_push_requests WHERE checkout_request_id = ?", (checkout_request_id,),
     ).fetchone()
 
     if not row:
@@ -446,10 +446,10 @@ async def simulate_callback(
                         {"Name": "PhoneNumber", "Value": int(phone_number)},
                     ]
                     if result_code == "0"
-                    else []
+                    else [],
                 },
-            }
-        }
+            },
+        },
     }
 
     # Update request status
@@ -500,7 +500,7 @@ async def query_status(
     """Query STK Push status."""
     # Verify password
     if not verify_password(
-        request.BusinessShortCode, settings.PASSKEY, request.Timestamp, request.Password
+        request.BusinessShortCode, settings.PASSKEY, request.Timestamp, request.Password,
     ):
         raise HTTPException(status_code=400, detail="Invalid password")
 
@@ -688,7 +688,7 @@ async def list_failures(tenant_id: str | None = None):
     conn = get_db()
     if tenant_id:
         rows = conn.execute(
-            "SELECT * FROM failure_simulation WHERE tenant_id = ? AND active = 1", (tenant_id,)
+            "SELECT * FROM failure_simulation WHERE tenant_id = ? AND active = 1", (tenant_id,),
         ).fetchall()
     else:
         rows = conn.execute("SELECT * FROM failure_simulation WHERE active = 1").fetchall()
@@ -746,7 +746,7 @@ async def inspect_callbacks(tenant_id: str | None = None, checkout_request_id: s
         ).fetchall()
     else:
         rows = conn.execute(
-            "SELECT * FROM callbacks ORDER BY received_at DESC LIMIT 100"
+            "SELECT * FROM callbacks ORDER BY received_at DESC LIMIT 100",
         ).fetchall()
     conn.close()
     return {"callbacks": [dict(row) for row in rows]}

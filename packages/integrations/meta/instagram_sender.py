@@ -48,7 +48,7 @@ class InstagramSender:
     """
 
     def __init__(
-        self, session: AsyncSession, limits_manager: InstagramLimitsManager | None = None
+        self, session: AsyncSession, limits_manager: InstagramLimitsManager | None = None,
     ) -> None:
         self.session = session
         self.limits = limits_manager or InstagramLimitsManager(session)
@@ -95,7 +95,7 @@ class InstagramSender:
         """
         # Check limits
         allowed, meta = await self.limits.can_send_message(
-            tenant_id, thread_id, ig_handle, is_template=False
+            tenant_id, thread_id, ig_handle, is_template=False,
         )
         if not allowed:
             raise ValueError(f"Cannot send free-form message: {meta.get('error', 'unknown')}")
@@ -105,7 +105,7 @@ class InstagramSender:
 
         # Get or create conversation
         conversation = await self._get_or_create_conversation(
-            tenant_id, contact, conversation_id, thread_id
+            tenant_id, contact, conversation_id, thread_id,
         )
 
         # Send via Meta API
@@ -152,7 +152,7 @@ class InstagramSender:
         """
         # Check limits
         allowed, meta = await self.limits.can_send_message(
-            tenant_id, thread_id, ig_handle, is_template=False
+            tenant_id, thread_id, ig_handle, is_template=False,
         )
         if not allowed:
             raise ValueError(f"Cannot send media message: {meta.get('error', 'unknown')}")
@@ -167,7 +167,7 @@ class InstagramSender:
 
         # Get or create conversation
         conversation = await self._get_or_create_conversation(
-            tenant_id, contact, conversation_id, thread_id
+            tenant_id, contact, conversation_id, thread_id,
         )
 
         # Build payload
@@ -183,7 +183,7 @@ class InstagramSender:
                 "attachment": {
                     "type": media_type,
                     "payload": media_obj,
-                }
+                },
             },
         }
 
@@ -234,12 +234,12 @@ class InstagramSender:
 
         # Get or create conversation
         conversation = await self._get_or_create_conversation(
-            tenant_id, contact, conversation_id, thread_id
+            tenant_id, contact, conversation_id, thread_id,
         )
 
         # Build components
         payload_components: list[dict[str, Any]] = list(
-            components or template.body.get("components", [])
+            components or template.body.get("components", []),
         )
         if template.header:
             payload_components.insert(0, dict(template.header))
@@ -256,7 +256,7 @@ class InstagramSender:
                     "name": template_name,
                     "language": {"code": language_code},
                     "components": payload_components,
-                }
+                },
             },
         }
 
@@ -305,7 +305,7 @@ class InstagramSender:
         eligibility = await self._check_eligibility(tenant_id, comment_id)
         if not eligibility:
             raise ValueError(
-                "Private reply not allowed: eligibility expired, already used, or not found"
+                "Private reply not allowed: eligibility expired, already used, or not found",
             )
 
         # Get or create contact from eligibility
@@ -315,7 +315,7 @@ class InstagramSender:
 
         # Get or create conversation
         conversation = await self._get_or_create_conversation(
-            tenant_id, contact, None, eligibility.thread_id
+            tenant_id, contact, None, eligibility.thread_id,
         )
 
         # Send private reply via Graph API
@@ -397,7 +397,7 @@ class InstagramSender:
             raise
 
     async def _send_private_reply_request(
-        self, tenant_id: TenantId, comment_id: str, payload: dict[str, Any]
+        self, tenant_id: TenantId, comment_id: str, payload: dict[str, Any],
     ) -> dict[str, Any]:
         """Send private reply to comment via Graph API."""
         url = f"/{comment_id}/private_replies"
@@ -413,7 +413,7 @@ class InstagramSender:
             except Exception:
                 error_detail = {"message": str(e)}
             logger.exception(
-                f"Instagram private reply error: {e.response.status_code} - {error_detail}"
+                f"Instagram private reply error: {e.response.status_code} - {error_detail}",
             )
 
             # Handle specific error codes
@@ -446,14 +446,14 @@ class InstagramSender:
             raise
 
     async def _get_or_create_contact(
-        self, tenant_id: TenantId, thread_id: str, ig_handle: str | None = None
+        self, tenant_id: TenantId, thread_id: str, ig_handle: str | None = None,
     ) -> InstagramContact:
         """Get existing contact or create new one."""
         result = await self.session.execute(
             select(InstagramContact).where(
                 InstagramContact.tenant_id == tenant_id,
                 InstagramContact.thread_id == thread_id,
-            )
+            ),
         )
         contact = result.scalar_one_or_none()
 
@@ -485,7 +485,7 @@ class InstagramSender:
                 select(InstagramConversation).where(
                     InstagramConversation.id == conversation_id,
                     InstagramConversation.tenant_id == tenant_id,
-                )
+                ),
             )
             conversation = result.scalar_one_or_none()
             if conversation:
@@ -504,7 +504,7 @@ class InstagramSender:
                     InstagramConversationState.HANDOFF_ACTIVE,
                 ]),
             )
-            .order_by(InstagramConversation.created_at.desc())
+            .order_by(InstagramConversation.created_at.desc()),
         )
         conversation = result.scalar_one_or_none()
 
@@ -539,19 +539,19 @@ class InstagramSender:
                 WhatsAppTemplate.name == template_name,
                 WhatsAppTemplate.language == language_code,
                 WhatsAppTemplate.status == WhatsAppTemplateStatus.APPROVED,
-            )
+            ),
         )
         return result.scalar_one_or_none()
 
     async def _check_eligibility(
-        self, tenant_id: TenantId, comment_id: str
+        self, tenant_id: TenantId, comment_id: str,
     ) -> InstagramDmEligibility | None:
         """Check if private reply is eligible for a comment."""
         result = await self.session.execute(
             select(InstagramDmEligibility).where(
                 InstagramDmEligibility.tenant_id == tenant_id,
                 InstagramDmEligibility.comment_id == comment_id,
-            )
+            ),
         )
         eligibility = result.scalar_one_or_none()
 
@@ -573,7 +573,7 @@ class InstagramSender:
         return eligibility
 
     async def _consume_eligibility(
-        self, tenant_id: TenantId, eligibility_id: UUID, message_id: UUID
+        self, tenant_id: TenantId, eligibility_id: UUID, message_id: UUID,
     ) -> None:
         """Mark eligibility as consumed."""
         from datetime import UTC, datetime
@@ -582,7 +582,7 @@ class InstagramSender:
             select(InstagramDmEligibility).where(
                 InstagramDmEligibility.id == eligibility_id,
                 InstagramDmEligibility.tenant_id == tenant_id,
-            )
+            ),
         )
         eligibility = result.scalar_one_or_none()
         if eligibility:
@@ -644,7 +644,7 @@ class InstagramTemplateManager:
         # Instagram only supports MARKETING and UTILITY
         if category not in ("MARKETING", "UTILITY"):
             raise ValueError(
-                f"Instagram only supports MARKETING and UTILITY templates, got {category}"
+                f"Instagram only supports MARKETING and UTILITY templates, got {category}",
             )
 
         template = WhatsAppTemplate(
@@ -684,7 +684,7 @@ class InstagramTemplateManager:
             select(WhatsAppTemplate).where(
                 WhatsAppTemplate.id == template_id,
                 WhatsAppTemplate.tenant_id == tenant_id,
-            )
+            ),
         )
         template = result.scalar_one_or_none()
         if not template:

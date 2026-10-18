@@ -107,7 +107,7 @@ async def test_retrying_gateway_exhausts() -> None:
     async def fake_sleep(_: float) -> None: ...
 
     wrapped = RetryingGateway(
-        FixedGateway(error=LLMProviderError("nope")), max_attempts=2, sleep=fake_sleep
+        FixedGateway(error=LLMProviderError("nope")), max_attempts=2, sleep=fake_sleep,
     )
     with pytest.raises(LLMProviderError):
         await wrapped.complete(_req())
@@ -150,7 +150,7 @@ async def test_spend_cap_window_rolls_over() -> None:
 def test_estimate_cost() -> None:
     usage = LLMUsage(prompt_tokens=1_000_000, completion_tokens=1_000_000)
     assert estimate_cost_usd("gpt-4o-mini", usage, {"gpt-4o-mini": (0.15, 0.60)}) == pytest.approx(
-        0.75
+        0.75,
     )
     assert estimate_cost_usd("local", usage, {}) == pytest.approx(0.0)
 

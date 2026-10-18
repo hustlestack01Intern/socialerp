@@ -25,7 +25,7 @@ def upgrade() -> None:
     op.create_table(
         "tenants",
         sa.Column(
-            "id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("uuid_generate_v4()")
+            "id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("uuid_generate_v4()"),
         ),
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("slug", sa.String(100), nullable=False, unique=True),
@@ -52,7 +52,7 @@ def upgrade() -> None:
     op.create_table(
         "audit_log",
         sa.Column(
-            "id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("uuid_generate_v4()")
+            "id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("uuid_generate_v4()"),
         ),
         sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
         sa.Column("actor_type", sa.String(50), nullable=False),
@@ -74,14 +74,14 @@ def upgrade() -> None:
     op.create_index("ix_audit_log_action_created", "audit_log", ["action", "created_at"])
     op.create_index("ix_audit_log_correlation", "audit_log", ["correlation_id"])
     op.create_foreign_key(
-        "fk_audit_log_tenant", "audit_log", "tenants", ["tenant_id"], ["id"], ondelete="CASCADE"
+        "fk_audit_log_tenant", "audit_log", "tenants", ["tenant_id"], ["id"], ondelete="CASCADE",
     )
 
     # Create outbox table
     op.create_table(
         "outbox",
         sa.Column(
-            "id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("uuid_generate_v4()")
+            "id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("uuid_generate_v4()"),
         ),
         sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
         sa.Column("event_type", sa.String(100), nullable=False),
@@ -99,17 +99,17 @@ def upgrade() -> None:
         sa.Column("published_at", sa.DateTime(timezone=True), nullable=True),
     )
     op.create_index(
-        "ix_outbox_tenant_status_created", "outbox", ["tenant_id", "status", "created_at"]
+        "ix_outbox_tenant_status_created", "outbox", ["tenant_id", "status", "created_at"],
     )
     op.create_foreign_key(
-        "fk_outbox_tenant", "outbox", "tenants", ["tenant_id"], ["id"], ondelete="CASCADE"
+        "fk_outbox_tenant", "outbox", "tenants", ["tenant_id"], ["id"], ondelete="CASCADE",
     )
 
     # Create idempotency_keys table
     op.create_table(
         "idempotency_keys",
         sa.Column(
-            "id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("uuid_generate_v4()")
+            "id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("uuid_generate_v4()"),
         ),
         sa.Column("tenant_id", UUID(as_uuid=True), nullable=False),
         sa.Column("key", sa.String(200), nullable=False),

@@ -125,7 +125,7 @@ async def _seed_packed_order(
 
 
 async def _seed_zone(
-    session_factory: Any, tenant_id: UUID, *, name: str = "Kilimani", fee_cents: int = 2000
+    session_factory: Any, tenant_id: UUID, *, name: str = "Kilimani", fee_cents: int = 2000,
 ) -> UUID:
     async with session_factory() as session, session.begin():
         zone = DeliveryZone(tenant_id=tenant_id, name=name, fee_cents=fee_cents, active=True)
@@ -135,7 +135,7 @@ async def _seed_zone(
 
 
 async def _seed_rider(
-    session_factory: Any, tenant_id: UUID, *, phone: str = TENANT_PHONE, name: str = "Rider One"
+    session_factory: Any, tenant_id: UUID, *, phone: str = TENANT_PHONE, name: str = "Rider One",
 ) -> UUID:
     async with session_factory() as session, session.begin():
         rider = Rider(tenant_id=tenant_id, phone=phone, name=name, active=True)
@@ -152,7 +152,7 @@ async def _seed_rider(
 class TestDeliveryFeeArithmetic:
     def test_flat_zone_fee(self) -> None:
         fee = DeliveryService.compute_delivery_fee_cents(
-            zone_fee_cents=2000, order_total_cents=500_000, free_delivery_threshold_cents=0
+            zone_fee_cents=2000, order_total_cents=500_000, free_delivery_threshold_cents=0,
         )
         assert fee == 2000
 
@@ -166,13 +166,13 @@ class TestDeliveryFeeArithmetic:
 
     def test_threshold_zero_disables_waiver(self) -> None:
         fee = DeliveryService.compute_delivery_fee_cents(
-            zone_fee_cents=1500, order_total_cents=10_000_000, free_delivery_threshold_cents=0
+            zone_fee_cents=1500, order_total_cents=10_000_000, free_delivery_threshold_cents=0,
         )
         assert fee == 1500
 
     def test_fee_never_negative(self) -> None:
         fee = DeliveryService.compute_delivery_fee_cents(
-            zone_fee_cents=-500, order_total_cents=1000, free_delivery_threshold_cents=0
+            zone_fee_cents=-500, order_total_cents=1000, free_delivery_threshold_cents=0,
         )
         assert fee == 0
 
@@ -184,7 +184,7 @@ class TestDeliveryFeeArithmetic:
 
 class TestDispatch:
     async def test_dispatch_creates_assigned_delivery_with_fee(
-        self, tenant, session_factory
+        self, tenant, session_factory,
     ) -> None:
         order_id = await _seed_packed_order(session_factory, tenant.id)
         async with session_factory() as session:
@@ -192,7 +192,7 @@ class TestDispatch:
             zone = await service.create_zone(tenant.id, name="Kilimani", fee_cents=2000)
             rider = await service.create_rider(tenant.id, phone=TENANT_PHONE, name="Rider One")
             delivery = await service.dispatch(
-                tenant.id, order_id=order_id, rider_id=rider.id, zone_id=zone.id
+                tenant.id, order_id=order_id, rider_id=rider.id, zone_id=zone.id,
             )
             assert delivery.status == DeliveryStatus.ASSIGNED.value
             assert delivery.fee_cents == 2000
@@ -200,7 +200,7 @@ class TestDispatch:
             assert (await session.get(Order, order_id)).status == OrderStatus.PACKED.value
 
     async def test_dispatch_is_idempotent_for_active_delivery(
-        self, tenant, session_factory
+        self, tenant, session_factory,
     ) -> None:
         order_id = await _seed_packed_order(session_factory, tenant.id)
         async with session_factory() as session:
@@ -208,16 +208,16 @@ class TestDispatch:
             zone = await service.create_zone(tenant.id, name="Kilimani", fee_cents=2000)
             rider = await service.create_rider(tenant.id, phone=TENANT_PHONE, name="Rider One")
             first = await service.dispatch(
-                tenant.id, order_id=order_id, rider_id=rider.id, zone_id=zone.id
+                tenant.id, order_id=order_id, rider_id=rider.id, zone_id=zone.id,
             )
             second = await service.dispatch(
-                tenant.id, order_id=order_id, rider_id=rider.id, zone_id=zone.id
+                tenant.id, order_id=order_id, rider_id=rider.id, zone_id=zone.id,
             )
             assert first.id == second.id
 
     async def test_dispatch_rejects_unpacked_order(self, tenant, session_factory) -> None:
         order_id = await _seed_packed_order(
-            session_factory, tenant.id, status=OrderStatus.AWAITING_PAYMENT
+            session_factory, tenant.id, status=OrderStatus.AWAITING_PAYMENT,
         )
         async with session_factory() as session:
             service = DeliveryService(session)
@@ -225,7 +225,7 @@ class TestDispatch:
             rider = await service.create_rider(tenant.id, phone=TENANT_PHONE, name="Rider One")
             with pytest.raises(OrderNotDispatchableError):
                 await service.dispatch(
-                    tenant.id, order_id=order_id, rider_id=rider.id, zone_id=zone.id
+                    tenant.id, order_id=order_id, rider_id=rider.id, zone_id=zone.id,
                 )
 
     async def test_dispatch_rejects_inactive_rider(self, tenant, session_factory) -> None:
@@ -237,7 +237,7 @@ class TestDispatch:
             await service.deactivate_rider(tenant.id, rider.id)
             with pytest.raises(RiderNotFoundError):
                 await service.dispatch(
-                    tenant.id, order_id=order_id, rider_id=rider.id, zone_id=zone.id
+                    tenant.id, order_id=order_id, rider_id=rider.id, zone_id=zone.id,
                 )
 
     async def test_dispatch_rejects_unknown_zone(self, tenant, session_factory) -> None:
@@ -247,7 +247,7 @@ class TestDispatch:
             rider = await service.create_rider(tenant.id, phone=TENANT_PHONE, name="Rider One")
             with pytest.raises(ZoneNotFoundError):
                 await service.dispatch(
-                    tenant.id, order_id=order_id, rider_id=rider.id, zone_id=UUID(int=0)
+                    tenant.id, order_id=order_id, rider_id=rider.id, zone_id=UUID(int=0),
                 )
 
 
@@ -259,7 +259,7 @@ class TestDeliveryFSM:
             zone = await service.create_zone(tenant.id, name="Kilimani", fee_cents=2000)
             rider = await service.create_rider(tenant.id, phone=TENANT_PHONE, name="Rider One")
             delivery = await service.dispatch(
-                tenant.id, order_id=order_id, rider_id=rider.id, zone_id=zone.id
+                tenant.id, order_id=order_id, rider_id=rider.id, zone_id=zone.id,
             )
         return delivery.id, order_id
 
@@ -277,7 +277,7 @@ class TestDeliveryFSM:
             assert (await session.get(Delivery, delivery_id)).status == DeliveryStatus.ARRIVED.value
 
             await svc.mark_delivered(
-                tenant.id, delivery_id, proof_photo="https://cdn.example.test/pod.jpg"
+                tenant.id, delivery_id, proof_photo="https://cdn.example.test/pod.jpg",
             )
             delivery = await session.get(Delivery, delivery_id)
             assert delivery.status == DeliveryStatus.DELIVERED.value
@@ -376,7 +376,7 @@ class TestPayOnDelivery:
             zone = await service.create_zone(tenant.id, name="Kilimani", fee_cents=2000)
             rider = await service.create_rider(tenant.id, phone=TENANT_PHONE, name="Rider One")
             delivery = await service.dispatch(
-                tenant.id, order_id=order_id, rider_id=rider.id, zone_id=zone.id
+                tenant.id, order_id=order_id, rider_id=rider.id, zone_id=zone.id,
             )
             await service.mark_picked_up(tenant.id, delivery.id)
             await service.mark_arrived(tenant.id, delivery.id)
@@ -394,7 +394,7 @@ class TestPayOnDelivery:
             service = DeliveryService(session)
             with pytest.raises(PaymentNotCollectedError):
                 await service.mark_delivered(
-                    tenant.id, delivery_id, proof_photo="https://cdn.example.test/pod.jpg"
+                    tenant.id, delivery_id, proof_photo="https://cdn.example.test/pod.jpg",
                 )
             assert (await session.get(Delivery, delivery_id)).status == DeliveryStatus.ARRIVED.value
             assert (await session.get(Order, order_id)).status == OrderStatus.OUT_FOR_DELIVERY.value
@@ -412,7 +412,7 @@ class TestPayOnDelivery:
             service = DeliveryService(session)
             with pytest.raises(PaymentNotCollectedError):
                 await service.mark_delivered(
-                    tenant.id, delivery_id, proof_photo="https://cdn.example.test/pod.jpg"
+                    tenant.id, delivery_id, proof_photo="https://cdn.example.test/pod.jpg",
                 )
 
     async def test_pod_delivered_without_proof_raises(self, tenant, session_factory) -> None:
@@ -426,14 +426,14 @@ class TestPayOnDelivery:
             assert (await session.get(Delivery, delivery_id)).status == DeliveryStatus.ARRIVED.value
 
     async def test_pod_delivered_after_payment_with_proof_succeeds(
-        self, tenant, session_factory
+        self, tenant, session_factory,
     ) -> None:
         delivery_id, order_id = await self._arrived_pod(session_factory, tenant)
         await self._mark_order_paid(session_factory, order_id)
         async with session_factory() as session:
             service = DeliveryService(session)
             await service.mark_delivered(
-                tenant.id, delivery_id, proof_photo="https://cdn.example.test/pod.jpg"
+                tenant.id, delivery_id, proof_photo="https://cdn.example.test/pod.jpg",
             )
             assert (
                 await session.get(Delivery, delivery_id)
@@ -441,7 +441,7 @@ class TestPayOnDelivery:
             assert (await session.get(Order, order_id)).status == OrderStatus.DELIVERED.value
 
     async def test_pod_order_in_transit_is_payable_and_completion_skips_paid_status(
-        self, tenant, session_factory
+        self, tenant, session_factory,
     ) -> None:
         order_id = await _seed_packed_order(
             session_factory,
@@ -464,7 +464,7 @@ class TestPayOnDelivery:
             await service.handle_callback(
                 tenant_id=tenant.id,
                 payload={
-                    "Body": {"stkCallback": {"CheckoutRequestID": "ws_CO_pod", "ResultCode": 0}}
+                    "Body": {"stkCallback": {"CheckoutRequestID": "ws_CO_pod", "ResultCode": 0}},
                 },
                 headers={},
             )
@@ -484,7 +484,7 @@ class TestPayOnDelivery:
             assert payment_row.status == PaymentRecordStatus.COMPLETED.value
 
     async def test_reservation_expiry_skips_orders_with_active_delivery(
-        self, tenant, session_factory
+        self, tenant, session_factory,
     ) -> None:
         product_id, variant_id = await _seed_product(session_factory, tenant.id)
         order_id = await _seed_packed_order(
@@ -499,7 +499,7 @@ class TestPayOnDelivery:
             service = DeliveryService(session)
             rider = await service.create_rider(tenant.id, phone=TENANT_PHONE, name="Rider One")
             delivery = await service.dispatch(
-                tenant.id, order_id=order_id, rider_id=rider.id, zone_id=zone_id
+                tenant.id, order_id=order_id, rider_id=rider.id, zone_id=zone_id,
             )
             await service.mark_picked_up(tenant.id, delivery.id)
 
@@ -521,7 +521,7 @@ class TestPayOnDelivery:
                 assert reservation.status == ReservationStatusModel.ACTIVE.value
 
     async def test_reservation_expiry_releases_orders_without_delivery(
-        self, tenant, session_factory
+        self, tenant, session_factory,
     ) -> None:
         product_id, variant_id = await _seed_product(session_factory, tenant.id)
         # Control: same stale reservation, but no delivery in flight.

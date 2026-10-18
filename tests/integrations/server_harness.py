@@ -68,7 +68,7 @@ def run_uvicorn(
             if proc.poll() is not None:
                 output = proc.stdout.read() if proc.stdout else ""
                 raise RuntimeError(
-                    f"Fake server {module} exited early (code {proc.returncode}):\n{output}"
+                    f"Fake server {module} exited early (code {proc.returncode}):\n{output}",
                 )
             try:
                 response = httpx.get(f"{base_url}{health_path}", timeout=1.0)
@@ -80,7 +80,7 @@ def run_uvicorn(
         else:
             raise RuntimeError(
                 f"Fake server {module} did not become healthy at {base_url} "
-                f"within 30s (last error: {last_error})"
+                f"within 30s (last error: {last_error})",
             )
 
         yield base_url

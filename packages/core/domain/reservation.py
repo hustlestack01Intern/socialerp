@@ -79,7 +79,7 @@ class Reservation:
         return max(timedelta(0), remaining)
 
     def with_status(
-        self, new_status: ReservationStatus, timestamp: datetime | None = None
+        self, new_status: ReservationStatus, timestamp: datetime | None = None,
     ) -> Reservation:
         """Return new reservation with updated status (immutable)."""
         ts = timestamp or datetime.now(UTC)
@@ -205,7 +205,7 @@ class ReservationManager:
         return True
 
     def get_active_for_product(
-        self, product_id: UUID, variant_id: UUID | None = None
+        self, product_id: UUID, variant_id: UUID | None = None,
     ) -> list[Reservation]:
         """Get all active reservations for a product."""
         results: list[Reservation] = []

@@ -75,7 +75,7 @@ def provider() -> FakeProvider:
 
 @pytest.fixture
 async def payments_client(
-    tenant, session_factory, provider: FakeProvider
+    tenant, session_factory, provider: FakeProvider,
 ) -> AsyncGenerator[AsyncClient, None]:
     """Client with tenant/db/provider overridden for the payments routes."""
 
@@ -158,7 +158,7 @@ async def test_list_order_payments(payments_client, tenant, session_factory) -> 
 
 
 async def test_callback_completes_payment_end_to_end(
-    payments_client, tenant, session_factory, provider: FakeProvider
+    payments_client, tenant, session_factory, provider: FakeProvider,
 ) -> None:
     order_id = await _seed_order(session_factory, tenant.id)
     init = await payments_client.post(
@@ -193,7 +193,7 @@ async def test_callback_completes_payment_end_to_end(
 
 
 async def test_callback_unknown_checkout_is_acknowledged(
-    payments_client, tenant, provider: FakeProvider
+    payments_client, tenant, provider: FakeProvider,
 ) -> None:
     provider.result = ProviderPaymentResult(
         status=ProviderPaymentStatus.COMPLETED,
@@ -210,7 +210,7 @@ async def test_callback_unknown_checkout_is_acknowledged(
 
 
 async def test_callback_wrong_path_token_rejected(
-    payments_client, tenant, session_factory, provider: FakeProvider, monkeypatch
+    payments_client, tenant, session_factory, provider: FakeProvider, monkeypatch,
 ) -> None:
     from socialerp.settings import get_settings
 
@@ -229,7 +229,7 @@ async def test_callback_wrong_path_token_rejected(
 
 
 async def _set_tenant_providers(
-    session_factory: Any, tenant_id: UUID, providers: list[str]
+    session_factory: Any, tenant_id: UUID, providers: list[str],
 ) -> None:
     from socialerp.tenancy import Tenant
 

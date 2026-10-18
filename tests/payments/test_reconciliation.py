@@ -225,7 +225,7 @@ async def test_statement_missing_at_provider(tenant_session, tenant) -> None:
 
 async def test_statement_missing_in_ledger(tenant_session, tenant) -> None:
     result = await reconcile_statement(
-        tenant_session, tenant.id, [StatementEntry("GHOST", 500_000)]
+        tenant_session, tenant.id, [StatementEntry("GHOST", 500_000)],
     )
     kinds = {m.kind for m in result.mismatches}
     assert kinds == {"missing_in_ledger"}

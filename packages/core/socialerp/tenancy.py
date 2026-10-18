@@ -31,7 +31,7 @@ __all__ = [
 
 # Context variable for current tenant (set per request/task)
 current_tenant_id: contextvars.ContextVar[UUID | None] = contextvars.ContextVar(
-    "current_tenant_id", default=None
+    "current_tenant_id", default=None,
 )
 
 

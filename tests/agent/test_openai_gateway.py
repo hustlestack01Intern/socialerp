@@ -61,7 +61,7 @@ async def test_response_schema_passed_as_response_format() -> None:
             messages=req.messages,
             model=req.model,
             response_schema={"type": "object", "properties": {}},
-        )
+        ),
     )
     assert captured["response_format"]["type"] == "json_schema"
 

@@ -66,7 +66,7 @@ async def reconcile_tenant(
     """
     service = PaymentService(session, provider)
     payments = await stale_payments(
-        session, tenant_id, older_than_seconds=older_than_seconds, now=now
+        session, tenant_id, older_than_seconds=older_than_seconds, now=now,
     )
     queried = 0
     for payment in payments:
@@ -91,7 +91,7 @@ async def reconcile_all(
     """Run the status-query fallback across every tenant that has payments."""
     async with session_factory() as session:
         tenant_ids = list(
-            (await session.execute(select(Payment.tenant_id).distinct())).scalars().all()
+            (await session.execute(select(Payment.tenant_id).distinct())).scalars().all(),
         )
 
     total = 0
@@ -102,7 +102,7 @@ async def reconcile_all(
                 {"tid": str(tenant_id)},
             )
             total += await reconcile_tenant(
-                session, tenant_id, provider, older_than_seconds=older_than_seconds
+                session, tenant_id, provider, older_than_seconds=older_than_seconds,
             )
     return total
 
@@ -171,7 +171,7 @@ async def reconcile_statement(
     for payment in payments:
         if not payment.mpesa_receipt_number:
             mismatches.append(
-                StatementMismatch(kind="no_receipt", receipt=None, payment_id=str(payment.id))
+                StatementMismatch(kind="no_receipt", receipt=None, payment_id=str(payment.id)),
             )
             continue
         by_receipt[payment.mpesa_receipt_number] = payment
@@ -187,7 +187,7 @@ async def reconcile_statement(
                     kind="missing_in_ledger",
                     receipt=entry.receipt,
                     provider_amount_cents=entry.amount_cents,
-                )
+                ),
             )
             continue
         if entry_payment.amount_cents != entry.amount_cents:
@@ -198,7 +198,7 @@ async def reconcile_statement(
                     payment_id=str(entry_payment.id),
                     our_amount_cents=entry_payment.amount_cents,
                     provider_amount_cents=entry.amount_cents,
-                )
+                ),
             )
             continue
         matched += 1
@@ -211,7 +211,7 @@ async def reconcile_statement(
                     receipt=receipt,
                     payment_id=str(payment.id),
                     our_amount_cents=payment.amount_cents,
-                )
+                ),
             )
 
     if mismatches:

@@ -60,7 +60,7 @@ async def _make_variant(session: AsyncSession, tenant_id: UUID, product: Product
 
 
 async def test_insights_reports_are_isolated_between_tenants(
-    session_factory, rls_session_factory
+    session_factory, rls_session_factory,
 ) -> None:
     async with session_factory() as session, session.begin():
         tenant_a = await make_tenant(session, slug_prefix="rls-ins-a")
@@ -74,7 +74,7 @@ async def test_insights_reports_are_isolated_between_tenants(
         service = InsightsService(session)
 
         await session.execute(
-            select(func.set_config("app.current_tenant_id", str(tenant_a.id), True))
+            select(func.set_config("app.current_tenant_id", str(tenant_a.id), True)),
         )
         report_a = await service.daily_report(TenantId(tenant_a.id), DAY_START.date())
         assert report_a.period.orders_count == 1
@@ -86,7 +86,7 @@ async def test_insights_reports_are_isolated_between_tenants(
 
         # Tenant B's own context sees its own order, never A's.
         await session.execute(
-            select(func.set_config("app.current_tenant_id", str(tenant_b.id), True))
+            select(func.set_config("app.current_tenant_id", str(tenant_b.id), True)),
         )
         report_b2 = await service.daily_report(TenantId(tenant_b.id), DAY_START.date())
         assert report_b2.period.orders_count == 1
@@ -94,7 +94,7 @@ async def test_insights_reports_are_isolated_between_tenants(
 
 
 async def test_stock_alerts_are_isolated_between_tenants(
-    session_factory, rls_session_factory
+    session_factory, rls_session_factory,
 ) -> None:
     async with session_factory() as session, session.begin():
         tenant_a = await make_tenant(session, slug_prefix="rls-stk-a")
@@ -110,7 +110,7 @@ async def test_stock_alerts_are_isolated_between_tenants(
         service = InsightsService(session)
 
         await session.execute(
-            select(func.set_config("app.current_tenant_id", str(tenant_a.id), True))
+            select(func.set_config("app.current_tenant_id", str(tenant_a.id), True)),
         )
         alerts_a = await service.stock_alerts(TenantId(tenant_a.id))
         assert [a.variant_id for a in alerts_a] == [variant_a]
@@ -119,7 +119,7 @@ async def test_stock_alerts_are_isolated_between_tenants(
         assert alerts_b == [], "tenant A sees none of tenant B's stock"
 
         await session.execute(
-            select(func.set_config("app.current_tenant_id", str(tenant_b.id), True))
+            select(func.set_config("app.current_tenant_id", str(tenant_b.id), True)),
         )
         alerts_b2 = await service.stock_alerts(TenantId(tenant_b.id))
         assert [a.variant_id for a in alerts_b2] == [variant_b]

@@ -37,7 +37,7 @@ async def _count(session: AsyncSession, model: type[CrmModel]) -> int:
 
 
 async def _seed_crm_rows(
-    session: AsyncSession, tenant_id: UUID, customer_id: UUID
+    session: AsyncSession, tenant_id: UUID, customer_id: UUID,
 ) -> dict[str, UUID]:
     event = CustomerEvent(
         tenant_id=tenant_id,
@@ -117,17 +117,17 @@ async def test_crm_cross_tenant_update_and_delete_affect_zero_rows(
     async with rls_session_factory() as session:
         await _set_tenant(session, tenant_b.id)
         updated = await session.execute(
-            update(CustomerEvent).where(CustomerEvent.id == ids["event"]).values(summary="hacked")
+            update(CustomerEvent).where(CustomerEvent.id == ids["event"]).values(summary="hacked"),
         )
         assert isinstance(updated, CursorResult)
         assert updated.rowcount == 0
         deleted = await session.execute(
-            delete(ConsentRecord).where(ConsentRecord.id == ids["consent"])
+            delete(ConsentRecord).where(ConsentRecord.id == ids["consent"]),
         )
         assert isinstance(deleted, CursorResult)
         assert deleted.rowcount == 0
         deleted_trait = await session.execute(
-            delete(CustomerTrait).where(CustomerTrait.id == ids["trait"])
+            delete(CustomerTrait).where(CustomerTrait.id == ids["trait"]),
         )
         assert isinstance(deleted_trait, CursorResult)
         assert deleted_trait.rowcount == 0
@@ -157,7 +157,7 @@ async def test_rls_role_can_write_rows_for_its_own_tenant(
                 event_type="message.summarised",
                 summary="own tenant insert",
                 data_json={},
-            )
+            ),
         )
         await session.flush()
         await session.commit()
@@ -187,7 +187,7 @@ async def test_rls_blocks_cross_tenant_insert_into_customer_events(
                         summary="",
                         data_json={},
                         dedupe_key="forged-event",
-                    )
+                    ),
                 )
                 await session.flush()
 
@@ -212,7 +212,7 @@ async def test_rls_blocks_cross_tenant_insert_into_consent_records(
                         purpose="marketing",
                         granted=True,
                         source="forged",
-                    )
+                    ),
                 )
                 await session.flush()
 
@@ -239,7 +239,7 @@ async def test_rls_blocks_cross_tenant_insert_into_customer_traits(
                         confidence=1.0,
                         evidence_json={"x": 1},
                         version=1,
-                    )
+                    ),
                 )
                 await session.flush()
 
@@ -266,7 +266,7 @@ async def test_erasure_works_under_rls_role_without_preexisting_tenant_guc(
         tid = TenantId(tenant.id)
         await service.record_event(tid, customer_id, "message.summarised", dedupe_key="rls-e1")
         await service.record_consent(
-            tid, customer_id, purpose="marketing", granted=True, source="opt_in"
+            tid, customer_id, purpose="marketing", granted=True, source="opt_in",
         )
         await service.derive_traits(tid, customer_id)
         order = await make_order(session, tenant.id, customer_id, total_cents=999)
@@ -276,7 +276,7 @@ async def test_erasure_works_under_rls_role_without_preexisting_tenant_guc(
     # Erase through the non-owner RLS role with NO tenant GUC pre-set.
     async with rls_session_factory() as session, session.begin():
         await CRMService(session).delete_customer(
-            TenantId(tenant_id), customer_id, approved_by=approver_id
+            TenantId(tenant_id), customer_id, approved_by=approver_id,
         )
 
     # Verify as the table owner: the rows must actually be gone (U36 red:
@@ -291,12 +291,12 @@ async def test_erasure_works_under_rls_role_without_preexisting_tenant_guc(
         ):
             counts[table] = int(
                 await session.scalar(
-                    select(func.count()).select_from(model).where(model.customer_id == customer_id)
+                    select(func.count()).select_from(model).where(model.customer_id == customer_id),
                 )
-                or 0
+                or 0,
             )
         erased_phone = await session.scalar(
-            select(Customer.phone).where(Customer.id == customer_id)
+            select(Customer.phone).where(Customer.id == customer_id),
         )
         order_phone = await session.scalar(select(Order.customer_phone).where(Order.id == order_id))
 

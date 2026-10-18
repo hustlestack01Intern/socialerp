@@ -53,7 +53,7 @@ class RecordingSender:
 
 async def _set_config(session, tenant_id) -> None:
     await session.execute(
-        text("SELECT set_config('app.current_tenant_id', :tid, true)"), {"tid": str(tenant_id)}
+        text("SELECT set_config('app.current_tenant_id', :tid, true)"), {"tid": str(tenant_id)},
     )
 
 
@@ -134,7 +134,7 @@ async def _seed_variant(
                 unit_cost_cents=2500,
                 reference_id=None,
                 reference_type="purchase_order",
-            )
+            ),
         )
     return product, variant
 
@@ -144,7 +144,7 @@ async def _get_or_create_customer(session, tenant_id, phone: str) -> Customer:
     # same customer must reuse one row, not insert a duplicate.
     existing = (
         await session.execute(
-            select(Customer).where(Customer.tenant_id == tenant_id, Customer.phone == phone)
+            select(Customer).where(Customer.tenant_id == tenant_id, Customer.phone == phone),
         )
     ).scalar_one_or_none()
     if existing is not None:
@@ -198,7 +198,7 @@ async def _seed_dispatched_order(
 
     service = DeliveryService(session)
     delivery = await service.dispatch(
-        tenant_id, order_id=order.id, rider_id=rider.id, zone_id=zone.id
+        tenant_id, order_id=order.id, rider_id=rider.id, zone_id=zone.id,
     )
     if target_status in ("picked_up", "out_for_delivery", "arrived"):
         await service.mark_picked_up(tenant_id, delivery.id)
@@ -365,7 +365,7 @@ async def test_revenue_today_counts_paid_only(tenant_session, tenant) -> None:
 
 @pytest.mark.asyncio
 async def test_revenue_today_excludes_refunded_but_keeps_paid_and_pod(
-    tenant_session, tenant
+    tenant_session, tenant,
 ) -> None:
     """Console revenue = paid AND NOT refunded (same rule as insights).
 
@@ -415,7 +415,7 @@ async def test_status_summary(tenant_session, tenant) -> None:
     await _seed_owner(tenant_session, tenant.id)
     await _seed_order(tenant_session, tenant.id, status="packed")
     await AlertService(tenant_session).raise_alert(
-        tenant.id, kind="test", title="Low stock", severity=AlertSeverity.WARNING
+        tenant.id, kind="test", title="Low stock", severity=AlertSeverity.WARNING,
     )
     result = await _run(tenant_session, tenant.id, text_in="status")
     assert result.handled
@@ -531,7 +531,7 @@ async def test_restock_blocked_below_l3(tenant_session, tenant) -> None:
                 select(StockMovementModel).where(
                     StockMovementModel.variant_id == variant.id,
                     StockMovementModel.reference_type == "owner_console",
-                )
+                ),
             )
         )
         .scalars()
@@ -557,7 +557,7 @@ async def test_restock_executes_at_l3(tenant_session, tenant) -> None:
                 select(StockMovementModel).where(
                     StockMovementModel.variant_id == variant.id,
                     StockMovementModel.reference_type == "owner_console",
-                )
+                ),
             )
         )
         .scalars()
@@ -594,11 +594,11 @@ async def _owner_console_receives(session, variant) -> list[StockMovementModel]:
                     StockMovementModel.variant_id == variant.id,
                     StockMovementModel.reference_type == "owner_console",
                     StockMovementModel.movement_type == "receive",
-                )
+                ),
             )
         )
         .scalars()
-        .all()
+        .all(),
     )
 
 
@@ -647,7 +647,7 @@ async def test_restock_replayed_provider_message_id_records_once(tenant_session,
 
 @pytest.mark.asyncio
 async def test_restock_different_provider_message_ids_record_separately(
-    tenant_session, tenant
+    tenant_session, tenant,
 ) -> None:
     """Two genuinely different messages are two restocks (normal operation)."""
     await _set_autonomy(tenant_session, tenant.id, "L3")
@@ -688,7 +688,7 @@ async def test_mark_delivered_blocked_at_l0(tenant_session, tenant) -> None:
     order = await _seed_dispatched_order(tenant_session, tenant.id, target_status="arrived")
 
     result = await _run(
-        tenant_session, tenant.id, text_in=f"mark order {str(order.id)[:8]} delivered"
+        tenant_session, tenant.id, text_in=f"mark order {str(order.id)[:8]} delivered",
     )
     assert result.handled
     assert result.outcome == "blocked_autonomy"
@@ -703,7 +703,7 @@ async def test_mark_delivered_executes_at_l2(tenant_session, tenant) -> None:
     order = await _seed_dispatched_order(tenant_session, tenant.id, target_status="arrived")
 
     result = await _run(
-        tenant_session, tenant.id, text_in=f"mark order {str(order.id)[:8]} delivered"
+        tenant_session, tenant.id, text_in=f"mark order {str(order.id)[:8]} delivered",
     )
     assert result.handled
     assert result.outcome == "executed"
@@ -716,11 +716,11 @@ async def test_mark_delivered_unpaid_pod_is_relayed(tenant_session, tenant) -> N
     await _set_autonomy(tenant_session, tenant.id, "L2")
     await _seed_owner(tenant_session, tenant.id)
     order = await _seed_dispatched_order(
-        tenant_session, tenant.id, payment_method="mpesa_pod", target_status="arrived"
+        tenant_session, tenant.id, payment_method="mpesa_pod", target_status="arrived",
     )
 
     result = await _run(
-        tenant_session, tenant.id, text_in=f"mark order {str(order.id)[:8]} delivered"
+        tenant_session, tenant.id, text_in=f"mark order {str(order.id)[:8]} delivered",
     )
     assert result.handled
     assert result.outcome == "error_relayed"
@@ -794,7 +794,7 @@ async def test_action_is_audited(tenant_session, tenant) -> None:
     logs = (
         (
             await tenant_session.execute(
-                select(AuditLog).where(AuditLog.action == "console.action_executed")
+                select(AuditLog).where(AuditLog.action == "console.action_executed"),
             )
         )
         .scalars()
@@ -824,7 +824,7 @@ async def test_reply_is_persisted_as_outbound(tenant_session, tenant) -> None:
     messages = (
         (
             await tenant_session.execute(
-                select(WhatsAppMessage).where(WhatsAppMessage.direction == "outbound")
+                select(WhatsAppMessage).where(WhatsAppMessage.direction == "outbound"),
             )
         )
         .scalars()
@@ -861,7 +861,7 @@ async def test_send_failure_keeps_draft(tenant_session, tenant) -> None:
     messages = (
         (
             await tenant_session.execute(
-                select(WhatsAppMessage).where(WhatsAppMessage.direction == "outbound")
+                select(WhatsAppMessage).where(WhatsAppMessage.direction == "outbound"),
             )
         )
         .scalars()

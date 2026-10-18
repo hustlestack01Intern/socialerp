@@ -35,7 +35,7 @@ async def make_tenant(session: AsyncSession, *, slug_prefix: str = "crm") -> Ten
 
 
 async def make_user(
-    session: AsyncSession, tenant_id: UUID, *, role: UserRole, user_id: UUID | None = None
+    session: AsyncSession, tenant_id: UUID, *, role: UserRole, user_id: UUID | None = None,
 ) -> User:
     user = User(
         id=user_id or uuid4(),
@@ -136,7 +136,7 @@ async def make_order_item(
 
 
 async def seed_paid_history(
-    session: AsyncSession, tenant_id: UUID
+    session: AsyncSession, tenant_id: UUID,
 ) -> tuple[Customer, list[Order], Product]:
     """A customer with three paid orders on a deterministic 3-day cycle.
 
@@ -165,7 +165,7 @@ async def seed_paid_history(
                 payment_status="completed",
                 paid_at=created,
                 status="paid",
-            )
+            ),
         )
 
     latest = orders[-1]

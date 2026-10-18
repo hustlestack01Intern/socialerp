@@ -126,16 +126,16 @@ def _schema():
                     sa_text(
                         "CREATE POLICY tenant_isolation_policy ON tenants "
                         "USING (id = current_tenant_id()) "
-                        "WITH CHECK (id = current_tenant_id())"
-                    )
+                        "WITH CHECK (id = current_tenant_id())",
+                    ),
                 )
             else:
                 conn.execute(
                     sa_text(
                         f"CREATE POLICY tenant_isolation_policy ON {table} "
                         "USING (tenant_id = current_tenant_id()) "
-                        "WITH CHECK (tenant_id = current_tenant_id())"
-                    )
+                        "WITH CHECK (tenant_id = current_tenant_id())",
+                    ),
                 )
 
         # Append-only customer event log (mirror of migration 0012's trigger).
@@ -147,16 +147,16 @@ def _schema():
             sa_text(
                 "DO $$ BEGIN "
                 "CREATE ROLE socialerp_app WITH LOGIN PASSWORD 'socialerp_app'; "
-                "EXCEPTION WHEN duplicate_object THEN NULL; END $$;"
-            )
+                "EXCEPTION WHEN duplicate_object THEN NULL; END $$;",
+            ),
         )
         conn.execute(sa_text("ALTER ROLE socialerp_app WITH LOGIN PASSWORD 'socialerp_app'"))
         conn.execute(sa_text("GRANT USAGE ON SCHEMA public TO socialerp_app"))
         conn.execute(
             sa_text(
                 "GRANT SELECT, INSERT, UPDATE, DELETE "
-                "ON ALL TABLES IN SCHEMA public TO socialerp_app"
-            )
+                "ON ALL TABLES IN SCHEMA public TO socialerp_app",
+            ),
         )
 
     engine.dispose()
@@ -214,7 +214,7 @@ async def _reset_tables(test_engine):
     async_session = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with async_session() as session, session.begin():
         result = await session.execute(
-            text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")
+            text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'"),
         )
         names = [row[0] for row in result]
         if names:
@@ -261,7 +261,7 @@ async def tenant_session(db_session, tenant):
 
     token = set_current_tenant_id(tenant.id)
     await db_session.execute(
-        text("SELECT set_config('app.current_tenant_id', :tid, true)"), {"tid": str(tenant.id)}
+        text("SELECT set_config('app.current_tenant_id', :tid, true)"), {"tid": str(tenant.id)},
     )
 
     yield db_session
@@ -356,7 +356,7 @@ def sample_whatsapp_message():
                 "timestamp": "1700000000",
                 "text": {"body": "Hello, I want to order 2 black hoodies size M"},
                 "type": "text",
-            }
+            },
         ],
     }
 
@@ -379,9 +379,9 @@ def sample_instagram_message():
                             "mid": "ig_msg_123",
                             "text": "Hi, how much is the red dress?",
                         },
-                    }
+                    },
                 ],
-            }
+            },
         ],
     }
 
@@ -403,10 +403,10 @@ def sample_stk_push_callback_success():
                         {"Name": "Balance", "Value": 0},
                         {"Name": "TransactionDate", "Value": 20240115103000},
                         {"Name": "PhoneNumber", "Value": 254712345678},
-                    ]
+                    ],
                 },
-            }
-        }
+            },
+        },
     }
 
 
@@ -421,8 +421,8 @@ def sample_stk_push_callback_failed():
                 "ResultCode": 1032,
                 "ResultDesc": "Request cancelled by user",
                 "CallbackMetadata": {"Item": []},
-            }
-        }
+            },
+        },
     }
 
 

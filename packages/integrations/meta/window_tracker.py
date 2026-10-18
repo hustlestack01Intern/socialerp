@@ -32,7 +32,7 @@ class ChannelIdentity(Protocol):
     async def get_contact(self, session: AsyncSession, tenant_id: TenantId) -> Any: ...
 
     async def update_window(
-        self, session: AsyncSession, tenant_id: TenantId, now: datetime, expires_at: datetime
+        self, session: AsyncSession, tenant_id: TenantId, now: datetime, expires_at: datetime,
     ) -> None: ...
 
     async def close_window(self, session: AsyncSession, tenant_id: TenantId) -> None: ...
@@ -59,12 +59,12 @@ class WhatsAppIdentity:
             select(WhatsAppContact).where(
                 WhatsAppContact.tenant_id == tenant_id,
                 WhatsAppContact.phone == str(self.phone),
-            )
+            ),
         )
         return result.scalar_one_or_none()
 
     async def update_window(
-        self, session: AsyncSession, tenant_id: TenantId, now: datetime, expires_at: datetime
+        self, session: AsyncSession, tenant_id: TenantId, now: datetime, expires_at: datetime,
     ) -> None:
         from packages.core.models import WhatsAppContact
 
@@ -72,7 +72,7 @@ class WhatsAppIdentity:
             select(WhatsAppContact).where(
                 WhatsAppContact.tenant_id == tenant_id,
                 WhatsAppContact.phone == str(self.phone),
-            )
+            ),
         )
         contact = result.scalar_one_or_none()
         if contact:
@@ -89,7 +89,7 @@ class WhatsAppIdentity:
                 WhatsAppContact.tenant_id == tenant_id,
                 WhatsAppContact.phone == str(self.phone),
             )
-            .values(window_expires_at=None)
+            .values(window_expires_at=None),
         )
 
 
@@ -115,12 +115,12 @@ class InstagramIdentity:
             select(InstagramContact).where(
                 InstagramContact.tenant_id == tenant_id,
                 InstagramContact.thread_id == self.thread_id,
-            )
+            ),
         )
         return result.scalar_one_or_none()
 
     async def update_window(
-        self, session: AsyncSession, tenant_id: TenantId, now: datetime, expires_at: datetime
+        self, session: AsyncSession, tenant_id: TenantId, now: datetime, expires_at: datetime,
     ) -> None:
         from packages.core.models.instagram import InstagramContact
 
@@ -128,7 +128,7 @@ class InstagramIdentity:
             select(InstagramContact).where(
                 InstagramContact.tenant_id == tenant_id,
                 InstagramContact.thread_id == self.thread_id,
-            )
+            ),
         )
         contact = result.scalar_one_or_none()
         if contact:
@@ -145,7 +145,7 @@ class InstagramIdentity:
                 InstagramContact.tenant_id == tenant_id,
                 InstagramContact.thread_id == self.thread_id,
             )
-            .values(window_expires_at=None)
+            .values(window_expires_at=None),
         )
 
 
@@ -344,7 +344,7 @@ class RateLimiter:
         return self._buckets[tenant_id]
 
     async def check_rate_limit(
-        self, tenant_id: TenantId, tokens: int = 1
+        self, tenant_id: TenantId, tokens: int = 1,
     ) -> tuple[bool, dict[str, Any]]:
         """
         Check if request is within rate limit.

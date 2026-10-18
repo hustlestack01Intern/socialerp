@@ -81,7 +81,7 @@ async def seed_variant(
 
 async def available(session, tenant_id: UUID, product_id: UUID, variant_id: UUID) -> int:
     rows = await StockMovementRepository(session).get_by_tenant_product(
-        tenant_id, product_id, variant_id
+        tenant_id, product_id, variant_id,
     )
     ledger = StockLedger(tenant_id=tenant_id, product_id=product_id, variant_id=variant_id)
     ledger.load([_movement_model_to_domain(r) for r in rows])
@@ -123,7 +123,7 @@ async def test_create_order_reserves_stock_and_totals(tenant_session, tenant) ->
     reservations = (
         (
             await tenant_session.execute(
-                select(Reservation).where(Reservation.reference_id == order.id)
+                select(Reservation).where(Reservation.reference_id == order.id),
             )
         )
         .scalars()
@@ -165,7 +165,7 @@ async def test_create_order_unknown_variant(tenant_session, tenant) -> None:
         await service.create_order(
             tenant.id,
             CreateOrderCommand(
-                customer_phone=PHONE, lines=(OrderLine(quantity=1, variant_id=uuid4()),)
+                customer_phone=PHONE, lines=(OrderLine(quantity=1, variant_id=uuid4()),),
             ),
         )
 
@@ -177,7 +177,7 @@ async def test_create_order_inactive_variant(tenant_session, tenant) -> None:
         await service.create_order(
             tenant.id,
             CreateOrderCommand(
-                customer_phone=PHONE, lines=(OrderLine(quantity=1, variant_id=variant.id),)
+                customer_phone=PHONE, lines=(OrderLine(quantity=1, variant_id=variant.id),),
             ),
         )
 
@@ -189,7 +189,7 @@ async def test_create_order_insufficient_stock_writes_nothing(tenant_session, te
         await service.create_order(
             tenant.id,
             CreateOrderCommand(
-                customer_phone=PHONE, lines=(OrderLine(quantity=2, variant_id=variant.id),)
+                customer_phone=PHONE, lines=(OrderLine(quantity=2, variant_id=variant.id),),
             ),
         )
     count = await tenant_session.scalar(select(func.count(Order.id)))
@@ -252,7 +252,7 @@ async def test_cancel_order_releases_reservation(tenant_session, tenant) -> None
     order = await service.create_order(
         tenant.id,
         CreateOrderCommand(
-            customer_phone=PHONE, lines=(OrderLine(quantity=4, variant_id=variant.id),)
+            customer_phone=PHONE, lines=(OrderLine(quantity=4, variant_id=variant.id),),
         ),
     )
     assert await available(tenant_session, tenant.id, variant.product_id, variant.id) == 6
@@ -271,7 +271,7 @@ async def test_cannot_cancel_paid_order(tenant_session, tenant) -> None:
     order = await service.create_order(
         tenant.id,
         CreateOrderCommand(
-            customer_phone=PHONE, lines=(OrderLine(quantity=1, variant_id=variant.id),)
+            customer_phone=PHONE, lines=(OrderLine(quantity=1, variant_id=variant.id),),
         ),
     )
     order.status = "paid"
@@ -286,7 +286,7 @@ async def test_record_sale_for_paid_order_is_idempotent(tenant_session, tenant) 
     order = await service.create_order(
         tenant.id,
         CreateOrderCommand(
-            customer_phone=PHONE, lines=(OrderLine(quantity=3, variant_id=variant.id),)
+            customer_phone=PHONE, lines=(OrderLine(quantity=3, variant_id=variant.id),),
         ),
     )
     # Simulate payment completion (the payment service moves the order to paid).
@@ -300,7 +300,7 @@ async def test_record_sale_for_paid_order_is_idempotent(tenant_session, tenant) 
                 select(StockMovement).where(
                     StockMovement.movement_type == "sell",
                     StockMovement.reference_id == order.id,
-                )
+                ),
             )
         )
         .scalars()
@@ -320,7 +320,7 @@ async def test_record_sale_for_paid_order_is_idempotent(tenant_session, tenant) 
                 select(StockMovement).where(
                     StockMovement.movement_type == "sell",
                     StockMovement.reference_id == order.id,
-                )
+                ),
             )
         )
         .scalars()
@@ -335,7 +335,7 @@ async def test_record_sale_after_reservation_expired_re_reserves(tenant_session,
     order = await service.create_order(
         tenant.id,
         CreateOrderCommand(
-            customer_phone=PHONE, lines=(OrderLine(quantity=3, variant_id=variant.id),)
+            customer_phone=PHONE, lines=(OrderLine(quantity=3, variant_id=variant.id),),
         ),
     )
     assert await available(tenant_session, tenant.id, variant.product_id, variant.id) == 7
@@ -357,7 +357,7 @@ async def test_record_sale_after_reservation_expired_re_reserves(tenant_session,
                 select(StockMovement).where(
                     StockMovement.movement_type == "sell",
                     StockMovement.reference_id == order.id,
-                )
+                ),
             )
         )
         .scalars()
@@ -374,7 +374,7 @@ async def test_record_sale_when_reservation_lost_raises(tenant_session, tenant) 
     order_a = await service.create_order(
         tenant.id,
         CreateOrderCommand(
-            customer_phone=PHONE, lines=(OrderLine(quantity=3, variant_id=variant.id),)
+            customer_phone=PHONE, lines=(OrderLine(quantity=3, variant_id=variant.id),),
         ),
     )
     # A's TTL releases the stock; a second order then takes all of it.
@@ -420,7 +420,7 @@ async def test_mark_packed_from_awaiting_payment_raises_for_prepay(tenant_sessio
     order = await service.create_order(
         tenant.id,
         CreateOrderCommand(
-            customer_phone=PHONE, lines=(OrderLine(quantity=1, variant_id=variant.id),)
+            customer_phone=PHONE, lines=(OrderLine(quantity=1, variant_id=variant.id),),
         ),
     )
     assert order.status == OrderStatus.AWAITING_PAYMENT.value
@@ -435,7 +435,7 @@ async def test_expire_stale_reservations_releases(tenant_session, tenant) -> Non
     order = await service.create_order(
         tenant.id,
         CreateOrderCommand(
-            customer_phone=PHONE, lines=(OrderLine(quantity=5, variant_id=variant.id),)
+            customer_phone=PHONE, lines=(OrderLine(quantity=5, variant_id=variant.id),),
         ),
     )
     assert await available(tenant_session, tenant.id, variant.product_id, variant.id) == 5
@@ -461,7 +461,7 @@ async def test_expire_skips_reservation_fulfilled_concurrently(session_factory, 
         order = await service.create_order(
             tenant.id,
             CreateOrderCommand(
-                customer_phone=PHONE, lines=(OrderLine(quantity=3, variant_id=variant.id),)
+                customer_phone=PHONE, lines=(OrderLine(quantity=3, variant_id=variant.id),),
             ),
         )
         order_id = order.id

@@ -26,7 +26,7 @@ async def _has_marketing_consent(service: CRMService, tenant_id: UUID, customer_
 
 
 async def test_consent_defaults_to_denied(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with session_factory() as session, session.begin():
         customer = await make_customer(session, tenant.id)
@@ -36,7 +36,7 @@ async def test_consent_defaults_to_denied(
 
 
 async def test_granted_consent_is_honoured_with_source_and_time(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with session_factory() as session, session.begin():
         customer = await make_customer(session, tenant.id)
@@ -59,7 +59,7 @@ async def test_granted_consent_is_honoured_with_source_and_time(
 
 
 async def test_record_consent_is_audited(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with session_factory() as session, session.begin():
         customer = await make_customer(session, tenant.id)
@@ -75,8 +75,8 @@ async def test_record_consent_is_audited(
         audit = (
             await session.execute(
                 select(AuditLog).where(
-                    AuditLog.tenant_id == tenant.id, AuditLog.action == "crm.consent_recorded"
-                )
+                    AuditLog.tenant_id == tenant.id, AuditLog.action == "crm.consent_recorded",
+                ),
             )
         ).scalar_one()
 
@@ -90,14 +90,14 @@ async def test_record_consent_is_audited(
 
 
 async def test_opt_out_is_honoured(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with session_factory() as session, session.begin():
         customer = await make_customer(session, tenant.id)
         service = CRMService(session)
         tid = TenantId(tenant.id)
         await service.record_consent(
-            tid, customer.id, purpose=PURPOSE_MARKETING, granted=True, source="whatsapp_opt_in"
+            tid, customer.id, purpose=PURPOSE_MARKETING, granted=True, source="whatsapp_opt_in",
         )
         opt_out = await service.opt_out(tid, customer.id)
         still_granted = await _has_marketing_consent(service, tenant.id, customer.id)
@@ -110,7 +110,7 @@ async def test_opt_out_is_honoured(
 
 
 async def test_latest_decision_wins_in_both_directions(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with session_factory() as session, session.begin():
         customer = await make_customer(session, tenant.id)
@@ -121,7 +121,7 @@ async def test_latest_decision_wins_in_both_directions(
         assert await _has_marketing_consent(service, tenant.id, customer.id) is False
 
         await service.record_consent(
-            tid, customer.id, purpose=PURPOSE_MARKETING, granted=True, source="whatsapp_opt_in"
+            tid, customer.id, purpose=PURPOSE_MARKETING, granted=True, source="whatsapp_opt_in",
         )
         assert await _has_marketing_consent(service, tenant.id, customer.id) is True
 
@@ -130,7 +130,7 @@ async def test_latest_decision_wins_in_both_directions(
 
 
 async def test_purposes_are_independent(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """Granting 'shipping' consent must not leak into the marketing purpose."""
     async with session_factory() as session, session.begin():
@@ -151,7 +151,7 @@ async def test_purposes_are_independent(
 
 
 async def test_consent_is_tenant_scoped(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """A consent recorded for tenant A must not satisfy a check from tenant B."""
     from tests.crm.helpers import make_tenant
@@ -175,7 +175,7 @@ async def test_consent_is_tenant_scoped(
 
 
 async def test_has_consent_follows_only_latest_recorded_at(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """Two grants then an opt-out: only the newest record decides."""
     async with session_factory() as session, session.begin():
@@ -183,13 +183,13 @@ async def test_has_consent_follows_only_latest_recorded_at(
         service = CRMService(session)
         tid = TenantId(tenant.id)
         await service.record_consent(
-            tid, customer.id, purpose=PURPOSE_MARKETING, granted=True, source="whatsapp_opt_in"
+            tid, customer.id, purpose=PURPOSE_MARKETING, granted=True, source="whatsapp_opt_in",
         )
         await service.record_consent(
-            tid, customer.id, purpose=PURPOSE_MARKETING, granted=True, source="owner_manual"
+            tid, customer.id, purpose=PURPOSE_MARKETING, granted=True, source="owner_manual",
         )
         await service.record_consent(
-            tid, customer.id, purpose=PURPOSE_MARKETING, granted=False, source="opt_out"
+            tid, customer.id, purpose=PURPOSE_MARKETING, granted=False, source="opt_out",
         )
         result = await _has_marketing_consent(service, tenant.id, customer.id)
 

@@ -10,8 +10,7 @@ import pytest
 from httpx import AsyncClient
 
 from packages.core.domain import TenantId
-from packages.core.onboarding.service import OnboardingWizardService
-from packages.core.onboarding.steps import STEP_CONFIG, get_total_target_seconds
+from packages.core.onboarding.steps import get_total_target_seconds
 
 
 class TestOnboardingWizardE2E:
@@ -26,13 +25,12 @@ class TestOnboardingWizardE2E:
         and verifies the total time is under 30 minutes (1800 seconds).
         """
         # Get tenant from fixture
-        from packages.core.models.core import Tenant
         from sqlalchemy import text
         result = await db_session.execute(
-            text("SELECT * FROM tenants LIMIT 1")
+            text("SELECT * FROM tenants LIMIT 1"),
         )
         tenant_row = result.first()
-        tenant_id = TenantId(tenant_row.id)
+        TenantId(tenant_row.id)
 
         # Step 1: Business Profile (target: 3 min = 180s)
         response = await api_client.post(

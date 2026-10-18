@@ -131,7 +131,7 @@ async def test_refund_requires_approver(tenant_session, tenant) -> None:
 
 async def test_refund_rejects_non_completed_payment(tenant_session, tenant) -> None:
     _, payment = await _seed_completed_payment(
-        tenant_session, tenant.id, status=PaymentRecordStatus.PENDING
+        tenant_session, tenant.id, status=PaymentRecordStatus.PENDING,
     )
     service = PaymentService(tenant_session, RefundFakeProvider())
     with pytest.raises(RefundNotAllowedError):
@@ -226,7 +226,7 @@ async def test_refund_provider_decline_raises(tenant_session, tenant) -> None:
 
 async def test_refund_is_idempotent(tenant_session, tenant) -> None:
     _, payment = await _seed_completed_payment(
-        tenant_session, tenant.id, status=PaymentRecordStatus.REFUNDED
+        tenant_session, tenant.id, status=PaymentRecordStatus.REFUNDED,
     )
     provider = RefundFakeProvider()
     service = PaymentService(tenant_session, provider)

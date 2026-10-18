@@ -28,7 +28,7 @@ class TestInstagramRLS:
     """Tests for Instagram tenant isolation (RLS)."""
 
     async def test_instagram_contact_isolation(
-        self, db_session: AsyncSession, tenant: Tenant
+        self, db_session: AsyncSession, tenant: Tenant,
     ):
         """Tenant B cannot see Tenant A's Instagram contacts."""
         from packages.core.domain import TenantId
@@ -48,7 +48,7 @@ class TestInstagramRLS:
             select(InstagramContact).where(
                 InstagramContact.tenant_id == TenantId(tenant.id),
                 InstagramContact.ig_scoped_user_id == "user_123",
-            )
+            ),
         )
         found = result.scalar_one_or_none()
         assert found is not None
@@ -76,7 +76,7 @@ class TestInstagramRLS:
             select(InstagramContact).where(
                 InstagramContact.tenant_id == TenantId(tenant_b.id),
                 InstagramContact.ig_scoped_user_id == "user_123",
-            )
+            ),
         )
         found = result.scalar_one_or_none()
         # With explicit tenant_id filter, we get no results because the contact belongs to tenant A
@@ -84,7 +84,7 @@ class TestInstagramRLS:
         assert found is None
 
     async def test_instagram_conversation_isolation(
-        self, db_session: AsyncSession, tenant: Tenant
+        self, db_session: AsyncSession, tenant: Tenant,
     ):
         """Tenant B cannot see Tenant A's Instagram conversations."""
         from packages.core.domain import TenantId
@@ -111,7 +111,7 @@ class TestInstagramRLS:
             select(InstagramConversation).where(
                 InstagramConversation.tenant_id == TenantId(tenant.id),
                 InstagramConversation.contact_id == contact_a.id,
-            )
+            ),
         )
         found = result.scalar_one_or_none()
         assert found is not None
@@ -135,13 +135,13 @@ class TestInstagramRLS:
             select(InstagramConversation).where(
                 InstagramConversation.tenant_id == TenantId(tenant_b.id),
                 InstagramConversation.contact_id == contact_a.id,
-            )
+            ),
         )
         found = result.scalar_one_or_none()
         assert found is None
 
     async def test_instagram_message_isolation(
-        self, db_session: AsyncSession, tenant: Tenant
+        self, db_session: AsyncSession, tenant: Tenant,
     ):
         """Tenant B cannot see Tenant A's Instagram messages."""
         from packages.core.domain import TenantId
@@ -180,7 +180,7 @@ class TestInstagramRLS:
             select(InstagramMessage).where(
                 InstagramMessage.tenant_id == TenantId(tenant.id),
                 InstagramMessage.conversation_id == conv_a.id,
-            )
+            ),
         )
         found = result.scalar_one_or_none()
         assert found is not None
@@ -205,13 +205,13 @@ class TestInstagramRLS:
             select(InstagramMessage).where(
                 InstagramMessage.tenant_id == TenantId(tenant_b.id),
                 InstagramMessage.conversation_id == conv_a.id,
-            )
+            ),
         )
         found = result.scalar_one_or_none()
         assert found is None
 
     async def test_instagram_dm_eligibility_isolation(
-        self, db_session: AsyncSession, tenant: Tenant
+        self, db_session: AsyncSession, tenant: Tenant,
     ):
         """Tenant B cannot see Tenant A's DM eligibility records."""
         from datetime import datetime, timedelta
@@ -243,7 +243,7 @@ class TestInstagramRLS:
             select(InstagramDmEligibility).where(
                 InstagramDmEligibility.tenant_id == TenantId(tenant.id),
                 InstagramDmEligibility.comment_id == "comment_123",
-            )
+            ),
         )
         found = result.scalar_one_or_none()
         assert found is not None
@@ -267,13 +267,13 @@ class TestInstagramRLS:
             select(InstagramDmEligibility).where(
                 InstagramDmEligibility.tenant_id == TenantId(tenant_b.id),
                 InstagramDmEligibility.comment_id == "comment_123",
-            )
+            ),
         )
         found = result.scalar_one_or_none()
         assert found is None
 
     async def test_instagram_dedupe_isolation(
-        self, db_session: AsyncSession, tenant: Tenant
+        self, db_session: AsyncSession, tenant: Tenant,
     ):
         """Tenant B cannot see Tenant A's dedupe records."""
         from packages.core.domain import TenantId
@@ -290,7 +290,7 @@ class TestInstagramRLS:
             select(InstagramDedupe).where(
                 InstagramDedupe.tenant_id == TenantId(tenant.id),
                 InstagramDedupe.provider_message_id == "ig_mid_123",
-            )
+            ),
         )
         found = result.scalar_one_or_none()
         assert found is not None
@@ -314,7 +314,7 @@ class TestInstagramRLS:
             select(InstagramDedupe).where(
                 InstagramDedupe.tenant_id == TenantId(tenant_b.id),
                 InstagramDedupe.provider_message_id == "ig_mid_123",
-            )
+            ),
         )
         found = result.scalar_one_or_none()
         assert found is None
@@ -324,7 +324,7 @@ class TestInstagramFeatureFlag:
     """Tests for Instagram feature flag enforcement."""
 
     async def test_instagram_disabled_returns_404(
-        self, tenant: Tenant
+        self, tenant: Tenant,
     ):
         """Instagram webhook returns 200 but doesn't process when disabled."""
         # This test would require the webhook endpoint to check the feature flag

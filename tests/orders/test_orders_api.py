@@ -109,10 +109,10 @@ async def test_create_order_idempotent_header(orders_client, tenant, session_fac
         "items": [{"variant_id": variant_id, "quantity": 1}],
     }
     first = await orders_client.post(
-        "/api/v1/orders", json=payload, headers={"Idempotency-Key": "dup-1"}
+        "/api/v1/orders", json=payload, headers={"Idempotency-Key": "dup-1"},
     )
     second = await orders_client.post(
-        "/api/v1/orders", json=payload, headers={"Idempotency-Key": "dup-1"}
+        "/api/v1/orders", json=payload, headers={"Idempotency-Key": "dup-1"},
     )
     assert first.status_code == 201
     assert second.status_code == 201
@@ -120,7 +120,7 @@ async def test_create_order_idempotent_header(orders_client, tenant, session_fac
 
 
 async def test_create_order_insufficient_stock_returns_409(
-    orders_client, tenant, session_factory
+    orders_client, tenant, session_factory,
 ) -> None:
     async with session_factory() as session, session.begin():
         variant = await _seed_variant(session, tenant.id, qty=1)
@@ -156,7 +156,7 @@ async def test_cancel_and_pack_order(orders_client, tenant, session_factory) -> 
     assert not_found.status_code == 404
 
     cancelled = await orders_client.post(
-        f"/api/v1/orders/{order_id}/cancel", json={"reason": "no longer needed"}
+        f"/api/v1/orders/{order_id}/cancel", json={"reason": "no longer needed"},
     )
     assert cancelled.status_code == 200
     assert cancelled.json()["status"] == "cancelled"

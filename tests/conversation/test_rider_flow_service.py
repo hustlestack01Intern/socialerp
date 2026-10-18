@@ -37,7 +37,7 @@ class RecordingSender:
 
 async def _set_config(session, tenant_id) -> None:
     await session.execute(
-        text("SELECT set_config('app.current_tenant_id', :tid, true)"), {"tid": str(tenant_id)}
+        text("SELECT set_config('app.current_tenant_id', :tid, true)"), {"tid": str(tenant_id)},
     )
 
 
@@ -72,15 +72,15 @@ async def _seed(
     ledger.load([])
     await StockMovementRepository(session).add(
         ledger.record_receive(
-            quantity=10, unit_cost_cents=2500, reference_id=None, reference_type="purchase_order"
-        )
+            quantity=10, unit_cost_cents=2500, reference_id=None, reference_type="purchase_order",
+        ),
     )
 
     contact = WhatsAppContact(tenant_id=tenant_id, phone=TENANT_PHONE, wa_id=TENANT_PHONE)
     session.add(contact)
     await session.flush()
     conversation = WhatsAppConversation(
-        tenant_id=tenant_id, contact_id=contact.id, state=WhatsAppConversationState.OPEN.value
+        tenant_id=tenant_id, contact_id=contact.id, state=WhatsAppConversationState.OPEN.value,
     )
     session.add(conversation)
     await session.flush()
@@ -124,7 +124,7 @@ async def _dispatched(
             rider_phone=rider_phone,
         )
         await DeliveryService(session).dispatch(
-            tenant.id, order_id=order_id, rider_id=rider_id, zone_id=zone_id
+            tenant.id, order_id=order_id, rider_id=rider_id, zone_id=zone_id,
         )
     if deactivate_after:
         # dispatch requires an active rider, so switch them off afterwards.
@@ -140,7 +140,7 @@ async def _handle(session_factory, tenant, *, conv_id, contact_id, phone, text, 
         await _set_config(session, tenant.id)
         flow = RiderFlowService(session, tenant.id, sender=sender)
         result = await flow.try_handle(
-            conversation_id=conv_id, contact_id=contact_id, rider_phone=phone, text=text
+            conversation_id=conv_id, contact_id=contact_id, rider_phone=phone, text=text,
         )
         await session.commit()
         return result
@@ -181,7 +181,7 @@ async def test_rider_reply_is_persisted_as_outbound_message(tenant, session_fact
         messages = (
             (
                 await session.execute(
-                    select(WhatsAppMessage).where(WhatsAppMessage.direction == "outbound")
+                    select(WhatsAppMessage).where(WhatsAppMessage.direction == "outbound"),
                 )
             )
             .scalars()
@@ -227,7 +227,7 @@ async def test_unknown_text_with_no_active_delivery_falls_through(tenant, sessio
 
 @pytest.mark.asyncio
 async def test_rider_phone_is_lookup_matched_when_texted_in_local_format(
-    tenant, session_factory
+    tenant, session_factory,
 ) -> None:
     """A rider stored as 2547... must match an inbound 0712... sender id."""
     sender = RecordingSender()
@@ -248,7 +248,7 @@ async def test_rider_phone_is_lookup_matched_when_texted_in_local_format(
 async def test_deactivated_rider_is_told_access_is_off(tenant, session_factory) -> None:
     sender = RecordingSender()
     conv_id, contact_id, phone = await _dispatched(
-        tenant=tenant, session_factory=session_factory, deactivate_after=True
+        tenant=tenant, session_factory=session_factory, deactivate_after=True,
     )
     res = await _handle(
         session_factory,
@@ -285,7 +285,7 @@ async def test_pod_arrival_flags_collection_without_pushing(tenant, session_fact
     """The flow must never push STK itself — it flags collection_due for the caller."""
     sender = RecordingSender()
     conv_id, contact_id, phone = await _dispatched(
-        tenant=tenant, session_factory=session_factory, payment_method="mpesa_pod"
+        tenant=tenant, session_factory=session_factory, payment_method="mpesa_pod",
     )
     await _handle(
         session_factory,

@@ -133,7 +133,7 @@ class Order(Base):
     delivery_lng: Mapped[float | None] = mapped_column(nullable=True)
     delivery_instructions: Mapped[str] = mapped_column(Text, nullable=True)
     estimated_delivery_date: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        DateTime(timezone=True), nullable=True,
     )
 
     # Payment info

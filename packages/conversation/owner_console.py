@@ -709,7 +709,7 @@ class OwnerConsoleService:
                 User.phone.is_not(None),
                 Tenant.is_active.is_(True),
             )
-            .order_by(User.created_at.asc(), User.id.asc())
+            .order_by(User.created_at.asc(), User.id.asc()),
         )
         for user in result.scalars().all():
             if _phones_match(raw_phone, user.phone):
@@ -728,7 +728,7 @@ class OwnerConsoleService:
         if self._autonomy is not None:
             return self._autonomy
         result = await self.session.execute(
-            select(Tenant.settings).where(Tenant.id == self.tenant_id)
+            select(Tenant.settings).where(Tenant.id == self.tenant_id),
         )
         return autonomy_from_settings(result.scalar_one_or_none())
 
@@ -758,7 +758,7 @@ class OwnerConsoleService:
                 language=command.language,
             )
             return self.policy.decide(
-                result, autonomy=autonomy, sensitive_action=command.args.sensitive_action
+                result, autonomy=autonomy, sensitive_action=command.args.sensitive_action,
             )
 
         # Writes: CREATE_ORDER is the policy's transaction gate (L2+).
@@ -793,7 +793,7 @@ class OwnerConsoleService:
             count = await self._scalar_int(
                 select(func.count())
                 .select_from(Order)
-                .where(Order.tenant_id == self.tenant_id, Order.created_at >= start_of_today)
+                .where(Order.tenant_id == self.tenant_id, Order.created_at >= start_of_today),
             )
             reply = _t("orders_today", lang, n=count)
         elif command.command == "revenue_today":
@@ -815,14 +815,14 @@ class OwnerConsoleService:
                         ),
                         Order.payment_status != PaymentStatus.REFUNDED.value,
                     ),
-                )
+                ),
             )
             reply = _t("revenue_today", lang, kes=_kes(cents))
         else:
             today = await self._scalar_int(
                 select(func.count())
                 .select_from(Order)
-                .where(Order.tenant_id == self.tenant_id, Order.created_at >= start_of_today)
+                .where(Order.tenant_id == self.tenant_id, Order.created_at >= start_of_today),
             )
             open_orders = await self._scalar_int(
                 select(func.count())
@@ -830,7 +830,7 @@ class OwnerConsoleService:
                 .where(
                     Order.tenant_id == self.tenant_id,
                     Order.status.not_in(_CLOSED_ORDER_STATUSES),
-                )
+                ),
             )
             open_alerts = await self._scalar_int(
                 select(func.count())
@@ -838,7 +838,7 @@ class OwnerConsoleService:
                 .where(
                     OwnerAlert.tenant_id == self.tenant_id,
                     OwnerAlert.status == AlertStatus.OPEN.value,
-                )
+                ),
             )
             reply = _t("status", lang, today=today, open=open_orders, alerts=open_alerts)
 
@@ -887,7 +887,7 @@ class OwnerConsoleService:
                         severity=getattr(alert.severity, "value", alert.severity),
                         title=alert.title,
                         alert_id=str(alert.id),  # full UUID: the owner copies it into *ack*
-                    )
+                    ),
                 )
             reply = "\n".join(lines)
 
@@ -918,7 +918,7 @@ class OwnerConsoleService:
         assert isinstance(command.args, AckAlertArgs)
         lang = command.language
         alert = await self.alert_service.acknowledge(
-            self.tenant_id, command.args.alert_id, user_id=owner.id
+            self.tenant_id, command.args.alert_id, user_id=owner.id,
         )
         if alert is None:
             reply = _t("ack_not_found", lang)
@@ -1110,7 +1110,7 @@ class OwnerConsoleService:
                 cast(Order.id, String).like(f"{ref}%"),
             )
             .order_by(Order.created_at.desc())
-            .limit(2)
+            .limit(2),
         )
         rows = list(result.scalars().all())
         if len(rows) > 1:
@@ -1192,7 +1192,7 @@ class OwnerConsoleService:
                         StockMovementModel.reference_id == restock_key,
                         StockMovementModel.movement_type == StockMovementType.RECEIVE.value,
                     )
-                    .limit(1)
+                    .limit(1),
                 )
             ).first()
             if already is not None:
@@ -1283,8 +1283,8 @@ class OwnerConsoleService:
                 or_(
                     ProductVariant.sku.ilike(f"%{needle}%"),
                     Product.name.ilike(f"%{needle}%"),
-                )
-            ).limit(2)
+                ),
+            ).limit(2),
         )
         rows = result.all()
         if len(rows) == 1:
@@ -1298,7 +1298,7 @@ class OwnerConsoleService:
         await self.session.execute(
             text(
                 "SELECT 1 FROM product_variants "
-                "WHERE id = :id AND tenant_id = :tenant_id FOR UPDATE"
+                "WHERE id = :id AND tenant_id = :tenant_id FOR UPDATE",
             ),
             {"id": str(variant_id), "tenant_id": str(self.tenant_id)},
         )
@@ -1394,7 +1394,7 @@ class OwnerConsoleService:
                         "outcome": outcome,
                         "send_error": send_error,
                     },
-                )
+                ),
             )
             conversation = await self.session.get(WhatsAppConversation, conversation_id)
             if conversation is not None:

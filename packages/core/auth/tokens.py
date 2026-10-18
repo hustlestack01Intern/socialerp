@@ -41,14 +41,14 @@ class TokenManager:
         return None
 
     async def authenticate_user_in_tenant(
-        self, tenant_id: UUID, email: str, password: str
+        self, tenant_id: UUID, email: str, password: str,
     ) -> User | None:
         """Authenticate user within a specific tenant."""
         result = await self.session.execute(
             select(UserModel)
             .where(UserModel.tenant_id == tenant_id)
             .where(UserModel.email == email)
-            .where(UserModel.is_active.is_(True))
+            .where(UserModel.is_active.is_(True)),
         )
         user_model = result.scalar_one_or_none()
 

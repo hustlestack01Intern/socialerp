@@ -63,7 +63,7 @@ async def _seed_conversation(session, tenant_id):
 
 
 async def _seed_variant(
-    session, tenant_id, *, name="Black Hoodie", price_cents=5000, qty=10, attributes=None
+    session, tenant_id, *, name="Black Hoodie", price_cents=5000, qty=10, attributes=None,
 ):
     product = Product(tenant_id=tenant_id, name=name, status=ProductStatus.ACTIVE.value)
     session.add(product)
@@ -95,7 +95,7 @@ async def _seed_variant(
 
 def _service(session, tenant_id, sender) -> ConversationAgentService:
     return ConversationAgentService(
-        session, tenant_id, extractor=HeuristicIntentExtractor(), sender=sender
+        session, tenant_id, extractor=HeuristicIntentExtractor(), sender=sender,
     )
 
 
@@ -104,7 +104,7 @@ async def _outbound(session, conversation_id) -> list[WhatsAppMessage]:
         select(WhatsAppMessage).where(
             WhatsAppMessage.conversation_id == conversation_id,
             WhatsAppMessage.direction == "outbound",
-        )
+        ),
     )
     return list(rows.scalars().all())
 
@@ -257,7 +257,7 @@ async def test_catalog_is_tenant_scoped(tenant_session, tenant) -> None:
             owner_email="other@example.com",
             is_active=True,
             settings={},
-        )
+        ),
     )
     await tenant_session.flush()
     await _seed_variant(tenant_session, other_tenant_id, name="Black Hoodie")

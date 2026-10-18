@@ -58,7 +58,7 @@ class SegmentService:
         self.session = session
 
     async def latest_traits_by_customer(
-        self, tenant_id: TenantId, *, customer_id: UUID | None = None
+        self, tenant_id: TenantId, *, customer_id: UUID | None = None,
     ) -> dict[UUID, dict[str, Any]]:
         """Batch-load latest trait values, grouped per customer.
 
@@ -85,7 +85,7 @@ class SegmentService:
         return by_customer
 
     async def evaluate_segment(
-        self, tenant_id: TenantId, segment_key: SegmentKey, customer_id: UUID
+        self, tenant_id: TenantId, segment_key: SegmentKey, customer_id: UUID,
     ) -> bool:
         """Whether one customer currently belongs to a segment.
 

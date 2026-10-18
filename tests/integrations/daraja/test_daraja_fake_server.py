@@ -43,7 +43,7 @@ class TestFakeDarajaServer:
             response = await client.post(
                 f"{base_url}/oauth/v1/generate",
                 headers={
-                    "Authorization": "Basic dGVzdF9jb25zdW1lcl9rZXk6dGVzdF9jb25zdW1lcl9zZWNyZXQ="
+                    "Authorization": "Basic dGVzdF9jb25zdW1lcl9rZXk6dGVzdF9jb25zdW1lcl9zZWNyZXQ=",
                 },
             )
             assert response.status_code == 200
@@ -296,7 +296,7 @@ class TestFakeDarajaServer:
 
             # List failures
             response = await client.get(
-                f"{base_url}/simulate/failure", params={"tenant_id": shortcode}
+                f"{base_url}/simulate/failure", params={"tenant_id": shortcode},
             )
             assert response.status_code == 200
             failures = response.json()["failures"]
@@ -319,7 +319,7 @@ class TestFakeDarajaServer:
         """Inspect STK requests."""
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"{base_url}/inspect/stk_requests", params={"tenant_id": shortcode}
+                f"{base_url}/inspect/stk_requests", params={"tenant_id": shortcode},
             )
             assert response.status_code == 200
             data = response.json()
@@ -339,6 +339,6 @@ class TestFakeDarajaServer:
         """Reset test data."""
         async with httpx.AsyncClient() as client:
             response = await client.delete(
-                f"{base_url}/inspect/reset", params={"tenant_id": shortcode}
+                f"{base_url}/inspect/reset", params={"tenant_id": shortcode},
             )
             assert response.status_code == 200

@@ -47,7 +47,7 @@ async def test_daily_report_counts_all_statuses_but_revenue_paid_only(
         total_cents=500_00,
     )
     pending = await add_order(
-        db_session, tenant.id, customer, created_at=utc_day(2026, 10, 10, 11), total_cents=300_00
+        db_session, tenant.id, customer, created_at=utc_day(2026, 10, 10, 11), total_cents=300_00,
     )
     cancelled = await add_order(
         db_session,
@@ -108,11 +108,11 @@ async def test_new_vs_returning_uses_all_time_first_order(db_session: AsyncSessi
     await add_order(db_session, tenant.id, returning, created_at=utc_day(2026, 9, 1, 9), paid=True)
     # ...and they ordered again INSIDE it.
     await add_order(
-        db_session, tenant.id, returning, created_at=utc_day(2026, 10, 10, 9), paid=True
+        db_session, tenant.id, returning, created_at=utc_day(2026, 10, 10, 9), paid=True,
     )
     # The other customer's first-ever order falls inside the window.
     await add_order(
-        db_session, tenant.id, brand_new, created_at=utc_day(2026, 10, 10, 12), paid=True
+        db_session, tenant.id, brand_new, created_at=utc_day(2026, 10, 10, 12), paid=True,
     )
 
     report = await InsightsService(db_session).daily_report(TenantId(tenant.id), DAY)
@@ -128,11 +128,11 @@ async def test_half_open_window_excludes_end_and_includes_start(
     customer = await make_customer(db_session, tenant.id)
 
     inside_start = await add_order(
-        db_session, tenant.id, customer, created_at=utc_day(2026, 10, 10, 0)
+        db_session, tenant.id, customer, created_at=utc_day(2026, 10, 10, 0),
     )
     next_day = await add_order(db_session, tenant.id, customer, created_at=utc_day(2026, 10, 11, 0))
     prev_second = await add_order(
-        db_session, tenant.id, customer, created_at=datetime(2026, 10, 9, 23, 59, 59, tzinfo=UTC)
+        db_session, tenant.id, customer, created_at=datetime(2026, 10, 9, 23, 59, 59, tzinfo=UTC),
     )
     assert inside_start.id and next_day.id and prev_second.id
 
@@ -179,15 +179,15 @@ async def test_top_items_paid_only_ranked_and_tie_broken(db_session: AsyncSessio
     product = await add_product(db_session, tenant.id, name="Hoodie")
 
     paid = await add_order(
-        db_session, tenant.id, customer, created_at=utc_day(2026, 10, 10, 9), paid=True
+        db_session, tenant.id, customer, created_at=utc_day(2026, 10, 10, 9), paid=True,
     )
     unpaid = await add_order(db_session, tenant.id, customer, created_at=utc_day(2026, 10, 10, 10))
     await add_item(
-        db_session, tenant.id, paid, product, quantity=3, name="Hoodie", sku="HOODIE-BLK"
+        db_session, tenant.id, paid, product, quantity=3, name="Hoodie", sku="HOODIE-BLK",
     )
     # Unpaid order's items must NOT be counted, no matter the quantity.
     await add_item(
-        db_session, tenant.id, unpaid, product, quantity=99, name="Hoodie", sku="HOODIE-BLK"
+        db_session, tenant.id, unpaid, product, quantity=99, name="Hoodie", sku="HOODIE-BLK",
     )
 
     report = await InsightsService(db_session).daily_report(TenantId(tenant.id), DAY)
@@ -204,7 +204,7 @@ async def test_top_items_ties_break_by_name_then_sku(db_session: AsyncSession) -
     product = await add_product(db_session, tenant.id)
 
     order = await add_order(
-        db_session, tenant.id, customer, created_at=utc_day(2026, 10, 10, 9), paid=True
+        db_session, tenant.id, customer, created_at=utc_day(2026, 10, 10, 9), paid=True,
     )
     await add_item(db_session, tenant.id, order, product, quantity=2, name="Zebra", sku="Z-1")
     await add_item(db_session, tenant.id, order, product, quantity=2, name="Alpha", sku="A-1")
@@ -220,12 +220,12 @@ async def test_top_items_respects_top_k(db_session: AsyncSession) -> None:
     customer = await make_customer(db_session, tenant.id)
     product = await add_product(db_session, tenant.id)
     order = await add_order(
-        db_session, tenant.id, customer, created_at=utc_day(2026, 10, 10, 9), paid=True
+        db_session, tenant.id, customer, created_at=utc_day(2026, 10, 10, 9), paid=True,
     )
 
     for i in range(4):
         await add_item(
-            db_session, tenant.id, order, product, quantity=10 - i, name=f"Item-{i}", sku=f"SKU-{i}"
+            db_session, tenant.id, order, product, quantity=10 - i, name=f"Item-{i}", sku=f"SKU-{i}",
         )
 
     report = await InsightsService(db_session).daily_report(TenantId(tenant.id), DAY, top_k=2)
@@ -237,7 +237,7 @@ async def test_reports_are_deterministic(db_session: AsyncSession) -> None:
     customer = await make_customer(db_session, tenant.id)
     product = await add_product(db_session, tenant.id)
     order = await add_order(
-        db_session, tenant.id, customer, created_at=utc_day(2026, 10, 10, 9), paid=True
+        db_session, tenant.id, customer, created_at=utc_day(2026, 10, 10, 9), paid=True,
     )
     await add_item(db_session, tenant.id, order, product, quantity=1)
 
@@ -336,12 +336,12 @@ async def test_revenue_excludes_refunded_orders_but_keeps_paid_and_pod(
         total_cents=200_00,
     )
     await add_item(
-        db_session, tenant.id, paid, product, quantity=2, name="Hoodie", sku="HOODIE-BLK"
+        db_session, tenant.id, paid, product, quantity=2, name="Hoodie", sku="HOODIE-BLK",
     )
     await add_item(db_session, tenant.id, pod, product, quantity=1, name="Hoodie", sku="HOODIE-BLK")
     # The refunded order's items must not rank either.
     await add_item(
-        db_session, tenant.id, refunded, product, quantity=99, name="Hoodie", sku="HOODIE-BLK"
+        db_session, tenant.id, refunded, product, quantity=99, name="Hoodie", sku="HOODIE-BLK",
     )
 
     report = await InsightsService(db_session).daily_report(TenantId(tenant.id), DAY)

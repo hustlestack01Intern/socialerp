@@ -124,7 +124,7 @@ async def get_tenant_by_phone_number_id(db: AsyncSession, phone_number_id: str) 
 
 
 async def _get_tenant_from_meta_webhook(
-    db: AsyncSession, payload: dict[str, Any]
+    db: AsyncSession, payload: dict[str, Any],
 ) -> TenantId | None:
     """Extract tenant ID from Meta webhook (WhatsApp or Instagram)."""
     channel = detect_meta_channel(payload)
@@ -145,7 +145,7 @@ async def _get_tenant_from_meta_webhook(
                 if ig_professional_account_id:
                     # Look up tenant by Instagram account ID
                     tenant_id_str = await get_tenant_by_instagram_account_id(
-                        db, ig_professional_account_id
+                        db, ig_professional_account_id,
                     )
                     if tenant_id_str:
                         return TenantId(UUID(tenant_id_str))
@@ -156,7 +156,7 @@ async def _get_tenant_from_meta_webhook(
 
 
 async def get_tenant_by_instagram_account_id(
-    db: AsyncSession, ig_account_id: str
+    db: AsyncSession, ig_account_id: str,
 ) -> str | None:
     """Look up tenant by Instagram Professional Account ID."""
     # In production, this would be a configured mapping
@@ -293,13 +293,13 @@ async def meta_webhook_receive(
     # Verify signature (same for both WhatsApp and Instagram)
     s = get_webhook_settings()
     if not x_hub_signature_256 or not verify_hmac_sha256(
-        body, x_hub_signature_256, s.meta_app_secret
+        body, x_hub_signature_256, s.meta_app_secret,
     ):
         client_host = request.client.host if request.client else "unknown"
         logger.warning(f"Invalid Meta webhook signature from {client_host}")
 
         await _log_invalid_signature(
-            db, body, x_hub_signature_256, request.client.host if request.client else None
+            db, body, x_hub_signature_256, request.client.host if request.client else None,
         )
 
         raise HTTPException(
@@ -336,7 +336,7 @@ async def meta_webhook_receive(
         ):
             logger.info(
                 "Instagram webhook received but channel not enabled/approved "
-                f"for tenant {tenant_id}"
+                f"for tenant {tenant_id}",
             )
             return {
                 "status": "received",
@@ -358,17 +358,17 @@ async def meta_webhook_receive(
         for norm_msg in normalized_messages:
             if norm_msg["type"] == "dm":
                 norm_dm = normalize_instagram_dm(
-                    norm_msg["message"], norm_msg["ig_professional_account_id"]
+                    norm_msg["message"], norm_msg["ig_professional_account_id"],
                 )
                 await _process_instagram_inbound(db, tenant_id, norm_dm, webhook_id)
             elif norm_msg["type"] == "comment":
                 norm_comment = normalize_instagram_comment(
-                    norm_msg["comment"], norm_msg["ig_professional_account_id"]
+                    norm_msg["comment"], norm_msg["ig_professional_account_id"],
                 )
                 await _process_instagram_comment(db, tenant_id, norm_comment, webhook_id)
             elif norm_msg["type"] == "story_reply":
                 norm_story = normalize_instagram_story_reply(
-                    norm_msg["story_reply"], norm_msg["ig_professional_account_id"]
+                    norm_msg["story_reply"], norm_msg["ig_professional_account_id"],
                 )
                 await _process_instagram_story_reply(db, tenant_id, norm_story, webhook_id)
 
@@ -430,7 +430,7 @@ async def _process_inbound_message(
         select(WhatsAppDedupe).where(
             WhatsAppDedupe.tenant_id == tenant_id,
             WhatsAppDedupe.provider_message_id == provider_msg_id,
-        )
+        ),
     )
     existing = result.scalar_one_or_none()
 
@@ -569,7 +569,7 @@ async def _process_status_update(
         select(WhatsAppMessage).where(
             WhatsAppMessage.tenant_id == tenant_id,
             WhatsAppMessage.meta_message_id == provider_msg_id,
-        )
+        ),
     )
     message = result.scalar_one_or_none()
 
@@ -652,7 +652,7 @@ async def _get_or_create_contact(
         select(WhatsAppContact).where(
             WhatsAppContact.tenant_id == tenant_id,
             WhatsAppContact.phone == str(phone),
-        )
+        ),
     )
     contact = result.scalar_one_or_none()
 
@@ -680,10 +680,10 @@ async def _get_or_create_contact(
         phone=str(phone),
         wa_id=wa_id,
         name=next(
-            (c.get("profile", {}).get("name") for c in contacts if c.get("wa_id") == wa_id), None
+            (c.get("profile", {}).get("name") for c in contacts if c.get("wa_id") == wa_id), None,
         ),
         profile_picture_url=next(
-            (c.get("profile", {}).get("picture") for c in contacts if c.get("wa_id") == wa_id), None
+            (c.get("profile", {}).get("picture") for c in contacts if c.get("wa_id") == wa_id), None,
         ),
     )
 
@@ -726,7 +726,7 @@ async def _get_or_create_conversation(
                 WhatsAppConversationState.HANDOFF_ACTIVE,
             ]),
         )
-        .order_by(WhatsAppConversation.created_at.desc())
+        .order_by(WhatsAppConversation.created_at.desc()),
     )
     conversation = result.scalar_one_or_none()
 
@@ -780,7 +780,7 @@ async def _process_instagram_inbound(
         select(InstagramDedupe).where(
             InstagramDedupe.tenant_id == tenant_id,
             InstagramDedupe.provider_message_id == provider_msg_id,
-        )
+        ),
     )
     existing = result.scalar_one_or_none()
 
@@ -920,7 +920,7 @@ async def _get_or_create_instagram_contact(
         select(InstagramContact).where(
             InstagramContact.tenant_id == tenant_id,
             InstagramContact.ig_scoped_user_id == ig_user_id,
-        )
+        ),
     )
     contact = result.scalar_one_or_none()
 
@@ -976,7 +976,7 @@ async def _get_or_create_instagram_conversation(
                 InstagramConversationState.HANDOFF_REQUESTED,
                 InstagramConversationState.HANDOFF_ACTIVE,
             ]),
-        ).order_by(InstagramConversation.created_at.desc())
+        ).order_by(InstagramConversation.created_at.desc()),
     )
     conversation = result.scalar_one_or_none()
 

@@ -70,7 +70,7 @@ async def _seed_owner(session_factory: async_sessionmaker[AsyncSession], tenant:
 
 @pytest.fixture
 async def owner_client(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> AsyncGenerator[AsyncClient, None]:
     user_id = await _seed_owner(session_factory, tenant)
     _install_overrides(tenant, user_id, session_factory)
@@ -85,7 +85,7 @@ async def owner_client(
 
 @pytest.fixture
 async def staff_client(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> AsyncGenerator[AsyncClient, None]:
     user_id = await _seed_owner(session_factory, tenant)
     _install_overrides(tenant, user_id, session_factory)
@@ -131,13 +131,13 @@ async def test_insights_allowed_for_owner(owner_client: AsyncClient) -> None:
 
 
 async def test_daily_report_shape_with_real_rows(
-    owner_client: AsyncClient, tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    owner_client: AsyncClient, tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with session_factory() as session, session.begin():
         customer = await make_customer(session, tenant.id)
         product = await add_product(session, tenant.id, name="Hoodie")
         order = await add_order(
-            session, tenant.id, customer, created_at=utc_day(2026, 10, 10, 9), paid=True
+            session, tenant.id, customer, created_at=utc_day(2026, 10, 10, 9), paid=True,
         )
         await add_item(session, tenant.id, order, product, quantity=2, name="Hoodie", sku="H-1")
 
@@ -151,13 +151,13 @@ async def test_daily_report_shape_with_real_rows(
     assert body["new_customers"] == 1
     assert body["returning_customers"] == 0
     assert body["top_items"] == [
-        {"product_id": str(product.id), "name": "Hoodie", "sku": "H-1", "quantity": 2}
+        {"product_id": str(product.id), "name": "Hoodie", "sku": "H-1", "quantity": 2},
     ]
     assert "anomaly" in body
 
 
 async def test_weekly_report_shape(
-    owner_client: AsyncClient, tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    owner_client: AsyncClient, tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with session_factory() as session, session.begin():
         customer = await make_customer(session, tenant.id)
@@ -173,12 +173,12 @@ async def test_weekly_report_shape(
 
 
 async def test_stock_alerts_shape(
-    owner_client: AsyncClient, tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    owner_client: AsyncClient, tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with session_factory() as session, session.begin():
         product = await add_product(session, tenant.id, name="Hoodie")
         variant = await add_variant(
-            session, tenant.id, product, sku="LOW-1", quantity=1, reorder_level=5
+            session, tenant.id, product, sku="LOW-1", quantity=1, reorder_level=5,
         )
 
     resp = await owner_client.get("/api/v1/insights/stock-alerts")
@@ -192,12 +192,12 @@ async def test_stock_alerts_shape(
             "sku": "LOW-1",
             "quantity": 1,
             "reorder_level": 5,
-        }
+        },
     ]
 
 
 async def test_insights_endpoints_are_tenant_scoped(
-    owner_client: AsyncClient, tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    owner_client: AsyncClient, tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """Another tenant's paid order must not appear in this tenant's report."""
     async with session_factory() as session, session.begin():
@@ -216,14 +216,14 @@ async def test_insights_endpoints_are_tenant_scoped(
 
 
 async def test_insights_payload_carries_no_pii(
-    owner_client: AsyncClient, tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    owner_client: AsyncClient, tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with session_factory() as session, session.begin():
         customer = await make_customer(
-            session, tenant.id, phone="254799988877", name="PII Confident"
+            session, tenant.id, phone="254799988877", name="PII Confident",
         )
         await add_order(
-            session, tenant.id, customer, created_at=utc_day(2026, 10, 10, 9), paid=True
+            session, tenant.id, customer, created_at=utc_day(2026, 10, 10, 9), paid=True,
         )
 
     daily = await owner_client.get("/api/v1/insights/daily", params={"date": "2026-10-10"})

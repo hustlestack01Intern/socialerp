@@ -44,16 +44,16 @@ async def _seed_full_record(session: AsyncSession, tenant_id: UUID) -> UUID:
     tid = TenantId(tenant_id)
     customer = await make_customer(session, tenant_id)
     await service.record_event(
-        tid, customer.id, "message.summarised", channel="whatsapp", dedupe_key="evt-1"
+        tid, customer.id, "message.summarised", channel="whatsapp", dedupe_key="evt-1",
     )
     await service.record_event(
-        tid, customer.id, "order.created", channel="whatsapp", dedupe_key="evt-2"
+        tid, customer.id, "order.created", channel="whatsapp", dedupe_key="evt-2",
     )
     await service.record_consent(
-        tid, customer.id, purpose="marketing", granted=True, source="whatsapp_opt_in"
+        tid, customer.id, purpose="marketing", granted=True, source="whatsapp_opt_in",
     )
     await service.record_consent(
-        tid, customer.id, purpose="marketing", granted=False, source="opt_out"
+        tid, customer.id, purpose="marketing", granted=False, source="opt_out",
     )
     await service.derive_traits(tid, customer.id)
     await make_order(
@@ -76,7 +76,7 @@ async def _seed_full_record(session: AsyncSession, tenant_id: UUID) -> UUID:
 
 
 async def test_export_returns_full_subject_record(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with session_factory() as session, session.begin():
         customer_id = await _seed_full_record(session, tenant.id)
@@ -122,7 +122,7 @@ async def test_export_returns_full_subject_record(
 
 
 async def test_export_unknown_customer_raises_not_found(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with session_factory() as session, session.begin():
         with pytest.raises(CustomerNotFoundError):
@@ -130,7 +130,7 @@ async def test_export_unknown_customer_raises_not_found(
 
 
 async def test_export_is_tenant_scoped(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """Tenant A cannot export a data subject belonging to tenant B."""
     async with session_factory() as session, session.begin():
@@ -149,18 +149,18 @@ def test_delete_customer_requires_human_approval_parameter() -> None:
 
 
 async def test_delete_unknown_customer_raises_not_found(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with session_factory() as session, session.begin():
         approver = await make_user(session, tenant.id, role=UserRole.OWNER)
         with pytest.raises(CustomerNotFoundError):
             await CRMService(session).delete_customer(
-                TenantId(tenant.id), uuid4(), approved_by=approver.id
+                TenantId(tenant.id), uuid4(), approved_by=approver.id,
             )
 
 
 async def test_delete_customer_is_tenant_scoped(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """Erasing with the wrong tenant id fails closed and touches nothing."""
     async with session_factory() as session, session.begin():
@@ -169,12 +169,12 @@ async def test_delete_customer_is_tenant_scoped(
         customer_b = await make_customer(session, tenant_b.id, phone="254744444444")
         service = CRMService(session)
         await service.record_event(
-            TenantId(tenant_b.id), customer_b.id, "message.summarised", dedupe_key="b-evt"
+            TenantId(tenant_b.id), customer_b.id, "message.summarised", dedupe_key="b-evt",
         )
 
         with pytest.raises(CustomerNotFoundError):
             await service.delete_customer(
-                TenantId(tenant.id), customer_b.id, approved_by=approver.id
+                TenantId(tenant.id), customer_b.id, approved_by=approver.id,
             )
 
         # Tenant B's CRM data is untouched.
@@ -183,7 +183,7 @@ async def test_delete_customer_is_tenant_scoped(
 
 
 async def test_erasure_cascade_removes_crm_data_scrubs_pii_and_audits(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """The full erasure contract (plan invariant 5 + Slice 8a acceptance).
 
@@ -206,7 +206,7 @@ async def test_erasure_cascade_removes_crm_data_scrubs_pii_and_audits(
         await service.record_event(tid, customer_id, "message.summarised", dedupe_key="e1")
         await service.record_event(tid, customer_id, "order.created", dedupe_key="e2")
         await service.record_consent(
-            tid, customer_id, purpose="marketing", granted=True, source="whatsapp_opt_in"
+            tid, customer_id, purpose="marketing", granted=True, source="whatsapp_opt_in",
         )
         await service.derive_traits(tid, customer_id)
         order = await make_order(
@@ -236,7 +236,7 @@ async def test_erasure_cascade_removes_crm_data_scrubs_pii_and_audits(
             await session.execute(
                 text(
                     "SELECT phone, name, email, default_address, default_area, is_active "
-                    "FROM customers WHERE id = :c"
+                    "FROM customers WHERE id = :c",
                 ),
                 {"c": str(customer_id)},
             )
@@ -286,8 +286,8 @@ async def test_erasure_cascade_removes_crm_data_scrubs_pii_and_audits(
             await session.execute(
                 text(
                     "SELECT user_id, action, resource, resource_id FROM audit_log "
-                    "WHERE action = 'crm.customer_erased'"
-                )
+                    "WHERE action = 'crm.customer_erased'",
+                ),
             )
         ).one()
         assert audit.user_id == approver_id
@@ -296,7 +296,7 @@ async def test_erasure_cascade_removes_crm_data_scrubs_pii_and_audits(
 
 
 async def test_erasure_clears_all_crm_rows_checked_via_orm(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """Cross-check the cascade with ORM selects on a fresh session."""
     async with session_factory() as session, session.begin():
@@ -307,13 +307,13 @@ async def test_erasure_clears_all_crm_rows_checked_via_orm(
         tid = TenantId(tenant.id)
         await service.record_event(tid, customer_id, "message.summarised", dedupe_key="x1")
         await service.record_consent(
-            tid, customer_id, purpose="marketing", granted=True, source="opt_in"
+            tid, customer_id, purpose="marketing", granted=True, source="opt_in",
         )
         await service.derive_traits(tid, customer_id)
 
     async with session_factory() as session, session.begin():
         await CRMService(session).delete_customer(
-            TenantId(tenant.id), customer_id, approved_by=approver.id
+            TenantId(tenant.id), customer_id, approved_by=approver.id,
         )
 
     async with session_factory() as session:
@@ -347,7 +347,7 @@ async def test_erasure_clears_all_crm_rows_checked_via_orm(
 
 
 async def test_erasure_scrubs_payment_phone_and_metadata(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """U30: erasure must remove the M-Pesa MSISDN from the payment ledger.
 
@@ -383,7 +383,7 @@ async def test_erasure_scrubs_payment_phone_and_metadata(
                     "customer_message": "Enter your M-Pesa PIN",
                     "phone": PHONE,
                 },
-            )
+            ),
         )
         await session.flush()
 
@@ -396,14 +396,14 @@ async def test_erasure_scrubs_payment_phone_and_metadata(
         assert pre.phone_number == PHONE, "seed must start with the real MSISDN"
 
         await CRMService(session).delete_customer(
-            TenantId(tenant.id), customer_id, approved_by=approver_id
+            TenantId(tenant.id), customer_id, approved_by=approver_id,
         )
 
         row = (
             await session.execute(
                 text(
                     "SELECT phone_number, amount_cents, status, mpesa_receipt_number, "
-                    "metadata_json FROM payments WHERE order_id = :o"
+                    "metadata_json FROM payments WHERE order_id = :o",
                 ),
                 {"o": str(order_id)},
             )
@@ -422,7 +422,7 @@ async def test_erasure_scrubs_payment_phone_and_metadata(
 
 
 async def test_erasure_nulls_order_email_address_and_location_text(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """U31: the retained order rows must lose all customer identity/location text.
 
@@ -457,7 +457,7 @@ async def test_erasure_nulls_order_email_address_and_location_text(
             await session.execute(
                 text(
                     "SELECT customer_email, delivery_address, delivery_instructions, notes "
-                    "FROM orders WHERE id = :o"
+                    "FROM orders WHERE id = :o",
                 ),
                 {"o": str(order_id)},
             )
@@ -468,7 +468,7 @@ async def test_erasure_nulls_order_email_address_and_location_text(
         assert pre.notes is not None
 
         await CRMService(session).delete_customer(
-            TenantId(tenant.id), customer_id, approved_by=approver_id
+            TenantId(tenant.id), customer_id, approved_by=approver_id,
         )
 
         post = (
@@ -476,7 +476,7 @@ async def test_erasure_nulls_order_email_address_and_location_text(
                 text(
                     "SELECT customer_email, delivery_address, delivery_area, delivery_lat, "
                     "delivery_lng, delivery_instructions, notes, customer_phone, "
-                    "customer_name, total_cents FROM orders WHERE id = :o"
+                    "customer_name, total_cents FROM orders WHERE id = :o",
                 ),
                 {"o": str(order_id)},
             )
@@ -496,7 +496,7 @@ async def test_erasure_nulls_order_email_address_and_location_text(
 
 
 async def test_erasure_audit_row_holds_no_plaintext_phone(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """U32: the append-only audit row must not persist the pre-erasure phone.
 
@@ -510,7 +510,7 @@ async def test_erasure_audit_row_holds_no_plaintext_phone(
         customer = await make_customer(session, tenant.id, phone=PHONE)
         customer_id = customer.id
         await CRMService(session).delete_customer(
-            TenantId(tenant.id), customer_id, approved_by=approver_id
+            TenantId(tenant.id), customer_id, approved_by=approver_id,
         )
 
         leak_count = (
@@ -519,22 +519,22 @@ async def test_erasure_audit_row_holds_no_plaintext_phone(
                     "SELECT count(*) FROM audit_log "
                     "WHERE action = 'crm.customer_erased' "
                     "AND (coalesce(before_json::text, '') || coalesce(after_json::text, '')) "
-                    "LIKE :needle"
+                    "LIKE :needle",
                 ),
                 {"needle": f"%{PHONE}%"},
             )
         ).scalar()
         row_count = (
             await session.execute(
-                text("SELECT count(*) FROM audit_log WHERE action = 'crm.customer_erased'")
+                text("SELECT count(*) FROM audit_log WHERE action = 'crm.customer_erased'"),
             )
         ).scalar()
         row = (
             await session.execute(
                 text(
                     "SELECT user_id, before_json FROM audit_log "
-                    "WHERE action = 'crm.customer_erased'"
-                )
+                    "WHERE action = 'crm.customer_erased'",
+                ),
             )
         ).one()
 
@@ -546,7 +546,7 @@ async def test_erasure_audit_row_holds_no_plaintext_phone(
 
 
 async def test_export_returns_every_event_beyond_the_default_200_cap(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """U33: a data-subject export must be complete — no silent 200-event cap."""
     total = 201
@@ -617,7 +617,7 @@ class FakeOutboxProvider(PaymentProvider):
 
 
 async def test_erasure_scrubs_outbox_payment_phone_payload(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """U51: erasure must remove the customer's phone from outbox payment payloads.
 
@@ -662,7 +662,7 @@ async def test_erasure_scrubs_outbox_payment_phone_payload(
         result = await session.execute(
             text(
                 "SELECT payload FROM outbox "
-                "WHERE event_type = 'payment.initiated' AND tenant_id = :t"
+                "WHERE event_type = 'payment.initiated' AND tenant_id = :t",
             ),
             {"t": str(tenant.id)},
         )
@@ -671,7 +671,7 @@ async def test_erasure_scrubs_outbox_payment_phone_payload(
         assert outbox_row["phone"] == PHONE
 
         await CRMService(session).delete_customer(
-            TenantId(tenant.id), customer_id, approved_by=approver_id
+            TenantId(tenant.id), customer_id, approved_by=approver_id,
         )
 
     # Verify the outbox payload no longer has the phone key
@@ -679,7 +679,7 @@ async def test_erasure_scrubs_outbox_payment_phone_payload(
         result = await session.execute(
             text(
                 "SELECT payload FROM outbox "
-                "WHERE event_type = 'payment.initiated' AND tenant_id = :t"
+                "WHERE event_type = 'payment.initiated' AND tenant_id = :t",
             ),
             {"t": str(tenant.id)},
         )
@@ -693,7 +693,7 @@ async def test_erasure_scrubs_outbox_payment_phone_payload(
 
 
 async def test_erasure_hard_deletes_whatsapp_contacts_and_messages(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """U52: erasure must HARD DELETE WhatsApp contacts and messages.
 
@@ -793,7 +793,7 @@ async def test_erasure_hard_deletes_whatsapp_contacts_and_messages(
         bystander_contact_id = bystander_contact.id
 
         await CRMService(session).delete_customer(
-            TenantId(tenant.id), customer_id, approved_by=approver_id
+            TenantId(tenant.id), customer_id, approved_by=approver_id,
         )
 
     # Verify hard delete: target's contact and messages are GONE

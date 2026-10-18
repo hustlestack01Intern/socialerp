@@ -34,11 +34,11 @@ class TestDeliveryFSM:
         st.sampled_from(list(DeliveryStatus)),
     )
     def test_transition_is_deterministic(
-        self, from_status: DeliveryStatus, to_status: DeliveryStatus
+        self, from_status: DeliveryStatus, to_status: DeliveryStatus,
     ) -> None:
         """Same input always yields the same verdict."""
         assert is_legal_delivery_transition(from_status, to_status) is is_legal_delivery_transition(
-            from_status, to_status
+            from_status, to_status,
         )
 
     @given(st.sampled_from(list(DeliveryStatus)))

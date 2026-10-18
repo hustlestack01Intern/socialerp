@@ -101,7 +101,7 @@ class DeliveryRepository:
         return delivery
 
     async def get_delivery(
-        self, tenant_id: UUID, delivery_id: UUID, *, for_update: bool = False
+        self, tenant_id: UUID, delivery_id: UUID, *, for_update: bool = False,
     ) -> Delivery | None:
         stmt = select(Delivery).where(
             Delivery.tenant_id == tenant_id,
@@ -157,7 +157,7 @@ class DeliveryRepository:
         return (await self.session.execute(stmt)).scalars().first()
 
     async def list_deliveries(
-        self, tenant_id: UUID, *, status: str | None = None, rider_id: UUID | None = None
+        self, tenant_id: UUID, *, status: str | None = None, rider_id: UUID | None = None,
     ) -> list[Delivery]:
         stmt = select(Delivery).where(Delivery.tenant_id == tenant_id)
         if status is not None:

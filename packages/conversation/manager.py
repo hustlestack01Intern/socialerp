@@ -76,14 +76,14 @@ class ConversationManager:
         return conversations, total
 
     async def get_conversation(
-        self, tenant_id: TenantId, conversation_id: UUID
+        self, tenant_id: TenantId, conversation_id: UUID,
     ) -> WhatsAppConversation | None:
         """Get a single conversation by ID."""
         result = await self.session.execute(
             select(WhatsAppConversation).where(
                 WhatsAppConversation.id == conversation_id,
                 WhatsAppConversation.tenant_id == tenant_id,
-            )
+            ),
         )
         return result.scalar_one_or_none()
 
@@ -104,7 +104,7 @@ class ConversationManager:
                 WhatsAppMessage.conversation_id == conversation_id,
             )
             .order_by(WhatsAppMessage.created_at)
-            .limit(message_limit)
+            .limit(message_limit),
         )
         messages = list(result.scalars().all())
 
@@ -281,7 +281,7 @@ class ConversationManager:
                     WhatsAppConversationState.HANDOFF_REQUESTED,
                 ]),
             )
-            .order_by(WhatsAppConversation.first_response_due_at)
+            .order_by(WhatsAppConversation.first_response_due_at),
         )
         return list(result.scalars().all())
 
@@ -292,7 +292,7 @@ class ConversationManager:
             await self.session.scalar(
                 select(func.count(WhatsAppConversation.id)).where(
                     WhatsAppConversation.tenant_id == tenant_id,
-                )
+                ),
             )
             or 0
         )
@@ -305,7 +305,7 @@ class ConversationManager:
                     select(func.count(WhatsAppConversation.id)).where(
                         WhatsAppConversation.tenant_id == tenant_id,
                         WhatsAppConversation.state == state,
-                    )
+                    ),
                 )
                 or 0
             )

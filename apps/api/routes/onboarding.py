@@ -6,6 +6,7 @@ Endpoints for managing the 30-minute instrumented onboarding wizard.
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -14,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from packages.core.auth.dependencies import get_current_tenant_id
 from packages.core.database import get_db_session
 from packages.core.domain import TenantId
-from packages.core.models.core import Tenant
+from packages.core.onboarding.model import FallbackType
 from packages.core.onboarding.service import OnboardingWizardService
 from packages.core.onboarding.steps import (
     FALLBACK_TYPES,
@@ -22,7 +23,6 @@ from packages.core.onboarding.steps import (
     get_total_target_seconds,
     is_valid_step,
 )
-from packages.core.onboarding.model import FallbackType
 
 router = APIRouter(prefix="/api/v1/onboarding", tags=["Onboarding Wizard"])
 
@@ -30,9 +30,6 @@ router = APIRouter(prefix="/api/v1/onboarding", tags=["Onboarding Wizard"])
 # =============================================================================
 # Dependencies
 # =============================================================================
-
-
-from collections.abc import AsyncGenerator
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -137,7 +134,7 @@ async def start_step(
             "step_timings": progress.step_timings,
         }
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
 
 
 @router.post("/steps/{step}/complete")
@@ -159,15 +156,15 @@ async def complete_step(
     if fallback_type:
         try:
             fb_type = FallbackType(fallback_type)
-        except ValueError:
+        except ValueError as e:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid fallback type: {fallback_type}",
-            )
+            ) from e
 
     try:
         progress = await service.complete_step(
-            tenant_id, step, fallback_type=fb_type, fallback_reason=fallback_reason
+            tenant_id, step, fallback_type=fb_type, fallback_reason=fallback_reason,
         )
         return {
             "state": progress.state,
@@ -183,7 +180,7 @@ async def complete_step(
             "slo_status": service.get_slo_status(progress),
         }
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
 
 
 @router.post("/steps/{step}/pause")
@@ -203,7 +200,7 @@ async def pause_step(
         progress = await service.pause_step(tenant_id, step)
         return {"state": progress.state, "step_timings": progress.step_timings}
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
 
 
 @router.post("/steps/{step}/resume")
@@ -223,7 +220,7 @@ async def resume_step(
         progress = await service.resume_step(tenant_id, step)
         return {"state": progress.state, "step_timings": progress.step_timings}
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
 
 
 @router.post("/steps/{step}/fallback")
@@ -243,15 +240,15 @@ async def trigger_fallback(
 
     try:
         fb_type = FallbackType(fallback_type)
-    except ValueError:
+    except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid fallback type: {fallback_type}",
-        )
+        ) from e
 
     try:
         progress = await service.trigger_fallback(
-            tenant_id, step, fb_type, fallback_reason
+            tenant_id, step, fb_type, fallback_reason,
         )
         return {
             "state": progress.state,
@@ -260,7 +257,7 @@ async def trigger_fallback(
             "fallback_flags": progress.fallback_flags,
         }
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
 
 
 # =============================================================================
@@ -288,7 +285,7 @@ async def approve_launch(
             "message": "Launch approved. Customer messaging is now enabled.",
         }
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
 
 
 @router.get("/launch-status")

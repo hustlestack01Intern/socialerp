@@ -23,7 +23,7 @@ from tests.segments.helpers import add_trait, make_customer, make_tenant
 
 
 async def test_segment_membership_is_isolated_between_tenants(
-    session_factory, rls_session_factory
+    session_factory, rls_session_factory,
 ) -> None:
     async with session_factory() as session, session.begin():
         tenant_a = await make_tenant(session, slug_prefix="rls-seg-a")
@@ -38,7 +38,7 @@ async def test_segment_membership_is_isolated_between_tenants(
 
         # Tenant A's context sees exactly tenant A's members.
         await session.execute(
-            select(func.set_config("app.current_tenant_id", str(tenant_a.id), True))
+            select(func.set_config("app.current_tenant_id", str(tenant_a.id), True)),
         )
         page_a = await service.list_members(TenantId(tenant_a.id), SegmentKey.FIRST_TIME)
         assert page_a.customer_ids == (customer_a.id,)
@@ -51,7 +51,7 @@ async def test_segment_membership_is_isolated_between_tenants(
 
         # Tenant B's context never sees tenant A's customer.
         await session.execute(
-            select(func.set_config("app.current_tenant_id", str(tenant_b.id), True))
+            select(func.set_config("app.current_tenant_id", str(tenant_b.id), True)),
         )
         page_b2 = await service.list_members(TenantId(tenant_b.id), SegmentKey.FIRST_TIME)
         assert page_b2.customer_ids == (customer_b.id,)
@@ -59,7 +59,7 @@ async def test_segment_membership_is_isolated_between_tenants(
 
 
 async def test_evaluate_segment_fails_closed_under_rls(
-    session_factory, rls_session_factory
+    session_factory, rls_session_factory,
 ) -> None:
     """Cross-tenant evaluate_segment returns False, never a foreign membership."""
     async with session_factory() as session, session.begin():
@@ -73,22 +73,22 @@ async def test_evaluate_segment_fails_closed_under_rls(
 
         # Tenant B's session probing tenant A's customer: no row visible => False.
         await session.execute(
-            select(func.set_config("app.current_tenant_id", str(tenant_b.id), True))
+            select(func.set_config("app.current_tenant_id", str(tenant_b.id), True)),
         )
         assert (
             await service.evaluate_segment(
-                TenantId(tenant_a.id), SegmentKey.FIRST_TIME, customer_a.id
+                TenantId(tenant_a.id), SegmentKey.FIRST_TIME, customer_a.id,
             )
             is False
         )
 
         # Tenant A's own session still gets the true answer.
         await session.execute(
-            select(func.set_config("app.current_tenant_id", str(tenant_a.id), True))
+            select(func.set_config("app.current_tenant_id", str(tenant_a.id), True)),
         )
         assert (
             await service.evaluate_segment(
-                TenantId(tenant_a.id), SegmentKey.FIRST_TIME, customer_a.id
+                TenantId(tenant_a.id), SegmentKey.FIRST_TIME, customer_a.id,
             )
             is True
         )
@@ -103,7 +103,7 @@ async def test_rls_blocks_cross_tenant_trait_insert(session_factory, rls_session
 
     async with rls_session_factory() as session:
         await session.execute(
-            select(func.set_config("app.current_tenant_id", str(tenant_a.id), True))
+            select(func.set_config("app.current_tenant_id", str(tenant_a.id), True)),
         )
         session.add(
             CustomerTrait(
@@ -112,7 +112,7 @@ async def test_rls_blocks_cross_tenant_trait_insert(session_factory, rls_session
                 name="order_count",
                 value_json=1,
                 version=1,
-            )
+            ),
         )
         try:
             await session.flush()

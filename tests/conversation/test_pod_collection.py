@@ -47,12 +47,12 @@ class FakeProvider:
 
 async def _set_config(session, tenant_id) -> None:
     await session.execute(
-        text("SELECT set_config('app.current_tenant_id', :tid, true)"), {"tid": str(tenant_id)}
+        text("SELECT set_config('app.current_tenant_id', :tid, true)"), {"tid": str(tenant_id)},
     )
 
 
 async def _seed_arrived(
-    session, tenant_id, *, payment_method: str, payment_status: str | None = None
+    session, tenant_id, *, payment_method: str, payment_status: str | None = None,
 ) -> tuple[UUID, UUID]:
     """Return (order_id, delivery_id) already in the `arrived` state."""
     await _set_config(session, tenant_id)
@@ -78,8 +78,8 @@ async def _seed_arrived(
     ledger.load([])
     await StockMovementRepository(session).add(
         ledger.record_receive(
-            quantity=10, unit_cost_cents=2500, reference_id=None, reference_type="purchase_order"
-        )
+            quantity=10, unit_cost_cents=2500, reference_id=None, reference_type="purchase_order",
+        ),
     )
 
     zone = DeliveryZone(tenant_id=tenant_id, name="Zone", fee_cents=2000)
@@ -106,7 +106,7 @@ async def _seed_arrived(
 
     service = DeliveryService(session)
     delivery = await service.dispatch(
-        tenant_id, order_id=order.id, rider_id=rider.id, zone_id=zone.id
+        tenant_id, order_id=order.id, rider_id=rider.id, zone_id=zone.id,
     )
     await service.mark_picked_up(tenant_id, delivery.id)
     await service.mark_arrived(tenant_id, delivery.id)
@@ -130,7 +130,7 @@ def _callback_url(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_trigger_pushes_once_and_is_idempotent(
-    tenant, session_factory, monkeypatch, _callback_url
+    tenant, session_factory, monkeypatch, _callback_url,
 ) -> None:
     order_id, delivery_id = await _arrived_delivery(session_factory, tenant.id)
     provider = FakeProvider()
@@ -169,7 +169,7 @@ async def test_trigger_pushes_once_and_is_idempotent(
 
 @pytest.mark.asyncio
 async def test_trigger_skips_already_paid_order(
-    tenant, session_factory, monkeypatch, _callback_url
+    tenant, session_factory, monkeypatch, _callback_url,
 ) -> None:
     order_id, delivery_id = await _arrived_delivery(session_factory, tenant.id)
     async with session_factory() as session, session.begin():
@@ -194,10 +194,10 @@ async def test_trigger_skips_already_paid_order(
 
 @pytest.mark.asyncio
 async def test_trigger_skips_prepay_order(
-    tenant, session_factory, monkeypatch, _callback_url
+    tenant, session_factory, monkeypatch, _callback_url,
 ) -> None:
     _order_id, delivery_id = await _arrived_delivery(
-        session_factory, tenant.id, payment_method="mpesa_stk"
+        session_factory, tenant.id, payment_method="mpesa_stk",
     )
     provider = FakeProvider()
 
@@ -216,7 +216,7 @@ async def test_trigger_skips_prepay_order(
 
 @pytest.mark.asyncio
 async def test_trigger_returns_false_when_callback_url_unset(
-    tenant, session_factory, monkeypatch
+    tenant, session_factory, monkeypatch,
 ) -> None:
     monkeypatch.setattr(rider_flow, "get_settings", lambda: SimpleNamespace(DARAJA_CALLBACK_URL=""))
     _order_id, delivery_id = await _arrived_delivery(session_factory, tenant.id)
@@ -237,7 +237,7 @@ async def test_trigger_returns_false_when_callback_url_unset(
 
 @pytest.mark.asyncio
 async def test_trigger_returns_false_for_unknown_delivery(
-    tenant, session_factory, monkeypatch, _callback_url
+    tenant, session_factory, monkeypatch, _callback_url,
 ) -> None:
     async with session_factory() as session, session.begin():
         await _set_config(session, tenant.id)

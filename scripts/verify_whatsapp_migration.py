@@ -10,19 +10,19 @@ def main():
 
     # Check WhatsApp tables exist
     cur.execute(
-        "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'whatsapp_%'"
+        "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'whatsapp_%'",
     )
     cur.fetchall()
 
     # Check RLS enabled
     cur.execute(
-        "SELECT tablename, rowsecurity FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'whatsapp_%'"
+        "SELECT tablename, rowsecurity FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'whatsapp_%'",
     )
     cur.fetchall()
 
     # Check policies
     cur.execute(
-        "SELECT schemaname, tablename, policyname FROM pg_policies WHERE schemaname = 'public' AND tablename LIKE 'whatsapp_%'"
+        "SELECT schemaname, tablename, policyname FROM pg_policies WHERE schemaname = 'public' AND tablename LIKE 'whatsapp_%'",
     )
     policies = cur.fetchall()
     for _p in policies:
@@ -30,7 +30,7 @@ def main():
 
     # Check grants
     cur.execute(
-        "SELECT grantee, table_name, privilege_type FROM information_schema.table_privileges WHERE grantee = 'socialerp_app' AND table_name LIKE 'whatsapp_%'"
+        "SELECT grantee, table_name, privilege_type FROM information_schema.table_privileges WHERE grantee = 'socialerp_app' AND table_name LIKE 'whatsapp_%'",
     )
     grants = cur.fetchall()
     for _g in grants:

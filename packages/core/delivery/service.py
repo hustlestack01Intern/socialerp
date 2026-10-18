@@ -196,7 +196,7 @@ class DeliveryService:
         order = await self._get_order(tenant_id, order_id)
         if order.status != OrderStatus.PACKED.value:
             raise OrderNotDispatchableError(
-                f"Order {order_id} is {order.status!r}, expected 'packed'"
+                f"Order {order_id} is {order.status!r}, expected 'packed'",
             )
 
         rider = await self.deliveries.get_rider(tenant_id, rider_id)
@@ -258,7 +258,7 @@ class DeliveryService:
         return delivery
 
     async def mark_arrived(
-        self, tenant_id: UUID, delivery_id: UUID, *, lock: bool = False
+        self, tenant_id: UUID, delivery_id: UUID, *, lock: bool = False,
     ) -> Delivery:
         # `lock=True` takes the delivery row FOR UPDATE for the caller's whole
         # transaction. The arrival handler holds it across the POD STK trigger,
@@ -299,11 +299,11 @@ class DeliveryService:
             if collected != PaymentStatus.COMPLETED.value:
                 raise PaymentNotCollectedError(
                     f"Order {order.id} is pay-on-delivery and not yet collected "
-                    f"(payment_status={order.payment_status!r})"
+                    f"(payment_status={order.payment_status!r})",
                 )
             if proof_photo is None:
                 raise ProofOfDeliveryRequiredError(
-                    f"Order {order.id} is pay-on-delivery; a proof photo is required"
+                    f"Order {order.id} is pay-on-delivery; a proof photo is required",
                 )
 
         self._transition_delivery(delivery, DeliveryStatus.DELIVERED)
@@ -387,7 +387,7 @@ class DeliveryService:
         return await self.deliveries.get_delivery(tenant_id, delivery_id)
 
     async def list_deliveries(
-        self, tenant_id: UUID, *, status: str | None = None
+        self, tenant_id: UUID, *, status: str | None = None,
     ) -> list[Delivery]:
         return await self.deliveries.list_deliveries(tenant_id, status=status)
 
@@ -407,7 +407,7 @@ class DeliveryService:
         return order
 
     async def _get_delivery(
-        self, tenant_id: UUID, delivery_id: UUID, *, for_update: bool = False
+        self, tenant_id: UUID, delivery_id: UUID, *, for_update: bool = False,
     ) -> Delivery:
         delivery = await self.deliveries.get_delivery(tenant_id, delivery_id, for_update=for_update)
         if delivery is None:
@@ -419,6 +419,6 @@ class DeliveryService:
         current = DeliveryStatus(delivery.status)
         if not is_legal_delivery_transition(current, new_status):
             raise IllegalDeliveryTransitionError(
-                f"Illegal transition: {current.value} -> {new_status.value}"
+                f"Illegal transition: {current.value} -> {new_status.value}",
             )
         delivery.status = new_status.value

@@ -36,7 +36,7 @@ class TestFakeMetaServer:
         return f"sha256={signature}"
 
     async def open_whatsapp_window(
-        self, client, base_url: str, phone_number_id: str, app_secret: str, customer: str
+        self, client, base_url: str, phone_number_id: str, app_secret: str, customer: str,
     ) -> None:
         """Send an inbound WhatsApp message so the 24h window opens."""
         payload = {
@@ -60,13 +60,13 @@ class TestFakeMetaServer:
                                         "timestamp": "1700000000",
                                         "text": {"body": "Hi"},
                                         "type": "text",
-                                    }
+                                    },
                                 ],
                             },
                             "field": "messages",
-                        }
+                        },
                     ],
-                }
+                },
             ],
         }
         response = await client.post(
@@ -77,7 +77,7 @@ class TestFakeMetaServer:
         assert response.status_code == 200, response.text
 
     async def open_instagram_window(
-        self, client, base_url: str, page_id: str, app_secret: str, customer: str
+        self, client, base_url: str, page_id: str, app_secret: str, customer: str,
     ) -> None:
         """Send an inbound Instagram message so the 24h reply window opens."""
         payload = {
@@ -92,9 +92,9 @@ class TestFakeMetaServer:
                             "recipient": {"id": page_id},
                             "timestamp": 1700000000,
                             "message": {"mid": "ig_msg_inbound", "text": "Hi"},
-                        }
+                        },
                     ],
-                }
+                },
             ],
         }
         response = await client.post(
@@ -164,13 +164,13 @@ class TestFakeMetaServer:
                                         "timestamp": "1700000000",
                                         "text": {"body": "Hello"},
                                         "type": "text",
-                                    }
+                                    },
                                 ],
                             },
                             "field": "messages",
-                        }
+                        },
                     ],
-                }
+                },
             ],
         }
 
@@ -178,7 +178,7 @@ class TestFakeMetaServer:
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{base_url}/webhook", json=payload, headers={"X-Hub-Signature-256": signature}
+                f"{base_url}/webhook", json=payload, headers={"X-Hub-Signature-256": signature},
             )
             assert response.status_code == 200
             assert response.json()["status"] == "received"
@@ -191,7 +191,7 @@ class TestFakeMetaServer:
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{base_url}/webhook", json=payload, headers={"X-Hub-Signature-256": signature}
+                f"{base_url}/webhook", json=payload, headers={"X-Hub-Signature-256": signature},
             )
             assert response.status_code == 401
 
@@ -208,7 +208,7 @@ class TestFakeMetaServer:
         async with httpx.AsyncClient() as client:
             # Customer messages first, opening the 24h service window
             await self.open_whatsapp_window(
-                client, base_url, tenant_phone_id, app_secret, "254798765432"
+                client, base_url, tenant_phone_id, app_secret, "254798765432",
             )
 
             response = await client.post(
@@ -235,7 +235,7 @@ class TestFakeMetaServer:
         async with httpx.AsyncClient() as client:
             # Open the window so 400s don't mask rate limiting
             await self.open_whatsapp_window(
-                client, base_url, tenant_phone_id, app_secret, "254798765432"
+                client, base_url, tenant_phone_id, app_secret, "254798765432",
             )
 
             # Ensure a fresh 1-second rate-limit window
@@ -262,7 +262,7 @@ class TestFakeMetaServer:
         """Inspect stored messages."""
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"{base_url}/inspect/messages", params={"tenant_id": tenant_phone_id}
+                f"{base_url}/inspect/messages", params={"tenant_id": tenant_phone_id},
             )
             assert response.status_code == 200
             data = response.json()
@@ -273,7 +273,7 @@ class TestFakeMetaServer:
         """Inspect conversations and window status."""
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"{base_url}/inspect/conversations", params={"tenant_id": tenant_phone_id}
+                f"{base_url}/inspect/conversations", params={"tenant_id": tenant_phone_id},
             )
             assert response.status_code == 200
             data = response.json()
@@ -286,7 +286,7 @@ class TestFakeMetaServer:
         """Reset test data."""
         async with httpx.AsyncClient() as client:
             response = await client.delete(
-                f"{base_url}/inspect/reset", params={"tenant_id": tenant_phone_id}
+                f"{base_url}/inspect/reset", params={"tenant_id": tenant_phone_id},
             )
             assert response.status_code == 200
 
@@ -298,7 +298,7 @@ class TestFakeMetaServer:
         async with httpx.AsyncClient() as client:
             # User messages first, opening the 24h reply window
             await self.open_instagram_window(
-                client, base_url, "ig_page_456", app_secret, "ig_user_123"
+                client, base_url, "ig_page_456", app_secret, "ig_user_123",
             )
 
             response = await client.post(

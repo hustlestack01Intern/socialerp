@@ -114,7 +114,7 @@ def validate_predicate(predicate: Mapping[str, Any]) -> None:
         for child in preds:
             if not isinstance(child, Mapping):
                 raise PredicateError(
-                    f"predicate child must be an object, got {type(child).__name__}"
+                    f"predicate child must be an object, got {type(child).__name__}",
                 )
             validate_predicate(child)
         return

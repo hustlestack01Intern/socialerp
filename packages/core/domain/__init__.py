@@ -112,7 +112,7 @@ class CustomerPhone:
         normalized = self._normalize(self.value)
         if not self._KENYA_PATTERN.match(normalized):
             raise ValueError(
-                f"Invalid Kenyan phone number: {self.value}. Must be 2547XXXXXXXX or 2541XXXXXXXX"
+                f"Invalid Kenyan phone number: {self.value}. Must be 2547XXXXXXXX or 2541XXXXXXXX",
             )
         object.__setattr__(self, "value", normalized)
 
@@ -190,7 +190,7 @@ class Money:
             kes = Decimal(kes)
         elif not isinstance(kes, Decimal):
             raise TypeError(
-                f"Money.from_kes expects float, int or Decimal, got {type(kes).__name__}"
+                f"Money.from_kes expects float, int or Decimal, got {type(kes).__name__}",
             )
         # Round half-up to whole cents (standard money convention).
         cents = int((kes * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP))
@@ -345,7 +345,7 @@ class SKU:
         if not self._PATTERN.match(normalized):
             raise ValueError(
                 f"Invalid SKU: {self.value}. Must be alphanumeric, hyphens, underscores "
-                "only, max 50 chars"
+                "only, max 50 chars",
             )
         object.__setattr__(self, "value", normalized)
 

@@ -297,7 +297,7 @@ class RiderFlowResult:
 
 class _ProviderResolver(Protocol):
     def __call__(
-        self, db: AsyncSession, tenant_id: UUID
+        self, db: AsyncSession, tenant_id: UUID,
     ) -> Coroutine[Any, Any, PaymentProvider]: ...
 
 
@@ -437,11 +437,11 @@ class RiderFlowService:
                     raise DeliveryError("missing failure reason")
                 await self.service.mark_failed(self.tenant_id, delivery.id, reason=command.reason)
                 reply = _MESSAGES["failed", command.language].format(
-                    ref=ref, reason=_REASON_LABEL[command.reason]
+                    ref=ref, reason=_REASON_LABEL[command.reason],
                 )
             else:  # status
                 reply = _MESSAGES["status", command.language].format(
-                    ref=ref, status=delivery.status
+                    ref=ref, status=delivery.status,
                 )
         except ProofOfDeliveryRequiredError:
             # A POD handover must be closed with evidence; the text-only rider
@@ -548,7 +548,7 @@ class RiderFlowService:
                         "delivery_id": str(delivery.id) if delivery is not None else None,
                         "send_error": send_error,
                     },
-                )
+                ),
             )
             conversation = await self.session.get(WhatsAppConversation, conversation_id)
             if conversation is not None:

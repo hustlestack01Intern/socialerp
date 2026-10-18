@@ -6,10 +6,8 @@ Business logic for the instrumented onboarding wizard.
 
 from __future__ import annotations
 
-import time
 from datetime import UTC, datetime
 from typing import Any
-from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,9 +22,7 @@ from packages.core.onboarding.model import (
 )
 from packages.core.onboarding.steps import (
     FALLBACK_TYPES,
-    StepConfig,
     STEP_CONFIG,
-    get_step_config,
     get_total_target_seconds,
     is_valid_step,
 )
@@ -52,8 +48,8 @@ class OnboardingWizardService:
         """Get onboarding progress for a tenant."""
         result = await self.session.execute(
             select(OnboardingWizardProgress).where(
-                OnboardingWizardProgress.tenant_id == tenant_id
-            )
+                OnboardingWizardProgress.tenant_id == tenant_id,
+            ),
         )
         return result.scalar_one_or_none()
 
@@ -71,7 +67,7 @@ class OnboardingWizardService:
     # =============================================================================
 
     async def start_step(
-        self, tenant_id: TenantId, step: int
+        self, tenant_id: TenantId, step: int,
     ) -> OnboardingWizardProgress:
         """
         Mark a step as started.
@@ -340,7 +336,7 @@ class OnboardingWizardService:
             return None
 
         total = 0
-        for step_key, timing in progress.step_timings.items():
+        for _step_key, timing in progress.step_timings.items():
             if timing.get("duration_ms"):
                 total += timing["duration_ms"]
         return total

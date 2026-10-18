@@ -194,7 +194,7 @@ class Order:
         if self.total != expected_total:
             raise ValueError(
                 f"Total {self.total} != subtotal {calculated_subtotal} "
-                f"+ delivery {self.delivery_fee} - discount {self.discount}"
+                f"+ delivery {self.delivery_fee} - discount {self.discount}",
             )
 
         if self.items:
@@ -209,7 +209,7 @@ class Order:
         """Transition to new status (returns new Order instance)."""
         if not self.can_transition_to(new_status):
             raise IllegalTransitionError(
-                f"Illegal transition: {self.status.value} -> {new_status.value}"
+                f"Illegal transition: {self.status.value} -> {new_status.value}",
             )
 
         ts = timestamp or datetime.now(UTC)

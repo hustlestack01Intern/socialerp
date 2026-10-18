@@ -66,7 +66,7 @@ async def _seed_variant(
 
 def _agent(tenant_id: UUID, session, *, price_cents: int = 5000) -> Agent:
     catalog = InMemoryCatalog([
-        CatalogItem(sku=SKU, name="Black Hoodie M", price_cents=price_cents, in_stock=True)
+        CatalogItem(sku=SKU, name="Black Hoodie M", price_cents=price_cents, in_stock=True),
     ])
     return Agent(
         extractor=HeuristicIntentExtractor(),
@@ -80,7 +80,7 @@ def _agent(tenant_id: UUID, session, *, price_cents: int = 5000) -> Agent:
 
 async def _available(session, tenant_id: UUID, product_id: UUID, variant_id: UUID) -> int:
     rows = await StockMovementRepository(session).get_by_tenant_product(
-        tenant_id, product_id, variant_id
+        tenant_id, product_id, variant_id,
     )
     ledger = StockLedger(tenant_id=tenant_id, product_id=product_id, variant_id=variant_id)
     ledger.load([_movement_model_to_domain(row) for row in rows])
@@ -95,7 +95,7 @@ async def test_agent_l2_creates_a_real_reserved_order(tenant_session, tenant) ->
     variant = await _seed_variant(tenant_session, tenant.id, price_cents=5000, qty=10)
 
     outcome = await _agent(tenant.id, tenant_session).handle_message(
-        "nataka 2 black hoodie deliver to Kilimani", customer_phone=PHONE
+        "nataka 2 black hoodie deliver to Kilimani", customer_phone=PHONE,
     )
 
     assert outcome.sent is True
@@ -115,7 +115,7 @@ async def test_agent_l2_out_of_stock_writes_no_order(tenant_session, tenant) -> 
     await _seed_variant(tenant_session, tenant.id, price_cents=5000, qty=1)
 
     outcome = await _agent(tenant.id, tenant_session).handle_message(
-        "nataka 2 black hoodie", customer_phone=PHONE
+        "nataka 2 black hoodie", customer_phone=PHONE,
     )
 
     assert outcome.sent is False
@@ -139,7 +139,7 @@ async def test_agent_l2_cannot_order_another_tenants_item(tenant_session, tenant
             owner_email="other@example.com",
             is_active=True,
             settings={},
-        )
+        ),
     )
     await tenant_session.flush()
     await _seed_variant(tenant_session, other_tenant_id, sku=SKU)

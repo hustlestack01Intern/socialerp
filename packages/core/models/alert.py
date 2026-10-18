@@ -65,7 +65,7 @@ class OwnerAlert(Base):
     )
     kind: Mapped[str] = mapped_column(String(50), nullable=False)
     severity: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="warning", server_default="warning"
+        String(20), nullable=False, default="warning", server_default="warning",
     )
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
@@ -81,7 +81,7 @@ class OwnerAlert(Base):
     # a non-null dedupe_key is unique per tenant.
     dedupe_key: Mapped[str | None] = mapped_column(String(120), nullable=True)
     status: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="open", server_default="open"
+        String(20), nullable=False, default="open", server_default="open",
     )
     acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     acknowledged_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)

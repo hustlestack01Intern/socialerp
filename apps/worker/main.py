@@ -343,7 +343,7 @@ async def run_outbox_relay() -> None:
     # Register handlers.
     relay.register_handler("payment.completed", handle_payment_completed)
     relay.register_handler(
-        "payment.collected_after_terminal", handle_payment_collected_after_terminal
+        "payment.collected_after_terminal", handle_payment_collected_after_terminal,
     )
     relay.register_handler("inbound_message", handle_inbound_message)
     # Acknowledged events with no side effect yet (keeps them from being marked

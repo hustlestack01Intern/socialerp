@@ -67,7 +67,7 @@ class OpenAICompatibleGateway(LLMGateway):
             )
         except httpx.TimeoutException as exc:
             raise LLMTimeoutError(
-                f"LLM request timed out after {request.timeout_seconds}s"
+                f"LLM request timed out after {request.timeout_seconds}s",
             ) from exc
         except httpx.HTTPError as exc:
             raise LLMProviderError(f"LLM transport error: {exc}") from exc
@@ -77,7 +77,7 @@ class OpenAICompatibleGateway(LLMGateway):
 
         if response.status_code >= 400:
             raise LLMProviderError(
-                f"LLM provider returned {response.status_code}: {response.text[:200]}"
+                f"LLM provider returned {response.status_code}: {response.text[:200]}",
             )
 
         try:

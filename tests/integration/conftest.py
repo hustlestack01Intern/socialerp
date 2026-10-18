@@ -34,7 +34,7 @@ def pytest_configure(config):
     """Configure pytest with test settings."""
     # Ensure environment variables are set
     os.environ.setdefault(
-        "DATABASE_URL", "postgresql+asyncpg://socialerp:socialerp@localhost:5433/socialerp_test"
+        "DATABASE_URL", "postgresql+asyncpg://socialerp:socialerp@localhost:5433/socialerp_test",
     )
     os.environ.setdefault("META_APP_SECRET", "test_app_secret")
     os.environ.setdefault("META_VERIFY_TOKEN", "test_verify_token")

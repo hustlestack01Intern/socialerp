@@ -191,7 +191,7 @@ class Product:
         return None
 
     def get_variant_by_attributes(
-        self, attributes: dict[VariantAttributeType, str]
+        self, attributes: dict[VariantAttributeType, str],
     ) -> ProductVariant | None:
         """Find variant matching all given attributes."""
         for v in self.variants:

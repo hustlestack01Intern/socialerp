@@ -75,7 +75,7 @@ class TestRLSIsolation:
         from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
         session_factory = async_sessionmaker(
-            test_engine, class_=AsyncSession, expire_on_commit=False
+            test_engine, class_=AsyncSession, expire_on_commit=False,
         )
 
         async with TenantAwareSession(tenant.id, session_factory):
@@ -103,7 +103,7 @@ class TestRLSIsolation:
                     action="test.action",
                     payload={},
                     decision="allowed",
-                )
+                ),
             )
             with pytest.raises(Exception):  # ruff: ignore[assert-raises-exception] - RLS raises a DB error
                 await session.flush()

@@ -343,7 +343,7 @@ class OrderService:
             if not ledger.can_reserve(r.quantity):
                 raise InsufficientStockError(
                     f"Insufficient stock for SKU {r.sku}: "
-                    f"available={ledger.available}, requested={r.quantity}"
+                    f"available={ledger.available}, requested={r.quantity}",
                 )
             ledgers[key] = ledger
 
@@ -411,7 +411,7 @@ class OrderService:
                     reference_id=order.id,
                     reference_type="order",
                     expires_at=expires_at,
-                )
+                ),
             )
 
         apply_order_transition(order, OrderStatus.AWAITING_PAYMENT)
@@ -520,7 +520,7 @@ class OrderService:
                         f"Order {order_id} line variant={item.variant_id}: "
                         f"reservation was released while payment was in flight "
                         f"and only {ledger.available} unit(s) are available to "
-                        f"re-reserve (need {deficit}); refusing to oversell"
+                        f"re-reserve (need {deficit}); refusing to oversell",
                     )
                 re_reserve = ledger.reserve(
                     quantity=deficit,
@@ -530,7 +530,7 @@ class OrderService:
                 )
                 await self._movements.add(re_reserve)
                 await self._reopen_released_reservations(
-                    tenant_id, order_id, item.product_id, item.variant_id
+                    tenant_id, order_id, item.product_id, item.variant_id,
                 )
 
             movement = ledger.sell(
@@ -569,7 +569,7 @@ class OrderService:
         is_pod = order.payment_method == PaymentMethod.MPESA_PAY_ON_DELIVERY.value
         if not is_pod and current is OrderStatus.AWAITING_PAYMENT:
             raise IllegalTransitionError(
-                f"Illegal transition: {current.value} -> packed (prepay must be PAID first)"
+                f"Illegal transition: {current.value} -> packed (prepay must be PAID first)",
             )
         apply_order_transition(order, OrderStatus.PACKED)
         await self.session.flush()
@@ -606,7 +606,7 @@ class OrderService:
             # delivery. Releasing here would sell the same unit twice.
             reference_id = reservation.reference_id
             if reference_id is not None and await self._has_active_delivery(
-                reservation.tenant_id, reference_id
+                reservation.tenant_id, reference_id,
             ):
                 continue
             await self._lock_variant(reservation.tenant_id, reservation.variant_id)
@@ -617,13 +617,13 @@ class OrderService:
                 await self.session.execute(
                     select(Reservation.status)
                     .where(Reservation.id == reservation.id)
-                    .with_for_update()
+                    .with_for_update(),
                 )
             ).scalar_one_or_none()
             if current_status != ReservationStatusModel.ACTIVE.value:
                 continue
             ledger = await self._load_ledger(
-                reservation.tenant_id, reservation.product_id, reservation.variant_id
+                reservation.tenant_id, reservation.product_id, reservation.variant_id,
             )
             if reference_id is not None:
                 remaining = ledger.reserved_quantity_for(reference_id)
@@ -658,7 +658,7 @@ class OrderService:
         from packages.core.delivery.repository import DeliveryRepository
 
         delivery = await DeliveryRepository(self.session).active_delivery_for_order(
-            tenant_id, order_id
+            tenant_id, order_id,
         )
         return delivery is not None
 
@@ -676,7 +676,7 @@ class OrderService:
         await self.session.execute(
             text(
                 "SELECT 1 FROM product_variants "
-                "WHERE id = :id AND tenant_id = :tenant_id FOR UPDATE"
+                "WHERE id = :id AND tenant_id = :tenant_id FOR UPDATE",
             ),
             {"id": str(variant_id), "tenant_id": str(tenant_id)},
         )
@@ -697,7 +697,7 @@ class OrderService:
         ):
             raise PriceMismatchError(
                 f"Expected {line.expected_unit_price_cents} for SKU {variant.sku!r} "
-                f"but the catalog price is {variant.sell_price_cents}"
+                f"but the catalog price is {variant.sell_price_cents}",
             )
         product = variant.product
         return _ResolvedLine(
@@ -715,7 +715,7 @@ class OrderService:
             select(ProductVariant).where(
                 ProductVariant.id == variant_id,
                 ProductVariant.tenant_id == tenant_id,
-            )
+            ),
         )
         return result.scalar_one_or_none()
 
@@ -724,12 +724,12 @@ class OrderService:
             select(ProductVariant).where(
                 ProductVariant.sku == sku,
                 ProductVariant.tenant_id == tenant_id,
-            )
+            ),
         )
         return result.scalar_one_or_none()
 
     async def _load_ledger(
-        self, tenant_id: UUID, product_id: UUID, variant_id: UUID | None
+        self, tenant_id: UUID, product_id: UUID, variant_id: UUID | None,
     ) -> StockLedger:
         rows = await self._movements.get_by_tenant_product(tenant_id, product_id, variant_id)
         movements = [_movement_model_to_domain(row) for row in rows]
@@ -802,7 +802,7 @@ class OrderService:
         for reservation in (await self.session.execute(query)).scalars().all():
             await self._lock_variant(tenant_id, reservation.variant_id)
             ledger = await self._load_ledger(
-                tenant_id, reservation.product_id, reservation.variant_id
+                tenant_id, reservation.product_id, reservation.variant_id,
             )
             remaining = ledger.reserved_quantity_for(order_id)
             if remaining >= reservation.quantity:

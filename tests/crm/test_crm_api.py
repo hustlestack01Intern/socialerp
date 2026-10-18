@@ -64,7 +64,7 @@ def _deny_owner() -> Any:
 
 @pytest.fixture
 async def owner_client(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> AsyncGenerator[AsyncClient, None]:
     user_id = await _seed_actor(session_factory, tenant)
     _install_overrides(tenant, user_id, session_factory)
@@ -80,7 +80,7 @@ async def owner_client(
 
 @pytest.fixture
 async def staff_client(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> AsyncGenerator[AsyncClient, None]:
     user_id = await _seed_actor(session_factory, tenant)
     _install_overrides(tenant, user_id, session_factory)
@@ -95,13 +95,13 @@ async def staff_client(
 
 
 async def test_derive_traits_via_api_then_read_models(
-    owner_client: AsyncClient, tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    owner_client: AsyncClient, tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with session_factory() as session, session.begin():
         customer, _orders, _product = await seed_paid_history(session, tenant.id)
         customer_id = customer.id
         await CRMService(session).record_event(
-            TenantId(tenant.id), customer_id, "message.summarised", dedupe_key="api-evt-1"
+            TenantId(tenant.id), customer_id, "message.summarised", dedupe_key="api-evt-1",
         )
         await CRMService(session).record_consent(
             TenantId(tenant.id),
@@ -152,7 +152,7 @@ async def test_derive_traits_via_api_then_read_models(
 
 
 async def test_events_endpoint_lists_log_oldest_first(
-    owner_client: AsyncClient, tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    owner_client: AsyncClient, tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with session_factory() as session, session.begin():
         customer = await make_customer(session, tenant.id)
@@ -171,14 +171,14 @@ async def test_events_endpoint_lists_log_oldest_first(
         assert set(event) == {"id", "event_type", "channel", "summary", "occurred_at"}
 
     limited = await owner_client.get(
-        f"/api/v1/crm/customers/{customer_id}/events", params={"limit": 2}
+        f"/api/v1/crm/customers/{customer_id}/events", params={"limit": 2},
     )
     assert limited.status_code == 200
     assert len(limited.json()["events"]) == 2
 
 
 async def test_consent_and_opt_out_endpoints(
-    owner_client: AsyncClient, tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    owner_client: AsyncClient, tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with session_factory() as session, session.begin():
         customer = await make_customer(session, tenant.id)
@@ -214,7 +214,7 @@ async def test_consent_and_opt_out_endpoints(
 
 
 async def test_consent_request_validation_returns_422(
-    owner_client: AsyncClient, tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    owner_client: AsyncClient, tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with session_factory() as session, session.begin():
         customer = await make_customer(session, tenant.id)
@@ -222,23 +222,23 @@ async def test_consent_request_validation_returns_422(
     url = f"/api/v1/crm/customers/{customer_id}/consent"
 
     too_long_purpose = await owner_client.post(
-        url, json={"purpose": "p" * 31, "granted": True, "source": "opt_in"}
+        url, json={"purpose": "p" * 31, "granted": True, "source": "opt_in"},
     )
     assert too_long_purpose.status_code == 422
 
     empty_source = await owner_client.post(
-        url, json={"purpose": "marketing", "granted": True, "source": ""}
+        url, json={"purpose": "marketing", "granted": True, "source": ""},
     )
     assert empty_source.status_code == 422
 
     missing_granted = await owner_client.post(
-        url, json={"purpose": "marketing", "source": "opt_in"}
+        url, json={"purpose": "marketing", "source": "opt_in"},
     )
     assert missing_granted.status_code == 422
 
 
 async def test_query_parameter_bounds_return_422(
-    owner_client: AsyncClient, tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    owner_client: AsyncClient, tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with session_factory() as session, session.begin():
         customer = await make_customer(session, tenant.id)
@@ -272,7 +272,7 @@ async def test_staff_cannot_use_data_subject_endpoints(
     # The staff denial must not have erased anything.
     async with session_factory() as session:
         still_active = await session.execute(
-            text("SELECT is_active FROM customers WHERE id = :c"), {"c": str(customer_id)}
+            text("SELECT is_active FROM customers WHERE id = :c"), {"c": str(customer_id)},
         )
     assert bool(still_active.scalar()) is True
 
@@ -292,7 +292,7 @@ async def test_owner_can_export_data_subject_record(
 
 
 async def test_owner_erase_customer_via_api(
-    owner_client: AsyncClient, tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    owner_client: AsyncClient, tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """DELETE /customers/{id} erases the CRM memory and reports success."""
     async with session_factory() as session, session.begin():
@@ -302,7 +302,7 @@ async def test_owner_erase_customer_via_api(
         tid = TenantId(tenant.id)
         await service.record_event(tid, customer_id, "message.summarised", dedupe_key="del-1")
         await service.record_consent(
-            tid, customer_id, purpose="marketing", granted=True, source="opt_in"
+            tid, customer_id, purpose="marketing", granted=True, source="opt_in",
         )
 
     deleted = await owner_client.delete(f"/api/v1/crm/customers/{customer_id}")
@@ -319,7 +319,7 @@ async def test_owner_erase_customer_via_api(
             {"c": str(customer_id)},
         )
         active = await session.execute(
-            text("SELECT is_active FROM customers WHERE id = :c"), {"c": str(customer_id)}
+            text("SELECT is_active FROM customers WHERE id = :c"), {"c": str(customer_id)},
         )
         assert int(events.scalar() or 0) == 0
         assert int(consents.scalar() or 0) == 0
@@ -327,7 +327,7 @@ async def test_owner_erase_customer_via_api(
 
 
 async def test_cross_tenant_access_returns_404(
-    owner_client: AsyncClient, tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    owner_client: AsyncClient, tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """A customer belonging to tenant B is invisible to tenant A on every route."""
     async with session_factory() as session, session.begin():
@@ -350,7 +350,7 @@ async def test_cross_tenant_access_returns_404(
             resp = await owner_client.get(url)
         elif method == "POST":
             resp = await owner_client.post(
-                url, json={"purpose": "marketing", "granted": True, "source": "x"}
+                url, json={"purpose": "marketing", "granted": True, "source": "x"},
             )
         else:
             resp = await owner_client.delete(url)
@@ -361,7 +361,7 @@ async def test_cross_tenant_access_returns_404(
     # Tenant B's customer is intact.
     async with session_factory() as session:
         phone = await session.execute(
-            text("SELECT phone FROM customers WHERE id = :c"), {"c": str(foreign_id)}
+            text("SELECT phone FROM customers WHERE id = :c"), {"c": str(foreign_id)},
         )
         assert phone.scalar() == "254733333333"
 
@@ -386,7 +386,7 @@ async def test_malformed_uuid_returns_422(owner_client: AsyncClient, tenant: Ten
 
 
 async def test_dsr_role_gates_enforced_with_real_jwt_tokens(
-    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """U37: owner-only DSR gates proven with REAL tokens (no stubbed role deps).
 
@@ -425,7 +425,7 @@ async def test_dsr_role_gates_enforced_with_real_jwt_tokens(
         # The staff denial must not have erased anything.
         async with session_factory() as session:
             active = await session.execute(
-                text("SELECT is_active FROM customers WHERE id = :c"), {"c": str(customer_id)}
+                text("SELECT is_active FROM customers WHERE id = :c"), {"c": str(customer_id)},
             )
         assert bool(active.scalar()) is True
 

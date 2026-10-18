@@ -46,7 +46,7 @@ async def test_evaluate_segment_unknown_customer_is_false(db_session: AsyncSessi
     tenant = await make_tenant(db_session)
     service = SegmentService(db_session)
     unknown = await service.evaluate_segment(
-        TenantId(tenant.id), SegmentKey.FIRST_TIME, customer_id=uuid4()
+        TenantId(tenant.id), SegmentKey.FIRST_TIME, customer_id=uuid4(),
     )
     assert unknown is False, "unknown customer must not fabricate membership"
 
@@ -104,7 +104,7 @@ async def test_list_members_pagination_slices_sorted_ids(db_session: AsyncSessio
 
 
 async def test_list_members_issues_a_single_query(
-    test_engine, session_factory: async_sessionmaker[AsyncSession]
+    test_engine, session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """N+1 guard (plan failure modes): one batch SELECT for any customer count."""
     async with session_factory() as session, session.begin():
@@ -123,7 +123,7 @@ async def test_list_members_issues_a_single_query(
     try:
         async with session_factory() as session, session.begin():
             page = await SegmentService(session).list_members(
-                TenantId(tenant.id), SegmentKey.REPEAT_BUYERS
+                TenantId(tenant.id), SegmentKey.REPEAT_BUYERS,
             )
     finally:
         event.remove(test_engine.sync_engine, "before_cursor_execute", _record)

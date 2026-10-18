@@ -61,7 +61,7 @@ def _short_ref(order_id: UUID) -> str:
 
 
 async def build_tracking(
-    session: AsyncSession, order_id: UUID, *, token: str | None
+    session: AsyncSession, order_id: UUID, *, token: str | None,
 ) -> TrackingView | None:
     """Return the tracking view, or ``None`` when the order is unknown or the
     capability token is missing/invalid (fail closed — U29).
@@ -81,7 +81,7 @@ async def build_tracking(
                 select(Delivery)
                 .where(Delivery.order_id == order_id)
                 .order_by(Delivery.created_at.desc(), Delivery.id.desc())
-                .limit(1)
+                .limit(1),
             )
         )
         .scalars()

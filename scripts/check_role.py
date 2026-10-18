@@ -7,7 +7,7 @@ conn = psycopg2.connect("postgresql://socialerp:socialerp@postgres:5432/socialer
 cur = conn.cursor()
 
 cur.execute(
-    "SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname IN ('socialerp', 'socialerp_app')"
+    "SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname IN ('socialerp', 'socialerp_app')",
 )
 
 cur.execute("SELECT current_user, session_user")

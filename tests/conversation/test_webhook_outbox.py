@@ -38,13 +38,13 @@ def _payload(message_id: str) -> dict:
                                     "timestamp": str(int(datetime.now(UTC).timestamp())),
                                     "text": {"body": "nataka 2 black hoodie"},
                                     "type": "text",
-                                }
+                                },
                             ],
                         },
                         "field": "messages",
-                    }
+                    },
                 ],
-            }
+            },
         ],
     }
 
@@ -61,7 +61,7 @@ async def test_inbound_message_enqueues_agent_outbox_event(tenant_session, tenan
                 select(Outbox).where(
                     Outbox.tenant_id == tenant.id,
                     Outbox.event_type == "inbound_message",
-                )
+                ),
             )
         )
         .scalars()
@@ -91,7 +91,7 @@ async def test_duplicate_message_is_deduped_and_not_re_enqueued(tenant_session, 
                 select(WhatsAppMessage).where(
                     WhatsAppMessage.tenant_id == tenant.id,
                     WhatsAppMessage.direction == "inbound",
-                )
+                ),
             )
         )
         .scalars()
@@ -105,7 +105,7 @@ async def test_duplicate_message_is_deduped_and_not_re_enqueued(tenant_session, 
                 select(Outbox).where(
                     Outbox.tenant_id == tenant.id,
                     Outbox.event_type == "inbound_message",
-                )
+                ),
             )
         )
         .scalars()

@@ -38,7 +38,7 @@ class TestIdempotency:
 
         # Second request with same key
         is_dup, cached = await check_idempotency(
-            "key_1", "scope", {"amount": 100}, tenant_id=tenant.id
+            "key_1", "scope", {"amount": 100}, tenant_id=tenant.id,
         )
         assert is_dup is True
         assert cached is None  # Still pending
@@ -50,7 +50,7 @@ class TestIdempotency:
 
         # Different key, same payload
         is_dup, cached = await check_idempotency(
-            "key_2", "scope", {"amount": 100}, tenant_id=tenant.id
+            "key_2", "scope", {"amount": 100}, tenant_id=tenant.id,
         )
         assert is_dup is True
         assert cached is None
@@ -69,7 +69,7 @@ class TestIdempotency:
 
         # Next duplicate should get cached response
         is_dup, cached = await check_idempotency(
-            "key_1", "scope", {"amount": 100}, tenant_id=tenant.id
+            "key_1", "scope", {"amount": 100}, tenant_id=tenant.id,
         )
         assert is_dup is True
         assert cached == {"status": "success", "order_id": "123"}
@@ -83,7 +83,7 @@ class TestIdempotency:
 
         # Should be able to reserve again
         is_dup, cached = await check_idempotency(
-            "key_1", "scope", {"amount": 100}, tenant_id=tenant.id
+            "key_1", "scope", {"amount": 100}, tenant_id=tenant.id,
         )
         assert is_dup is False
         assert cached is None
@@ -131,7 +131,7 @@ class TestIdempotency:
 
         # Same key in tenant_b should not be duplicate
         is_dup, _ = await check_idempotency(
-            "key_1", "scope", {"amount": 100}, tenant_id=tenant_b_id
+            "key_1", "scope", {"amount": 100}, tenant_id=tenant_b_id,
         )
         assert is_dup is False
 
@@ -141,7 +141,7 @@ class TestIdempotency:
         await check_idempotency("key_1", "scope_a", {"amount": 100}, tenant_id=tenant.id)
 
         is_dup, _ = await check_idempotency(
-            "key_1", "scope_b", {"amount": 100}, tenant_id=tenant.id
+            "key_1", "scope_b", {"amount": 100}, tenant_id=tenant.id,
         )
         assert is_dup is False
 

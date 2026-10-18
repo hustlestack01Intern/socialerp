@@ -70,7 +70,7 @@ class Settings(BaseSettings):
     aggregator_callback_url: str = Field(default="", alias="AGGREGATOR_CALLBACK_URL")
     aggregator_name: str = Field(default="generic", alias="AGGREGATOR_NAME")
     aggregator_allowed_callback_ips: str = Field(
-        default="", alias="AGGREGATOR_ALLOWED_CALLBACK_IPS"
+        default="", alias="AGGREGATOR_ALLOWED_CALLBACK_IPS",
     )
 
     # LLM Gateway
@@ -86,14 +86,14 @@ class Settings(BaseSettings):
     # Observability
     otel_service_name: str = Field(default="socialerp", alias="OTEL_SERVICE_NAME")
     otel_exporter_otlp_endpoint: str = Field(
-        default="http://localhost:4317", alias="OTEL_EXPORTER_OTLP_ENDPOINT"
+        default="http://localhost:4317", alias="OTEL_EXPORTER_OTLP_ENDPOINT",
     )
 
     # Feature Flags
     feature_tiktok_enabled: bool = Field(default=False, alias="FEATURE_TIKTOK_ENABLED")
     feature_instagram_enabled: bool = Field(default=False, alias="FEATURE_INSTAGRAM_ENABLED")
     feature_pay_on_delivery_enabled: bool = Field(
-        default=True, alias="FEATURE_PAY_ON_DELIVERY_ENABLED"
+        default=True, alias="FEATURE_PAY_ON_DELIVERY_ENABLED",
     )
     feature_owner_console_enabled: bool = Field(default=True, alias="FEATURE_OWNER_CONSOLE_ENABLED")
 
@@ -103,11 +103,11 @@ class Settings(BaseSettings):
 
     # Security
     cors_allowed_origins: str = Field(
-        default="http://localhost:3000,http://localhost:8080", alias="CORS_ALLOWED_ORIGINS"
+        default="http://localhost:3000,http://localhost:8080", alias="CORS_ALLOWED_ORIGINS",
     )
     rate_limit_requests_per_minute: int = Field(default=100, alias="RATE_LIMIT_REQUESTS_PER_MINUTE")
     webhook_signature_tolerance_seconds: int = Field(
-        default=300, alias="WEBHOOK_SIGNATURE_TOLERANCE_SECONDS"
+        default=300, alias="WEBHOOK_SIGNATURE_TOLERANCE_SECONDS",
     )
 
     # Testing

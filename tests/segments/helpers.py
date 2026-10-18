@@ -40,7 +40,7 @@ async def make_tenant(session: AsyncSession, *, slug_prefix: str = "seg") -> Ten
 
 
 async def make_user(
-    session: AsyncSession, tenant_id: UUID, *, role: UserRole, user_id: UUID | None = None
+    session: AsyncSession, tenant_id: UUID, *, role: UserRole, user_id: UUID | None = None,
 ) -> User:
     user = User(
         id=user_id or uuid4(),

@@ -102,7 +102,7 @@ async def aggregator_callback(
     if not await provider.validate_callback(payload, headers):
         logger.warning(f"Aggregator callback validation failed for tenant {tenant_id}")
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid callback payload"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid callback payload",
         )
 
     # Parse the callback into standardized result
@@ -111,7 +111,7 @@ async def aggregator_callback(
     except Exception as exc:
         logger.exception("Failed to parse aggregator callback")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Malformed callback"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Malformed callback",
         ) from exc
 
     # Process through payment service
@@ -124,7 +124,7 @@ async def aggregator_callback(
     except PaymentNotFoundError:
         # Unknown checkout id: acknowledge so the aggregator stops retrying
         logger.info(
-            f"Aggregator callback for unknown checkout_request_id: {result.checkout_request_id}"
+            f"Aggregator callback for unknown checkout_request_id: {result.checkout_request_id}",
         )
         pass
 

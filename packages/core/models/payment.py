@@ -106,7 +106,7 @@ class Payment(Base):
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
 
     metadata_json: Mapped[dict[str, Any]] = mapped_column(
-        JSONB, nullable=False, default=dict, server_default="{}"
+        JSONB, nullable=False, default=dict, server_default="{}",
     )
 
     created_at: Mapped[datetime] = mapped_column(

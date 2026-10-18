@@ -128,7 +128,7 @@ class ScriptedGateway(LLMGateway):
             model=self.model,
             model_version="0",
             usage=LLMUsage(
-                prompt_tokens=len(request.messages), completion_tokens=len(text.split())
+                prompt_tokens=len(request.messages), completion_tokens=len(text.split()),
             ),
             finish_reason="stop",
         )
