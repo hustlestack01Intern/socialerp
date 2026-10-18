@@ -17,8 +17,11 @@ Turns a customer's history into remembered facts, with hard privacy guardrails:
   computes these.
 - **Erasure is human-approved** (``approved_by`` required) and fully audited; it
   removes the customer's CRM memory, anonymises the customer row and scrubs the
-  phone/name snapshot on their orders, keeping the order records themselves
-  (financial record) without the personal identifiers.
+  customer's personal identifiers from their orders (email, address, location
+  and free-text identity columns) and their payments (M-Pesa MSISDN and any
+  metadata ``phone`` key), keeping the order/payment records themselves
+  (financial record) without personal identifiers. The audit entry stores only
+  an opaque tombstone and a boolean ``phone_present`` flag, never plaintext PII.
 """
 
 from __future__ import annotations
@@ -28,7 +31,9 @@ from collections import Counter
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
+from socialerp.settings import get_settings
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -246,7 +251,11 @@ class CRMService:
         )
 
         if orders:
-            hours = [o.created_at.hour for o in orders]
+            # AGENTS.md targets Nairobi SMEs; Kenya has no DST, EAT = UTC+3.
+            # created_at is stored UTC, so convert to the tenant-local zone
+            # (TENANT_TIMEZONE, default Africa/Nairobi) before reading .hour.
+            local_tz = ZoneInfo(get_settings().TENANT_TIMEZONE)
+            hours = [o.created_at.astimezone(local_tz).hour for o in orders]
             typical_hour = Counter(hours).most_common(1)[0][0]
             derived.append(
                 await self.record_trait(
@@ -352,7 +361,8 @@ class CRMService:
         customer = await self.repo.get_customer(tenant_id, customer_id)
         if customer is None:
             raise CustomerNotFoundError(str(customer_id))
-        events = await self.repo.list_events(tenant_id, customer_id)
+        # U33: a DSR export must be COMPLETE — no 200-row cap, no truncation.
+        events = await self.repo.all_events(tenant_id, customer_id)
         traits = await self.repo.list_traits(tenant_id, customer_id)
         consents = await self.repo.list_consents(tenant_id, customer_id)
         orders = await self.repo.orders_for_customer(tenant_id, customer_id)
@@ -413,9 +423,20 @@ class CRMService:
 
         Sets the erasure session flag so the append-only trigger permits the
         event deletion, removes events/traits/consents, anonymises the customer
-        row and scrubs the phone/name snapshot on their orders. Order records
-        themselves are retained (financial record) without personal identifiers.
+        row and scrubs the customer's personal identifiers from their orders
+        (email/address/location/free text) and payments (MSISDN + metadata
+        phone key). Order and payment records themselves are retained
+        (financial record) without personal identifiers; the audit entry is
+        PII-free (boolean ``phone_present`` + opaque tombstone only).
         """
+        # U36: the CRM/tenant tables carry RLS keyed on
+        # current_tenant_id(); without this transaction-local GUC the reads
+        # find nothing and the DELETE/UPDATEs below silently match 0 rows
+        # once TenantContextMiddleware enforces the policies.
+        await self.session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tenant_id)},
+        )
         customer = await self.repo.get_customer(tenant_id, customer_id)
         if customer is None:
             raise CustomerNotFoundError(str(customer_id))
@@ -442,20 +463,42 @@ class CRMService:
             ),
             {"p": tombstone, "t": str(tenant_id), "c": str(customer_id)},
         )
+        # U31: identity + location text on the retained order rows; money
+        # columns (totals, payment status/reference) are a financial record
+        # and are never touched.
         await self.session.execute(
             text(
-                "UPDATE orders SET customer_phone = :p, customer_name = NULL "
+                "UPDATE orders SET customer_phone = :p, customer_name = NULL, "
+                "customer_email = NULL, delivery_address = NULL, "
+                "delivery_area = NULL, delivery_lat = NULL, delivery_lng = NULL, "
+                "delivery_instructions = NULL, notes = NULL "
                 "WHERE tenant_id = :t AND customer_id = :c"
             ),
             {"p": tombstone, "t": str(tenant_id), "c": str(customer_id)},
         )
+        # U30: the M-Pesa MSISDN (and any top-level metadata phone key) on
+        # their payments; amount/status/receipt/provider ids stay untouched.
+        # Payments link to the customer only through their orders.
+        await self.session.execute(
+            text(
+                "UPDATE payments SET phone_number = :p, "
+                "metadata_json = metadata_json - 'phone' "
+                "WHERE tenant_id = :t "
+                "AND order_id IN ("
+                "SELECT id FROM orders WHERE tenant_id = :t AND customer_id = :c"
+                ")"
+            ),
+            {"p": tombstone, "t": str(tenant_id), "c": str(customer_id)},
+        )
+        # U32: the audit_log is append-only for 2555 days — a plaintext phone
+        # in `before` would survive the erasure. Record presence, not value.
         await self.audit.log_action(
             tenant_id=tenant_id,
             user_id=approved_by,
             action="crm.customer_erased",
             resource="customer",
             resource_id=customer_id,
-            before={"phone": customer.phone},
+            before={"phone_present": customer.phone is not None},
             after={"phone": tombstone},
         )
 

@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     # empty, SECRET_KEY is used as the signing key.
     TRACKING_TOKEN_SECRET: str = ""
     TRACKING_TOKEN_TTL_DAYS: int = 30
+    # Tenant-local timezone used when deriving local-time CRM traits
+    # (e.g. `typical_order_hour`). AGENTS.md targets Nairobi SMEs, so the
+    # default is Kenya's zone (EAT = UTC+3, no DST).
+    TENANT_TIMEZONE: str = "Africa/Nairobi"
 
     # -------------------------------------------------------------------------
     # Database

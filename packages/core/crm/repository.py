@@ -53,6 +53,24 @@ class CRMRepository:
         )
         return list((await self.session.execute(stmt)).scalars().all())
 
+    async def all_events(self, tenant_id: UUID, customer_id: UUID) -> list[CustomerEvent]:
+        """EVERY event for the customer, oldest first — no LIMIT (DSR export).
+
+        Data-subject access exports must be complete or explicitly flagged as
+        truncated (U33), so this deliberately applies no cap; paginated API
+        reads keep using :meth:`list_events` (bounded) or
+        :meth:`recent_events` (newest N).
+        """
+        stmt = (
+            select(CustomerEvent)
+            .where(
+                CustomerEvent.tenant_id == tenant_id,
+                CustomerEvent.customer_id == customer_id,
+            )
+            .order_by(CustomerEvent.occurred_at.asc(), CustomerEvent.id.asc())
+        )
+        return list((await self.session.execute(stmt)).scalars().all())
+
     async def recent_events(
         self, tenant_id: UUID, customer_id: UUID, *, limit: int = 20
     ) -> list[CustomerEvent]:

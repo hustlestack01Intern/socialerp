@@ -30,6 +30,7 @@ from packages.core.auth.dependencies import (
     require_owner,
     require_staff,
 )
+from packages.core.auth.jwt import create_access_token
 from packages.core.crm import CRMService
 from packages.core.domain import TenantId
 from packages.core.models.core import Tenant, UserRole
@@ -382,3 +383,61 @@ async def test_malformed_uuid_returns_422(owner_client: AsyncClient, tenant: Ten
     assert (await owner_client.get(f"{base}/memory")).status_code == 422
     assert (await owner_client.get(f"{base}/export")).status_code == 422
     assert (await owner_client.delete(base)).status_code == 422
+
+
+async def test_dsr_role_gates_enforced_with_real_jwt_tokens(
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """U37: owner-only DSR gates proven with REAL tokens (no stubbed role deps).
+
+    Only ``get_db`` is redirected to the test database; the whole auth chain —
+    bearer decode, DB user lookup, ``require_owner``/``require_staff``, tenant
+    id from the token — runs unstubbed, so a wiring regression that dropped a
+    role dependency would surface here as a 200 for staff instead of a 403.
+    """
+    async with session_factory() as session, session.begin():
+        customer_id = (await make_customer(session, tenant.id)).id
+        owner_id = (await make_user(session, tenant.id, role=UserRole.OWNER)).id
+        staff_id = (await make_user(session, tenant.id, role=UserRole.STAFF)).id
+
+    owner_token = create_access_token(str(owner_id), str(tenant.id), [UserRole.OWNER.value])
+    staff_token = create_access_token(str(staff_id), str(tenant.id), [UserRole.STAFF.value])
+
+    async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
+        async with session_factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    transport = ASGITransport(app=app)
+    base = f"/api/v1/crm/customers/{customer_id}"
+    try:
+        async with AsyncClient(transport=transport, base_url="http://test") as staff_client:
+            staff_client.headers["Authorization"] = f"Bearer {staff_token}"
+            export = await staff_client.get(f"{base}/export")
+            assert export.status_code == 403, (
+                f"staff export must be 403 (owner-only), got {export.status_code}"
+            )
+            deleted = await staff_client.delete(base)
+            assert deleted.status_code == 403, (
+                f"staff erase must be 403 (owner-only), got {deleted.status_code}"
+            )
+
+        # The staff denial must not have erased anything.
+        async with session_factory() as session:
+            active = await session.execute(
+                text("SELECT is_active FROM customers WHERE id = :c"), {"c": str(customer_id)}
+            )
+        assert bool(active.scalar()) is True
+
+        async with AsyncClient(transport=transport, base_url="http://test") as owner_client:
+            owner_client.headers["Authorization"] = f"Bearer {owner_token}"
+            export = await owner_client.get(f"{base}/export")
+            assert export.status_code == 200, (
+                f"owner export must pass the role gate, got {export.status_code}"
+            )
+            deleted = await owner_client.delete(base)
+            assert deleted.status_code == 200, (
+                f"owner erase must pass the role gate, got {deleted.status_code}"
+            )
+    finally:
+        app.dependency_overrides.clear()

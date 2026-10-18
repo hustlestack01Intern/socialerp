@@ -6,7 +6,7 @@ Initialized once at application startup. All services use shared configuration.
 
 import logging
 import sys
-from collections.abc import AsyncGenerator, Awaitable, Callable, Generator
+from collections.abc import AsyncGenerator, Awaitable, Callable, Generator, Mapping
 from contextlib import asynccontextmanager, contextmanager
 from typing import Any, cast
 
@@ -269,7 +269,10 @@ def init_instrumentation(app: Any = None) -> None:
     HTTPXClientInstrumentor().instrument()
 
     if app:
-        FastAPIInstrumentor.instrument_app(app)
+        # U35: the ASGI instrumentation records the full request URL (query
+        # string included) on its server span; the hook drops the query so a
+        # signed `?t=` tracking token can never land in a span attribute.
+        FastAPIInstrumentor.instrument_app(app, server_request_hook=redact_server_span_urls)
 
 
 def get_tracer(name: str) -> trace.Tracer:
@@ -333,6 +336,52 @@ async def trace_async_operation(
 # =============================================================================
 
 
+def redact_url_query(url: str) -> str:
+    """Drop the query string from a URL (U35).
+
+    Public tracking URLs carry a signed ``?t=`` capability token (U29); any
+    span attribute or log line holding the full URL turns that bearer secret
+    into a replayable credential for anyone with trace/log access. The query
+    string is removed entirely rather than filtered key-by-key, so a token
+    added under a new parameter name can never leak through here.
+    """
+    return url.split("?", 1)[0]
+
+
+def http_span_attributes(request: Request) -> dict[str, Any]:
+    """Span attributes for one inbound HTTP request (query-redacted, U35).
+
+    This is the single builder used by :func:`observability_middleware`, so
+    tests can assert the exact attribute set without a live server.
+    """
+    return {
+        "http.method": request.method,
+        "http.url": redact_url_query(str(request.url)),
+        "http.scheme": request.url.scheme,
+        "http.host": request.url.netloc,
+    }
+
+
+def redact_server_span_urls(span: trace.Span, scope: dict[str, Any]) -> None:
+    """Strip query strings from URL attributes on an instrumented span (U35).
+
+    Passed to ``FastAPIInstrumentor.instrument_app(server_request_hook=...)``:
+    the OpenTelemetry ASGI instrumentation puts the full request URL
+    (including the query string) on its server span, which would leak the
+    ``?t=`` tracking token. Any query-carrying URL attribute is rewritten to
+    its query-free form; ``url.query`` is blanked.
+    """
+    # ``.attributes`` is on ReadableSpan, not the abstract Span API; the hook
+    # always receives a real SDK span, but getattr keeps mypy --strict happy.
+    attributes: Mapping[str, Any] = getattr(span, "attributes", None) or {}
+    for name in ("http.url", "url.full", "http.target"):
+        value = attributes.get(name)
+        if isinstance(value, str) and "?" in value:
+            span.set_attribute(name, redact_url_query(value))
+    if attributes.get("url.query"):
+        span.set_attribute("url.query", "")
+
+
 async def observability_middleware(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
@@ -347,12 +396,7 @@ async def observability_middleware(
     with tracer.start_as_current_span(
         f"{request.method} {request.url.path}",
         kind=SpanKind.SERVER,
-        attributes={
-            "http.method": request.method,
-            "http.url": str(request.url),
-            "http.scheme": request.url.scheme,
-            "http.host": request.url.netloc,
-        },
+        attributes=http_span_attributes(request),
     ) as span:
         try:
             response = await call_next(request)

@@ -15,8 +15,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 
 import pytest
+from socialerp.settings import get_settings
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -79,7 +81,12 @@ async def test_derive_traits_produces_allow_listed_traits_with_evidence(
         assert by_name["reorder_cycle_days"].value_json == 3
         assert by_name["reorder_cycle_days"].evidence_json["gaps_days"] == [3, 3]
 
-        hours = [o.created_at.hour for o in sorted(orders, key=lambda o: o.created_at)]
+        # U34: the derived hour is tenant-local (Africa/Nairobi, EAT = UTC+3).
+        local_tz = ZoneInfo(get_settings().TENANT_TIMEZONE)
+        hours = [
+            o.created_at.astimezone(local_tz).hour
+            for o in sorted(orders, key=lambda o: o.created_at)
+        ]
         assert by_name["typical_order_hour"].value_json == hours[0]
         assert by_name["typical_order_hour"].evidence_json["hours"] == hours
 
@@ -126,8 +133,10 @@ async def test_derive_traits_typical_hour_is_the_mode(
         derived = await _derive(CRMService(session), tenant.id, customer.id)
 
     by_name = {t.name: t for t in derived}
-    assert by_name["typical_order_hour"].value_json == 10
-    assert sorted(by_name["typical_order_hour"].evidence_json["hours"]) == [10, 10, 15]
+    # U34: seeded hours are UTC (15, 10, 10); in tenant-local Nairobi time
+    # (EAT = UTC+3) they are 18, 13, 13 — the mode is still the 13h pair.
+    assert by_name["typical_order_hour"].value_json == 13
+    assert sorted(by_name["typical_order_hour"].evidence_json["hours"]) == [13, 13, 18]
 
 
 async def test_derive_traits_counts_only_paid_orders_in_ltv(
@@ -307,3 +316,34 @@ async def test_record_trait_requires_existing_customer(
             await service.record_trait(
                 TenantId(tenant.id), uuid4(), "order_count", 1, evidence={"x": 1}
             )
+
+
+async def test_typical_order_hour_is_tenant_local_nairobi_time(
+    tenant: Tenant, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """U34: the hour must be tenant-local (Nairobi/EAT), not UTC.
+
+    An order placed at 19:00 in Nairobi (16:00 UTC) must derive
+    ``typical_order_hour == 19`` — AGENTS.md targets Nairobi SMEs and the
+    owner reads "typical order hour" as their local wall-clock hour.
+    """
+    # 2026-06-01T19:00+03:00 == 2026-06-01T16:00Z; Kenya has no DST.
+    order_at_1900_eat = datetime(2026, 6, 1, 16, 0, 0, tzinfo=UTC)
+    async with session_factory() as session, session.begin():
+        customer = await make_customer(session, tenant.id)
+        await make_order(
+            session,
+            tenant.id,
+            customer.id,
+            created_at=order_at_1900_eat,
+            payment_status="completed",
+            status="paid",
+        )
+        derived = await _derive(CRMService(session), tenant.id, customer.id)
+
+    by_name = {t.name: t for t in derived}
+    assert by_name["typical_order_hour"].value_json == 19, (
+        "U34: 16:00 UTC must derive as hour 19 in tenant-local Nairobi time, "
+        f"got {by_name['typical_order_hour'].value_json}"
+    )
+    assert by_name["typical_order_hour"].evidence_json["hours"] == [19]

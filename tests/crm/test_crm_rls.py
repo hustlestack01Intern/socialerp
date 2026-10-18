@@ -17,8 +17,12 @@ from sqlalchemy import CursorResult, delete, func, select, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from packages.core.crm import CRMService, erasure_tombstone
+from packages.core.domain import TenantId
+from packages.core.models.core import UserRole
 from packages.core.models.crm import ConsentRecord, CustomerEvent, CustomerTrait
-from tests.crm.helpers import make_customer, make_tenant
+from packages.core.models.order import Customer, Order
+from tests.crm.helpers import make_customer, make_order, make_tenant, make_user
 
 
 async def _set_tenant(session: AsyncSession, tenant_id: UUID) -> None:
@@ -238,3 +242,64 @@ async def test_rls_blocks_cross_tenant_insert_into_customer_traits(
                     )
                 )
                 await session.flush()
+
+
+async def test_erasure_works_under_rls_role_without_preexisting_tenant_guc(
+    session_factory: async_sessionmaker[AsyncSession],
+    rls_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """U36: ``delete_customer`` must set ``app.current_tenant_id`` itself.
+
+    The RLS policies are keyed on ``current_tenant_id()``. If the session has
+    no GUC set (the state ``TenantContextMiddleware`` will guarantee later),
+    every tenant-keyed predicate evaluates NULL: the reads find nothing and
+    the DELETE/UPDATEs silently match zero rows. Erasure must therefore set
+    the transaction-local GUC before it reads or writes anything.
+    """
+    async with session_factory() as session, session.begin():
+        tenant = await make_tenant(session, slug_prefix="rls-erase")
+        approver = await make_user(session, tenant.id, role=UserRole.OWNER)
+        approver_id = approver.id
+        customer = await make_customer(session, tenant.id, phone="254712345678")
+        customer_id = customer.id
+        service = CRMService(session)
+        tid = TenantId(tenant.id)
+        await service.record_event(tid, customer_id, "message.summarised", dedupe_key="rls-e1")
+        await service.record_consent(
+            tid, customer_id, purpose="marketing", granted=True, source="opt_in"
+        )
+        await service.derive_traits(tid, customer_id)
+        order = await make_order(session, tenant.id, customer_id, total_cents=999)
+        order_id = order.id
+        tenant_id = tenant.id
+
+    # Erase through the non-owner RLS role with NO tenant GUC pre-set.
+    async with rls_session_factory() as session, session.begin():
+        await CRMService(session).delete_customer(
+            TenantId(tenant_id), customer_id, approved_by=approver_id
+        )
+
+    # Verify as the table owner: the rows must actually be gone (U36 red:
+    # CustomerNotFoundError, because the customer row was invisible and the
+    # writes would have silently matched 0 rows).
+    async with session_factory() as session:
+        counts: dict[str, int] = {}
+        for table, model in (
+            ("customer_events", CustomerEvent),
+            ("consent_records", ConsentRecord),
+            ("customer_traits", CustomerTrait),
+        ):
+            counts[table] = int(
+                await session.scalar(
+                    select(func.count()).select_from(model).where(model.customer_id == customer_id)
+                )
+                or 0
+            )
+        erased_phone = await session.scalar(
+            select(Customer.phone).where(Customer.id == customer_id)
+        )
+        order_phone = await session.scalar(select(Order.customer_phone).where(Order.id == order_id))
+
+    assert counts == {"customer_events": 0, "consent_records": 0, "customer_traits": 0}
+    assert erased_phone == erasure_tombstone(customer_id)
+    assert order_phone == erasure_tombstone(customer_id)
