@@ -7,6 +7,7 @@ recording sender — no network, synthetic data only.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -162,6 +163,7 @@ async def _seed_order(
     payment_method: str = "mpesa_stk",
     total_cents: int = 5000,
     payment_status: str = "pending",
+    paid_at: datetime | None = None,
 ) -> Order:
     customer = await _get_or_create_customer(session, tenant_id, CUSTOMER_PHONE)
     order = Order(
@@ -172,6 +174,7 @@ async def _seed_order(
         status=status,
         payment_method=payment_method,
         payment_status=payment_status,
+        paid_at=paid_at,
     )
     session.add(order)
     await session.flush()
@@ -212,6 +215,7 @@ async def _run(
     phone: str = OWNER_PHONE,
     sender=None,
     conversation=None,
+    provider_message_id: str | None = None,
 ):
     svc = OwnerConsoleService(session, tenant_id, sender=sender)
     conv_id = conversation.id if conversation is not None else None
@@ -221,6 +225,7 @@ async def _run(
         contact_id=contact_id,
         sender_phone=phone,
         text=text_in,
+        provider_message_id=provider_message_id,
     )
 
 
@@ -356,6 +361,53 @@ async def test_revenue_today_counts_paid_only(tenant_session, tenant) -> None:
     assert result.handled
     assert "50.00" in result.reply_text
     assert "99.00" not in result.reply_text
+
+
+@pytest.mark.asyncio
+async def test_revenue_today_excludes_refunded_but_keeps_paid_and_pod(
+    tenant_session, tenant
+) -> None:
+    """Console revenue = paid AND NOT refunded (same rule as insights).
+
+    The refund path keeps ``paid_at`` set (money-path invariant —
+    packages/core/payments/service.py:703-705), so the ``paid_at`` SQL branch
+    alone counts refunded orders at full value. A pay-on-delivery order that
+    was paid then delivered (completed + paid_at) must still count.
+    """
+    await _seed_owner(tenant_session, tenant.id)
+    now = datetime.now(UTC)
+    # X: paid (completed).
+    await _seed_order(
+        tenant_session,
+        tenant.id,
+        total_cents=500_00,
+        payment_status="completed",
+        paid_at=now,
+    )
+    # Y: paid-then-refunded — field states exactly as the refund path leaves
+    # them (tests/payments/test_refunds.py:175-177): payment_status refunded,
+    # status refunded, paid_at RETAINED.
+    await _seed_order(
+        tenant_session,
+        tenant.id,
+        status="refunded",
+        total_cents=1234_00,
+        payment_status="refunded",
+        paid_at=now,
+    )
+    # Z: pay-on-delivery, paid then delivered (completed + paid_at).
+    await _seed_order(
+        tenant_session,
+        tenant.id,
+        status="delivered",
+        total_cents=200_00,
+        payment_status="completed",
+        paid_at=now,
+    )
+    result = await _run(tenant_session, tenant.id, text_in="revenue today")
+    assert result.handled
+    assert "700.00" in result.reply_text, "X + Z only"
+    assert "1234.00" not in result.reply_text, "refunded order is not revenue"
 
 
 @pytest.mark.asyncio
@@ -525,6 +577,104 @@ async def test_restock_unknown_sku_is_honest(tenant_session, tenant) -> None:
     result = await _run(tenant_session, tenant.id, text_in="restock 20 of NOPE-SKU")
     assert result.handled
     assert result.outcome == "not_found"
+
+
+# -----------------------------------------------------------------------------
+# F5: restock is idempotent on the inbound provider_message_id (event replay)
+# -----------------------------------------------------------------------------
+
+_REPLAY_PIM = "wamid.restock.replay.1"
+
+
+async def _owner_console_receives(session, variant) -> list[StockMovementModel]:
+    return list(
+        (
+            await session.execute(
+                select(StockMovementModel).where(
+                    StockMovementModel.variant_id == variant.id,
+                    StockMovementModel.reference_type == "owner_console",
+                    StockMovementModel.movement_type == "receive",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+@pytest.mark.asyncio
+async def test_restock_replayed_provider_message_id_records_once(tenant_session, tenant) -> None:
+    """A redelivered inbound_message event must not book stock twice.
+
+    The worker outbox relay marks the event processed in a SEPARATE transaction
+    from the handler commit (packages/core/socialerp/outbox.py vs
+    apps/worker/main.py:286), so a crash between them redelivers the event.
+    The console restock RECEIVE dedupes on a key derived from the provider
+    message id, mirroring OrderCreateRequest.idempotency_key on the order path.
+    """
+    await _set_autonomy(tenant_session, tenant.id, "L3")
+    await _seed_owner(tenant_session, tenant.id)
+    _, variant = await _seed_variant(tenant_session, tenant.id, qty=3)
+
+    first = await _run(
+        tenant_session,
+        tenant.id,
+        text_in="restock 20 of HOOD-BLK-M",
+        provider_message_id=_REPLAY_PIM,
+    )
+    assert first.handled
+    assert first.outcome == "executed"
+    assert "23" in first.reply_text  # 3 + 20, recorded once
+
+    # Replay: SAME provider_message_id (simulates redelivery after crash).
+    second = await _run(
+        tenant_session,
+        tenant.id,
+        text_in="restock 20 of HOOD-BLK-M",
+        provider_message_id=_REPLAY_PIM,
+    )
+    assert second.handled
+    assert second.outcome == "already_applied"
+    assert second.reply_text != first.reply_text, "replay must be visible, not silent"
+    assert "Already" in second.reply_text
+    assert "23" in second.reply_text, "available unchanged by the duplicate"
+
+    movements = await _owner_console_receives(tenant_session, variant)
+    assert len(movements) == 1, "EXACTLY ONE receive despite two deliveries"
+    assert movements[0].quantity_change == 20
+    assert movements[0].reference_id is not None, "idempotency key stored on the ledger"
+
+
+@pytest.mark.asyncio
+async def test_restock_different_provider_message_ids_record_separately(
+    tenant_session, tenant
+) -> None:
+    """Two genuinely different messages are two restocks (normal operation)."""
+    await _set_autonomy(tenant_session, tenant.id, "L3")
+    await _seed_owner(tenant_session, tenant.id)
+    _, variant = await _seed_variant(tenant_session, tenant.id, qty=3)
+
+    first = await _run(
+        tenant_session,
+        tenant.id,
+        text_in="restock 20 of HOOD-BLK-M",
+        provider_message_id="wamid.restock.a",
+    )
+    second = await _run(
+        tenant_session,
+        tenant.id,
+        text_in="restock 20 of HOOD-BLK-M",
+        provider_message_id="wamid.restock.b",
+    )
+    assert first.outcome == "executed"
+    assert second.outcome == "executed"
+    assert "43" in second.reply_text  # 3 + 20 + 20
+
+    movements = await _owner_console_receives(tenant_session, variant)
+    assert len(movements) == 2
+    keys = {m.reference_id for m in movements}
+    assert None not in keys
+    assert len(keys) == 2, "distinct messages derive distinct keys"
 
 
 # =============================================================================

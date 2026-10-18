@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from packages.core.domain import TenantId
 from packages.core.insights import InsightsService
-from packages.core.models.order import OrderStatus
+from packages.core.models.order import OrderStatus, PaymentStatus
 from tests.insights.helpers import (
     add_item,
     add_order,
@@ -279,3 +279,76 @@ async def test_reports_are_tenant_scoped(db_session: AsyncSession) -> None:
     assert report_b.period.revenue_cents == 900_00
     assert report_a.period.orders_count == 1
     assert report_b.period.orders_count == 1
+
+
+# =============================================================================
+# F3: refunded orders are NOT revenue (paid AND NOT refunded)
+# =============================================================================
+
+
+async def test_revenue_excludes_refunded_orders_but_keeps_paid_and_pod(
+    db_session: AsyncSession,
+) -> None:
+    """Revenue = paid AND NOT refunded.
+
+    The refund path (packages/core/payments/service.py:703-705) sets
+    payment_status='refunded' and transitions the order to refunded but never
+    clears ``paid_at`` (money-path invariant, ADR 0014 / payments comment
+    ~445), so ``is_order_paid`` alone counts a refunded order at full value.
+    Refunds must not inflate owner-facing revenue (plan 8b revenue definition,
+    refund-exclusion correctness refinement).
+    """
+    tenant = await make_tenant(db_session)
+    customer = await make_customer(db_session, tenant.id)
+    product = await add_product(db_session, tenant.id, name="Hoodie")
+
+    # X: plain paid order (completed + paid_at).
+    paid = await add_order(
+        db_session,
+        tenant.id,
+        customer,
+        created_at=utc_day(2026, 10, 10, 9),
+        paid=True,
+        total_cents=500_00,
+    )
+    # Y: PAID THEN REFUNDED, same day — field states exactly as the real
+    # refund path leaves them (tests/payments/test_refunds.py:175-177):
+    # payment_status='refunded', order status refunded, paid_at RETAINED.
+    refunded = await add_order(
+        db_session,
+        tenant.id,
+        customer,
+        created_at=utc_day(2026, 10, 10, 10),
+        paid=True,
+        total_cents=300_00,
+    )
+    refunded.status = OrderStatus.REFUNDED.value
+    refunded.payment_status = PaymentStatus.REFUNDED
+    # Z: pay-on-delivery, paid then delivered (payment_status completed,
+    # paid_at set — payments/service.py:430-436): must still count.
+    pod = await add_order(
+        db_session,
+        tenant.id,
+        customer,
+        created_at=utc_day(2026, 10, 10, 11),
+        paid=True,
+        status=OrderStatus.DELIVERED,
+        total_cents=200_00,
+    )
+    await add_item(
+        db_session, tenant.id, paid, product, quantity=2, name="Hoodie", sku="HOODIE-BLK"
+    )
+    await add_item(db_session, tenant.id, pod, product, quantity=1, name="Hoodie", sku="HOODIE-BLK")
+    # The refunded order's items must not rank either.
+    await add_item(
+        db_session, tenant.id, refunded, product, quantity=99, name="Hoodie", sku="HOODIE-BLK"
+    )
+
+    report = await InsightsService(db_session).daily_report(TenantId(tenant.id), DAY)
+
+    assert report.period.orders_count == 3, "demand attempts still count all statuses"
+    assert report.period.paid_orders_count == 2, "refunded order is not a revenue order"
+    assert report.period.revenue_cents == 700_00, "X + Z only; refunded Y (300) excluded"
+    assert report.period.aov_cents == 350_00, "AOV over the same paid non-refunded set"
+    assert len(report.period.top_items) == 1
+    assert report.period.top_items[0].quantity == 3, "paid 2 + POD 1; refunded 99 excluded"

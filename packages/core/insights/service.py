@@ -20,22 +20,30 @@ Derivations (plan 8b "Insights" section; every figure is traceable to rows):
 - ``orders_count``   = count of orders with ``created_at`` in the half-open
                        window [start, end) — ALL statuses (demand attempts,
                        plan wording: "count of orders created in [start,end)").
-- ``revenue_cents``  = sum of ``total_cents`` over **paid** orders in the
-                       window only, where paid = ``is_order_paid``
-                       (payment_status completed OR ``paid_at`` set —
-                       packages/core/orders/service.py:92-102, identical to
-                       ``_is_paid`` in packages/core/crm/service.py:76-78, so
-                       insights and LTV can never disagree). Unpaid money is
-                       never counted (financial guard).
+- ``revenue_cents``  = sum of ``total_cents`` over **paid, non-refunded**
+                       orders in the window only, where paid = ``is_revenue_order``
+                       (``is_order_paid`` — payment_status completed OR
+                       ``paid_at`` set, packages/core/orders/service.py:92-102 —
+                       AND payment_status != refunded). Plan 8b defines revenue
+                       over paid orders; the refund exclusion is a correctness
+                       refinement of that intent: refunds never clear ``paid_at``
+                       (money-path invariant, packages/core/payments/service.py:
+                       703-705), so ``is_order_paid`` alone would count a
+                       refunded order at full value. Unpaid money is never
+                       counted (financial guard).
+- ``paid_orders_count`` = count of those revenue orders (refunded orders
+                       excluded, same predicate as ``revenue_cents``).
 - ``aov_cents``      = revenue_cents // paid_orders_count, integer floor;
                        0 when paid_orders_count == 0 (division-by-zero guard:
                        no paid orders means "no average", shown as 0).
 - ``new_customers``  = customers whose earliest order ever falls in the window.
 - ``returning_customers`` = customers with >= 1 order in the window whose
                        earliest order ever is strictly before the window start.
-- ``top_items``      = top-k by quantity sold across items of PAID orders in
-                       the window (an unpaid reservation is not a sale);
-                       ties broken by name for determinism.
+- ``top_items``      = top-k by quantity sold across items of paid,
+                       non-refunded orders in the window (an unpaid
+                       reservation is not a sale; a refunded order's items
+                       are not sales either); ties broken by name for
+                       determinism.
 - ``stock_alerts``   = active variants with ``quantity < reorder_level`` —
                        the owner's own threshold (catalog model; read-only
                        snapshot of the cached quantity per plan wording).
@@ -63,7 +71,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from packages.core.domain import TenantId
 from packages.core.models.catalog import Product, ProductVariant
-from packages.core.models.order import Order, OrderItem
+from packages.core.models.order import Order, OrderItem, PaymentStatus
 from packages.core.orders.service import is_order_paid
 
 # =============================================================================
@@ -91,6 +99,31 @@ DEFAULT_MIN_BASELINE = 5
 # Top-items list length: 5 items is the short list an owner can read in one
 # glance (WhatsApp message length), and callers can pass a different k.
 DEFAULT_TOP_K = 5
+
+
+# =============================================================================
+# Shared predicates
+# =============================================================================
+
+
+def is_revenue_order(order: Order) -> bool:
+    """True when an order counts toward owner-facing revenue.
+
+    Revenue = **paid AND NOT refunded** (plan 8b "revenue_cents: sum of
+    total_cents over paid orders"; the refund exclusion is a correctness
+    refinement of that intent — a refunded order is not a sale the owner
+    keeps). Refunds never clear ``paid_at`` (deliberate money-path invariant,
+    packages/core/payments/service.py:703-705 and :445), so ``is_order_paid``
+    alone would count a refunded order at full value; the explicit
+    ``payment_status != refunded`` check removes it without touching the
+    protected payments code. A pay-on-delivery order paid then delivered
+    (payment_status completed, paid_at set) still counts.
+    """
+    if not is_order_paid(order):
+        return False
+    status = order.payment_status
+    status_value = getattr(status, "value", status)
+    return status_value != PaymentStatus.REFUNDED.value
 
 
 # =============================================================================
@@ -262,8 +295,10 @@ class InsightsService:
             .all()
         )
 
-        # Financial guard: only paid orders count as revenue (is_order_paid).
-        paid = [o for o in orders if is_order_paid(o)]
+        # Financial guard: only paid, NON-refunded orders count as revenue
+        # (is_revenue_order; refunds keep paid_at, so is_order_paid alone
+        # would overstate).
+        paid = [o for o in orders if is_revenue_order(o)]
         paid_count = len(paid)
         revenue_cents = sum(int(o.total_cents) for o in paid)
         # Integer floor division; no paid orders => 0 (division-by-zero guard).
@@ -309,7 +344,7 @@ class InsightsService:
     async def _top_items(
         self, tenant_id: TenantId, paid_order_ids: Sequence[UUID], *, top_k: int
     ) -> tuple[TopItem, ...]:
-        """Top-k items by quantity sold across the given PAID orders."""
+        """Top-k items by quantity sold across the given paid, non-refunded orders."""
         if not paid_order_ids or top_k <= 0:
             return ()
         items = list(
@@ -431,4 +466,5 @@ __all__ = [
     "StockAlert",
     "TopItem",
     "detect_anomaly_from_counts",
+    "is_revenue_order",
 ]

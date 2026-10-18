@@ -36,11 +36,11 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
-from uuid import UUID
+from uuid import NAMESPACE_DNS, UUID, uuid5
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from socialerp.observability import get_logger
-from sqlalchemy import Select, String, cast, func, or_, select, text
+from sqlalchemy import Select, String, and_, cast, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from packages.agent.intent import Intent, IntentResult, detect_injection, detect_language
@@ -69,6 +69,7 @@ from packages.core.models.alert import AlertStatus, OwnerAlert
 from packages.core.models.catalog import Product, ProductStatus, ProductVariant
 from packages.core.models.core import Tenant, User, UserRole
 from packages.core.models.order import Order
+from packages.core.models.stock import StockMovement as StockMovementModel
 from packages.core.models.whatsapp import (
     WhatsAppConversation,
     WhatsAppMessage,
@@ -88,6 +89,14 @@ _CLOSED_ORDER_STATUSES = (
     OrderStatus.REFUNDED.value,
     OrderStatus.FAILED_DELIVERY.value,
 )
+
+# Fixed UUIDv5 namespace for folding an inbound ``provider_message_id`` into
+# the UUID-typed stock-ledger ``reference_id`` (F5: console restock idempotency
+# on event replay). Derived via uuid5 of a stable project string under the
+# standard DNS namespace so the key is identical across processes and
+# restarts: same provider message id => same ledger reference, making a
+# redelivered restock detectable.
+_RESTOCK_IDEMPOTENCY_NAMESPACE = uuid5(NAMESPACE_DNS, "socialerp.owner-console.restock")
 
 # =============================================================================
 # Deterministic parser (fixed, tested, bilingual-light)
@@ -388,6 +397,14 @@ _COPY: dict[tuple[str, str], str] = {
     ("delivered_rejected", "sw"): "Haiwezekani kusasisha agizo {ref}: {error}",
     ("restock_ok", "en"): "Received {quantity} x {label}. Available now: {available}.",
     ("restock_ok", "sw"): "Imepokea {quantity} x {label}. Sasa zipo: {available}.",
+    ("restock_already", "en"): (
+        "Already received {quantity} x {label} for this message (duplicate "
+        "delivery ignored). Available now: {available}."
+    ),
+    ("restock_already", "sw"): (
+        "Tayari imepokea {quantity} x {label} kwa ujumbe huu (nakala "
+        "imepuuzwa). Sasa zipo: {available}."
+    ),
     ("restock_blocked", "en"): (
         "Restocking needs autonomy L3 (currently {level}). Nothing changed — use the dashboard."
     ),
@@ -780,15 +797,23 @@ class OwnerConsoleService:
             )
             reply = _t("orders_today", lang, n=count)
         elif command.command == "revenue_today":
-            # SQL aggregation, never model arithmetic: only orders whose money
-            # is actually confirmed count toward revenue.
+            # SQL aggregation, never model arithmetic: revenue = paid AND NOT
+            # refunded — the same predicate as is_revenue_order in
+            # packages/core/insights (plan 8b revenue definition; refund
+            # exclusion refinement: refunds never clear paid_at — money-path
+            # invariant, packages/core/payments/service.py:703-705 — so the
+            # paid_at branch alone would count refunded orders at full value).
+            # Pay-on-delivery paid-then-delivered (completed + paid_at) counts.
             cents = await self._scalar_int(
                 select(func.coalesce(func.sum(Order.total_cents), 0)).where(
                     Order.tenant_id == self.tenant_id,
                     Order.created_at >= start_of_today,
-                    or_(
-                        Order.payment_status == PaymentStatus.COMPLETED.value,
-                        Order.paid_at.is_not(None),
+                    and_(
+                        or_(
+                            Order.payment_status == PaymentStatus.COMPLETED.value,
+                            Order.paid_at.is_not(None),
+                        ),
+                        Order.payment_status != PaymentStatus.REFUNDED.value,
                     ),
                 )
             )
@@ -1142,11 +1167,63 @@ class OwnerConsoleService:
         # way OrderService does, then go through the event-sourced ledger: stock
         # stays the sum of immutable movements (AGENTS.md §5, §8).
         await self._lock_variant(match.variant.id)
+
+        # Idempotency (F5): the worker's outbox relay marks the event processed
+        # in a SEPARATE transaction from this handler's commit
+        # (packages/core/socialerp/outbox.py vs apps/worker/main.py), so a
+        # crash between them redelivers the inbound_message event. Order
+        # creation dedupes via idempotency_key = provider_message_id; without
+        # an equivalent guard the append-only ledger would book this RECEIVE
+        # twice, permanently. StockLedger.reference_id is UUID-typed
+        # (packages/core/domain/stock.py), so the provider message id is folded
+        # into a deterministic UUIDv5 key; the key is stored as the movement's
+        # reference_id and checked BEFORE recording — mirroring
+        # OrderService.get_by_idempotency_key. A replay returns the same
+        # success facts (label + live availability) honestly labelled as a
+        # duplicate, never a second movement.
+        restock_key: UUID | None = None
+        if provider_message_id is not None:
+            restock_key = uuid5(_RESTOCK_IDEMPOTENCY_NAMESPACE, provider_message_id)
+            already = (
+                await self.session.execute(
+                    select(StockMovementModel.id)
+                    .where(
+                        StockMovementModel.tenant_id == self.tenant_id,
+                        StockMovementModel.reference_id == restock_key,
+                        StockMovementModel.movement_type == StockMovementType.RECEIVE.value,
+                    )
+                    .limit(1)
+                )
+            ).first()
+            if already is not None:
+                ledger = await self._load_ledger(match.variant.product_id, match.variant.id)
+                label = f"{match.product_name} ({match.variant.sku})"
+                reply = _t(
+                    "restock_already",
+                    lang,
+                    quantity=command.args.quantity,
+                    label=label,
+                    available=ledger.available,
+                )
+                return await self._finalize(
+                    conversation_id=conversation_id,
+                    contact_id=contact_id,
+                    sender_phone=sender_phone,
+                    owner=owner,
+                    command=command.command,
+                    args=command.args,
+                    policy_decision=policy_decision,
+                    outcome="already_applied",
+                    reply=reply,
+                    provider_message_id=provider_message_id,
+                    gate="console_l3",
+                )
+
         ledger = await self._load_ledger(match.variant.product_id, match.variant.id)
         movement = ledger.record_receive(
             quantity=command.args.quantity,
             unit_cost_cents=None,
-            reference_id=None,
+            reference_id=restock_key,
             reference_type="owner_console",
             reason=StockMovementReason.OTHER,
             notes=f"owner console restock by user {owner.id}",
