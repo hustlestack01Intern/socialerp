@@ -6,11 +6,44 @@ Tests the full 30-minute onboarding flow on fakes.
 
 from __future__ import annotations
 
+from uuid import uuid4
+
 import pytest
 from httpx import AsyncClient
 
 from packages.core.domain import TenantId
+from packages.core.models.core import UserRole
 from packages.core.onboarding.steps import get_total_target_seconds
+
+
+@pytest.fixture
+async def api_client(tenant):
+    """API client authenticated as the tenant's owner.
+
+    Overrides the root `api_client` to attach a real JWT — the onboarding
+    routes authenticate via `get_current_tenant_id`, so a placeholder
+    "Bearer test-token" is rejected with 401.
+    """
+    from httpx import ASGITransport, AsyncClient
+
+    from apps.api.main import app
+    from packages.core.auth.jwt import create_access_token
+
+    token = create_access_token(str(uuid4()), str(tenant.id), [UserRole.OWNER.value])
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        client.headers["X-Tenant-ID"] = str(tenant.id)
+        client.headers["Authorization"] = f"Bearer {token}"
+        yield client
+
+
+async def _start_and_complete(api_client: AsyncClient, step: int) -> None:
+    """Drive a single wizard step through its legal start → complete transition."""
+    start = await api_client.post(f"/api/v1/onboarding/steps/{step}/start")
+    assert start.status_code == 200
+    complete = await api_client.post(f"/api/v1/onboarding/steps/{step}/complete")
+    assert complete.status_code == 200
 
 
 class TestOnboardingWizardE2E:
@@ -35,14 +68,12 @@ class TestOnboardingWizardE2E:
         # Step 1: Business Profile (target: 3 min = 180s)
         response = await api_client.post(
             "/api/v1/onboarding/steps/1/start",
-            headers={"Authorization": "Bearer test-token"},
         )
         assert response.status_code == 200
 
         # Simulate completing step 1
         response = await api_client.post(
             "/api/v1/onboarding/steps/1/complete",
-            headers={"Authorization": "Bearer test-token"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -52,7 +83,6 @@ class TestOnboardingWizardE2E:
         # Step 2: Connect Channels (target: 8 min = 480s)
         response = await api_client.post(
             "/api/v1/onboarding/steps/2/start",
-            headers={"Authorization": "Bearer test-token"},
         )
         assert response.status_code == 200
 
@@ -60,7 +90,6 @@ class TestOnboardingWizardE2E:
         response = await api_client.post(
             "/api/v1/onboarding/steps/2/fallback",
             json={"fallback_type": "NO_META_ASSETS", "fallback_reason": "no_verified_page"},
-            headers={"Authorization": "Bearer test-token"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -69,20 +98,17 @@ class TestOnboardingWizardE2E:
         # Step 3: Catalog Bootstrap (target: 8 min = 480s)
         response = await api_client.post(
             "/api/v1/onboarding/steps/3/start",
-            headers={"Authorization": "Bearer test-token"},
         )
         assert response.status_code == 200
 
         response = await api_client.post(
             "/api/v1/onboarding/steps/3/complete",
-            headers={"Authorization": "Bearer test-token"},
         )
         assert response.status_code == 200
 
         # Step 4: Payments (target: 5 min = 300s)
         response = await api_client.post(
             "/api/v1/onboarding/steps/4/start",
-            headers={"Authorization": "Bearer test-token"},
         )
         assert response.status_code == 200
 
@@ -90,40 +116,34 @@ class TestOnboardingWizardE2E:
         response = await api_client.post(
             "/api/v1/onboarding/steps/4/fallback",
             json={"fallback_type": "NO_DARAJA_TILL", "fallback_reason": "no_till"},
-            headers={"Authorization": "Bearer test-token"},
         )
         assert response.status_code == 200
 
         # Step 5: Rules & Tone (target: 4 min = 240s)
         response = await api_client.post(
             "/api/v1/onboarding/steps/5/start",
-            headers={"Authorization": "Bearer test-token"},
         )
         assert response.status_code == 200
 
         response = await api_client.post(
             "/api/v1/onboarding/steps/5/complete",
-            headers={"Authorization": "Bearer test-token"},
         )
         assert response.status_code == 200
 
         # Step 6: Go Live Shadow Test (target: 2 min = 120s)
         response = await api_client.post(
             "/api/v1/onboarding/steps/6/start",
-            headers={"Authorization": "Bearer test-token"},
         )
         assert response.status_code == 200
 
         response = await api_client.post(
             "/api/v1/onboarding/steps/6/complete",
-            headers={"Authorization": "Bearer test-token"},
         )
         assert response.status_code == 200
 
         # Verify wizard completed
         progress_response = await api_client.get(
             "/api/v1/onboarding",
-            headers={"Authorization": "Bearer test-token"},
         )
         assert progress_response.status_code == 200
         progress = progress_response.json()
@@ -150,21 +170,21 @@ class TestOnboardingWizardE2E:
     @pytest.mark.asyncio
     async def test_launch_approval_gate(self, api_client: AsyncClient):
         """Test the zero-interference launch approval gate."""
-        # Complete wizard first (simplified)
-        # ... steps 1-6 ...
+        # Complete the wizard first — approval requires state COMPLETED.
+        for step in range(1, 7):
+            await _start_and_complete(api_client, step)
 
         # Try to access launch status before approval
         response = await api_client.get(
             "/api/v1/onboarding/launch-status",
-            headers={"Authorization": "Bearer test-token"},
         )
         # Should work but return launch_approved: false
         assert response.status_code == 200
+        assert response.json()["launch_approved"] is False
 
         # Approve launch
         response = await api_client.post(
             "/api/v1/onboarding/approve-launch",
-            headers={"Authorization": "Bearer test-token"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -174,7 +194,6 @@ class TestOnboardingWizardE2E:
         # Verify launch status now shows approved
         response = await api_client.get(
             "/api/v1/onboarding/launch-status",
-            headers={"Authorization": "Bearer test-token"},
         )
         assert response.status_code == 200
         assert response.json()["launch_approved"] is True
@@ -188,7 +207,6 @@ class TestOnboardingConfig:
         """Test getting onboarding configuration."""
         response = await api_client.get(
             "/api/v1/onboarding/config",
-            headers={"Authorization": "Bearer test-token"},
         )
         assert response.status_code == 200
         config = response.json()
@@ -224,7 +242,6 @@ class TestOnboardingStepManagement:
         # Start step 1
         response = await api_client.post(
             "/api/v1/onboarding/steps/1/start",
-            headers={"Authorization": "Bearer test-token"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -234,7 +251,6 @@ class TestOnboardingStepManagement:
         # Complete step 1
         response = await api_client.post(
             "/api/v1/onboarding/steps/1/complete",
-            headers={"Authorization": "Bearer test-token"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -244,16 +260,18 @@ class TestOnboardingStepManagement:
     @pytest.mark.asyncio
     async def test_step_pause_resume(self, api_client: AsyncClient):
         """Test pausing and resuming a step."""
-        # Start step
-        await api_client.post(
+        # The wizard enforces sequencing, so walk the legal transitions to step 2.
+        await _start_and_complete(api_client, 1)
+
+        # Start step 2
+        response = await api_client.post(
             "/api/v1/onboarding/steps/2/start",
-            headers={"Authorization": "Bearer test-token"},
         )
+        assert response.status_code == 200
 
         # Pause
         response = await api_client.post(
             "/api/v1/onboarding/steps/2/pause",
-            headers={"Authorization": "Bearer test-token"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -262,7 +280,6 @@ class TestOnboardingStepManagement:
         # Resume
         response = await api_client.post(
             "/api/v1/onboarding/steps/2/resume",
-            headers={"Authorization": "Bearer test-token"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -271,11 +288,15 @@ class TestOnboardingStepManagement:
     @pytest.mark.asyncio
     async def test_fallback_recording(self, api_client: AsyncClient):
         """Test recording a fallback for a step."""
-        # Start step
-        await api_client.post(
+        # Walk the legal transitions to step 4 (NO_DARAJA_TILL applies to step 4).
+        for step in (1, 2, 3):
+            await _start_and_complete(api_client, step)
+
+        # Start step 4
+        response = await api_client.post(
             "/api/v1/onboarding/steps/4/start",
-            headers={"Authorization": "Bearer test-token"},
         )
+        assert response.status_code == 200
 
         # Trigger fallback
         response = await api_client.post(
@@ -284,7 +305,6 @@ class TestOnboardingStepManagement:
                 "fallback_type": "NO_DARAJA_TILL",
                 "fallback_reason": "no_till_number",
             },
-            headers={"Authorization": "Bearer test-token"},
         )
         assert response.status_code == 200
         data = response.json()
