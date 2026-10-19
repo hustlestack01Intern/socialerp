@@ -154,16 +154,25 @@ class TestMetaWebhookReplay:
 class TestDarajaWebhookReplay:
     """Replay recorded Daraja webhooks through the fake server and real receiver."""
 
+    @staticmethod
+    def _callback_url(tenant, settings) -> str:
+        token = settings.DARAJA_CALLBACK_TOKEN or "test_token"
+        return f"/api/v1/payments/stk/callback/{tenant.id}/{token}"
+
     @pytest.mark.asyncio
-    async def test_stk_push_callback_success_replay(self, api_client: AsyncClient, daraja_fixtures):
+    async def test_stk_push_callback_success_replay(
+        self, api_client: AsyncClient, tenant, daraja_fixtures,
+    ):
         """Test replaying a successful STK push callback."""
+        from socialerp.settings import get_settings as get_app_settings
+
+        settings = get_app_settings()
         fixture = daraja_fixtures["stk_push_callback_success"]
-        get_settings()
 
         body = json.dumps(fixture, separators=(",", ":")).encode()
 
         response = await api_client.post(
-            "/api/v1/payments/stk/callback/test_tenant/test_token",
+            self._callback_url(tenant, settings),
             content=body,
             headers={"Content-Type": "application/json"},
         )
@@ -172,15 +181,18 @@ class TestDarajaWebhookReplay:
 
     @pytest.mark.asyncio
     async def test_stk_push_callback_cancelled_replay(
-        self, api_client: AsyncClient, daraja_fixtures,
+        self, api_client: AsyncClient, tenant, daraja_fixtures,
     ):
         """Test replaying a cancelled STK push callback."""
+        from socialerp.settings import get_settings as get_app_settings
+
+        settings = get_app_settings()
         fixture = daraja_fixtures["stk_push_callback_cancelled"]
 
         body = json.dumps(fixture, separators=(",", ":")).encode()
 
         response = await api_client.post(
-            "/api/v1/payments/stk/callback/test_tenant/test_token",
+            self._callback_url(tenant, settings),
             content=body,
             headers={"Content-Type": "application/json"},
         )
@@ -189,15 +201,18 @@ class TestDarajaWebhookReplay:
 
     @pytest.mark.asyncio
     async def test_stk_push_callback_user_cancelled_replay(
-        self, api_client: AsyncClient, daraja_fixtures,
+        self, api_client: AsyncClient, tenant, daraja_fixtures,
     ):
         """Test replaying a user-cancelled STK push callback."""
+        from socialerp.settings import get_settings as get_app_settings
+
+        settings = get_app_settings()
         fixture = daraja_fixtures["stk_push_callback_user_cancelled"]
 
         body = json.dumps(fixture, separators=(",", ":")).encode()
 
         response = await api_client.post(
-            "/api/v1/payments/stk/callback/test_tenant/test_token",
+            self._callback_url(tenant, settings),
             content=body,
             headers={"Content-Type": "application/json"},
         )
@@ -217,9 +232,42 @@ class TestFakeServerContract:
             assert response.json()["status"] == "healthy"
 
     @pytest.mark.asyncio
-    async def test_fake_meta_send_whatsapp(self, fake_meta_base_url: str):
-        """Test sending a WhatsApp message via fake server."""
+    async def test_fake_meta_send_whatsapp(
+        self, fake_meta_base_url: str, meta_fixtures,
+    ):
+        """Sending free-form text requires an open 24h window.
+
+        The fake enforces the window rule; deliver the recorded inbound message
+        first (signed with the fake's secret), then the reply is accepted.
+        """
+        inbound = meta_fixtures["whatsapp_text_message"]
+        raw = json.dumps(inbound, separators=(",", ":")).encode()
+        signature = "sha256=" + hmac.new(
+            b"test-app-secret", raw, hashlib.sha256,
+        ).hexdigest()
+
         async with AsyncClient(base_url=fake_meta_base_url) as client:
+            # Free-form text before any inbound message is correctly rejected.
+            blocked = await client.post(
+                "/messages",
+                json={
+                    "to": "254712345678",
+                    "type": "text",
+                    "text": {"body": "Test message"},
+                },
+            )
+            assert blocked.status_code == 400
+
+            delivered = await client.post(
+                "/webhook",
+                content=raw,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Hub-Signature-256": signature,
+                },
+            )
+            assert delivered.status_code == 200
+
             response = await client.post(
                 "/messages",
                 json={

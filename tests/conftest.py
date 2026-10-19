@@ -19,7 +19,18 @@ os.environ["POSTGRES_PASSWORD"] = "socialerp"
 os.environ["POSTGRES_DB"] = "socialerp_test"
 os.environ["POSTGRES_HOST"] = "localhost"
 os.environ["POSTGRES_PORT"] = "5432"
+# The API's request-scoped DB dependency (`packages.core.database`) reads
+# `DATABASE_URL` directly. Point it at the test database so tests that exercise
+# real routes (contract replay, onboarding E2E) resolve the same schema the
+# fixtures create — otherwise they hit the empty dev `socialerp` database.
+os.environ["DATABASE_URL"] = "postgresql+asyncpg://socialerp:socialerp@localhost:5432/socialerp_test"
 os.environ["REDIS_URL"] = "redis://localhost:6379/1"
+# Daraja credentials are required to construct the direct provider at callback
+# time. Test-only values; no network call is made when replaying callbacks.
+os.environ.setdefault("DARAJA_CONSUMER_KEY", "test_consumer_key")
+os.environ.setdefault("DARAJA_CONSUMER_SECRET", "test_consumer_secret")
+os.environ.setdefault("DARAJA_PASSKEY", "test_passkey")
+os.environ.setdefault("DARAJA_SHORTCODE", "174379")
 os.environ["SECRET_KEY"] = "test-secret-key-minimum-32-characters-long"
 os.environ["ENCRYPTION_KEY"] = "test-encryption-key-32-bytes-long!!"
 
