@@ -3,7 +3,7 @@ Pytest configuration and shared fixtures.
 """
 
 import os
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Generator
 from uuid import uuid4
 
 import pytest
@@ -62,6 +62,8 @@ _RLS_FUNCTION_SQL = """
 # Tables that carry a tenant key and must enforce row-level security.
 _RLS_TENANT_TABLES = (
     "tenants",
+    "users",
+    "api_keys",
     "audit_log",
     "outbox",
     "idempotency_keys",
@@ -162,7 +164,22 @@ def _schema():
             ),
         )
         conn.execute(sa_text("ALTER ROLE socialerp_app WITH LOGIN PASSWORD 'socialerp_app'"))
+        # Mirror migration 0001: production keeps the RLS helper in a dedicated
+        # `app` schema. Tests that assert the production shape (tests/property)
+        # connect as `socialerp_app` and need this schema + helper to exist.
+        conn.execute(sa_text("CREATE SCHEMA IF NOT EXISTS app"))
+        conn.execute(
+            sa_text(
+                "CREATE OR REPLACE FUNCTION app.current_tenant_id() RETURNS uuid AS $$ "
+                "SELECT NULLIF(current_setting('app.current_tenant_id', true), '')::uuid; "
+                "$$ LANGUAGE sql STABLE",
+            ),
+        )
+        conn.execute(sa_text("GRANT USAGE ON SCHEMA app TO PUBLIC"))
+        conn.execute(sa_text("GRANT EXECUTE ON FUNCTION app.current_tenant_id() TO PUBLIC"))
         conn.execute(sa_text("GRANT USAGE ON SCHEMA public TO socialerp_app"))
+        conn.execute(sa_text("GRANT USAGE ON SCHEMA app TO socialerp_app"))
+        conn.execute(sa_text("GRANT EXECUTE ON FUNCTION app.current_tenant_id() TO socialerp_app"))
         conn.execute(
             sa_text(
                 "GRANT SELECT, INSERT, UPDATE, DELETE "
@@ -330,6 +347,35 @@ def fake_meta_base_url():
 def fake_daraja_base_url():
     """Base URL for fake Daraja server."""
     return os.getenv("DEV_FAKE_DARAJA_URL", "http://localhost:8082")
+
+
+@pytest.fixture(scope="session")
+def fake_meta_server() -> Generator[str]:
+    """Run the canonical fake Meta server (packages.integrations.fake_meta).
+
+    Session-scoped so E2E tests can drive the real webhook → pipeline path and
+    the real Instagram sender against a fake Graph API. Reuses an already
+    healthy server on 8081 (e.g. `make fake-meta` or the contract suite) instead
+    of starting a second process on the same port.
+    """
+    import httpx
+
+    from tests.integrations.server_harness import run_uvicorn
+
+    base_url = "http://127.0.0.1:8081"
+
+    def healthy() -> bool:
+        try:
+            return httpx.get(f"{base_url}/health", timeout=1.0).status_code == 200
+        except Exception:
+            return False
+
+    if healthy():
+        yield base_url
+        return
+
+    with run_uvicorn("packages.integrations.fake_meta.main", 8081) as url:
+        yield url
 
 
 @pytest.fixture

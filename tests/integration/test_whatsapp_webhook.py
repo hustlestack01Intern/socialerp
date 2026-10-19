@@ -33,7 +33,7 @@ def test_settings():
 
     # Override environment variables for test settings BEFORE importing get_settings
     os.environ["DATABASE_URL"] = (
-        "postgresql+asyncpg://socialerp:socialerp@localhost:5433/socialerp_test"
+        "postgresql+asyncpg://socialerp:socialerp@localhost:5432/socialerp_test"
     )
     os.environ["META_APP_SECRET"] = "test_app_secret"
     os.environ["META_VERIFY_TOKEN"] = "test_verify_token"
@@ -82,9 +82,14 @@ def test_verify_token(test_settings):
     return test_settings.meta_verify_token
 
 
-@pytest_asyncio.fixture(scope="session", autouse=True)
-async def init_database(test_settings):
-    """Initialize database tables once per test session."""
+@pytest_asyncio.fixture(autouse=True)
+async def init_database(test_settings, _reset_tables):
+    """Create the referenced tenant before each test.
+
+    The session-scoped schema fixture plus the per-test truncate in the root
+    conftest wipe `tenants` before every test, so the tenant referenced by the
+    webhook payload must be (re)created after `_reset_tables` has run.
+    """
     from uuid import UUID
 
     from packages.core.database import get_db_session, init_db
@@ -113,8 +118,8 @@ async def cleanup_db():
     """Clean up WhatsApp tables before each test using direct connection."""
     import psycopg2
 
-    # Use localhost:5433 for test database when running locally
-    conn = psycopg2.connect("postgresql://socialerp:socialerp@localhost:5433/socialerp_test")
+    # Use localhost:5432 for test database when running locally
+    conn = psycopg2.connect("postgresql://socialerp:socialerp@localhost:5432/socialerp_test")
     conn.autocommit = True
     cur = conn.cursor()
     try:

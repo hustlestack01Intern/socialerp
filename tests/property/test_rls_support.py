@@ -18,7 +18,7 @@ from packages.core.domain import TenantId, UserId, generate_tenant_id, generate_
 # Database Connection
 # =============================================================================
 
-TEST_DB_URL = "postgresql://socialerp_app:socialerp_app@localhost:5432/socialerp"
+TEST_DB_URL = "postgresql://socialerp_app:socialerp_app@localhost:5432/socialerp_test"
 
 
 @contextmanager
@@ -35,7 +35,8 @@ def get_test_connection():
 def get_superuser_connection():
     """Get a superuser connection for test setup (bypasses RLS)."""
     conn = psycopg2.connect(
-        "postgresql://socialerp:socialerp@localhost:5432/socialerp", cursor_factory=RealDictCursor,
+        "postgresql://socialerp:socialerp@localhost:5432/socialerp_test",
+        cursor_factory=RealDictCursor,
     )
     conn.autocommit = True
     try:
@@ -97,14 +98,17 @@ class AuditLogFactory:
         resource_id: str | None = None,
     ):
         """Create an audit log entry."""
+        from uuid import uuid4
+
         with get_superuser_connection() as conn, conn.cursor() as cur:
             cur.execute(
                 """
                     INSERT INTO audit_log
-                        (tenant_id, user_id, action, resource, resource_id, after_json)
-                    VALUES (%s, %s, %s, %s, %s, '{}')
+                        (id, tenant_id, user_id, action, resource, resource_id, after_json)
+                    VALUES (%s, %s, %s, %s, %s, %s, '{}')
                 """,
                 (
+                    str(uuid4()),
                     str(tenant_id),
                     str(user_id) if user_id else None,
                     action,
@@ -139,7 +143,7 @@ class RLSStateMachine:
         self.users = {}
         self.current_tenant = None
         self._superuser_conn = psycopg2.connect(
-            "postgresql://socialerp:socialerp@localhost:5432/socialerp",
+            "postgresql://socialerp:socialerp@localhost:5432/socialerp_test",
             cursor_factory=RealDictCursor,
         )
         self._superuser_conn.autocommit = True

@@ -7,13 +7,13 @@ Sets up environment variables before test collection.
 import os
 
 # Set test environment variables BEFORE any modules are imported
-os.environ["DATABASE_URL"] = (
-    "postgresql+asyncpg://socialerp:socialerp@localhost:5433/socialerp_test"
-)
-os.environ["META_APP_SECRET"] = "test_app_secret"
-os.environ["META_VERIFY_TOKEN"] = "test_verify_token"
+os.environ.setdefault("DATABASE_URL", (
+    "postgresql+asyncpg://socialerp:socialerp@localhost:5432/socialerp_test"
+))
+os.environ.setdefault("META_APP_SECRET", "test_app_secret")
+os.environ.setdefault("META_VERIFY_TOKEN", "test_verify_token")
 # Use a fixed UUID for consistent tenant identification
-os.environ["META_WHATSAPP_PHONE_NUMBER_ID"] = "00000000-0000-0000-0000-000000000001"
+os.environ.setdefault("META_WHATSAPP_PHONE_NUMBER_ID", "00000000-0000-0000-0000-000000000001")
 
 # Clear any cached settings
 import sys
@@ -34,7 +34,7 @@ def pytest_configure(config):
     """Configure pytest with test settings."""
     # Ensure environment variables are set
     os.environ.setdefault(
-        "DATABASE_URL", "postgresql+asyncpg://socialerp:socialerp@localhost:5433/socialerp_test",
+        "DATABASE_URL", "postgresql+asyncpg://socialerp:socialerp@localhost:5432/socialerp_test",
     )
     os.environ.setdefault("META_APP_SECRET", "test_app_secret")
     os.environ.setdefault("META_VERIFY_TOKEN", "test_verify_token")

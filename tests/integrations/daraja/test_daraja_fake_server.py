@@ -13,7 +13,7 @@ class TestFakeDarajaServer:
 
     @pytest.fixture
     def base_url(self):
-        return "http://localhost:8081"
+        return "http://localhost:8083"
 
     @pytest.fixture
     def shortcode(self):

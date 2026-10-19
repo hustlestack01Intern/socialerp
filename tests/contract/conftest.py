@@ -41,6 +41,8 @@ def _ensure_server(module: str, port: int) -> Generator[str]:
 @pytest.fixture(scope="session", autouse=True)
 def fake_provider_servers() -> Generator[None]:
     """Run fake Meta + Daraja servers for the contract-test session."""
-    with _ensure_server("packages.integrations.fake_meta.main", FAKE_META_PORT):
-        with _ensure_server("packages.integrations.fake_daraja.main", FAKE_DARAJA_PORT):
-            yield
+    with (
+        _ensure_server("packages.integrations.fake_meta.main", FAKE_META_PORT),
+        _ensure_server("packages.integrations.fake_daraja.main", FAKE_DARAJA_PORT),
+    ):
+        yield
