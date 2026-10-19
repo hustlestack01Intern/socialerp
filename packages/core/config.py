@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     meta_whatsapp_phone_number_id: str = Field(default="", alias="META_WHATSAPP_PHONE_NUMBER_ID")
     meta_instagram_account_id: str = Field(default="", alias="META_INSTAGRAM_ACCOUNT_ID")
     meta_graph_api_version: str = Field(default="v20.0", alias="META_GRAPH_API_VERSION")
+    # Base URL for the Graph API. Overridable so tests and local dev can point
+    # at the fake server instead of the live Graph API (AGENTS.md §0).
+    meta_graph_url: str = Field(default="https://graph.facebook.com", alias="META_GRAPH_URL")
 
     # Fake Meta (for testing)
     fake_meta_base_url: str = Field(default="http://localhost:8081", alias="FAKE_META_BASE_URL")

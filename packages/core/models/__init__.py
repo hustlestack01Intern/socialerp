@@ -38,6 +38,16 @@ from packages.core.models.delivery import (
     DeliveryZone,
     Rider,
 )
+from packages.core.models.instagram import (
+    InstagramContact,
+    InstagramConversation,
+    InstagramConversationState,
+    InstagramDedupe,
+    InstagramDmEligibility,
+    InstagramMessage,
+    InstagramMessageStatus,
+    InstagramMessageType,
+)
 from packages.core.models.order import (
     Customer,
     Order,
@@ -74,6 +84,11 @@ from packages.core.models.whatsapp import (
     WhatsAppTemplateCategory,
     WhatsAppTemplateStatus,
 )
+from packages.core.onboarding.model import (
+    FallbackType,
+    OnboardingState,
+    OnboardingWizardProgress,
+)
 
 __all__ = [
     "AlertSeverity",
@@ -89,7 +104,18 @@ __all__ = [
     "CustomerTrait",
     "Delivery",
     "DeliveryZone",
+    "FallbackType",
+    "InstagramContact",
+    "InstagramConversation",
+    "InstagramConversationState",
+    "InstagramDedupe",
+    "InstagramDmEligibility",
+    "InstagramMessage",
+    "InstagramMessageStatus",
+    "InstagramMessageType",
     "Location",
+    "OnboardingState",
+    "OnboardingWizardProgress",
     "Order",
     "OrderItem",
     "OrderStatus",

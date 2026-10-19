@@ -125,6 +125,7 @@ class OnboardingWizardService:
         progress.updated_at = now
 
         await self.session.flush()
+        await self.session.commit()
 
         # Emit event (via outbox in real implementation)
         # OnboardingStepStarted(tenant_id, step, started_at=now)
@@ -207,6 +208,9 @@ class OnboardingWizardService:
             "status": "COMPLETED",
             "fallback": fallback_info,
         })
+        # MutableDict tracks the in-place updates above; mark dirty explicitly by
+        # reassigning so the change is always flushed even if the mapping is empty.
+        progress.step_timings = dict(progress.step_timings)
 
         progress.updated_at = now
 
@@ -220,6 +224,7 @@ class OnboardingWizardService:
             # OnboardingWizardCompleted(tenant_id, total_duration_ms, now)
 
         await self.session.flush()
+        await self.session.commit()
         return progress
 
     async def pause_step(self, tenant_id: TenantId, step: int) -> OnboardingWizardProgress:
@@ -233,6 +238,7 @@ class OnboardingWizardService:
             progress.step_timings[step_key]["paused_at"] = datetime.now(UTC).isoformat()
 
         await self.session.flush()
+        await self.session.commit()
         return progress
 
     async def resume_step(self, tenant_id: TenantId, step: int) -> OnboardingWizardProgress:
@@ -246,6 +252,7 @@ class OnboardingWizardService:
             progress.step_timings[step_key]["resumed_at"] = datetime.now(UTC).isoformat()
 
         await self.session.flush()
+        await self.session.commit()
         return progress
 
     # =============================================================================
@@ -257,7 +264,7 @@ class OnboardingWizardService:
         tenant_id: TenantId,
         step: int,
         fallback_type: FallbackType,
-        reason: str,
+        reason: str | None,
     ) -> OnboardingWizardProgress:
         """
         Record a fallback for a step.
@@ -311,12 +318,18 @@ class OnboardingWizardService:
 
         await self.session.flush()
 
-        # Update tenant settings to enable Instagram/WhatsApp channels
+        # Update tenant settings to enable Instagram/WhatsApp channels.
+        # Reassign (do not mutate in place): `Tenant.settings` is a plain JSONB
+        # column, so in-place mutation is invisible to the unit of work.
         tenant = await self.session.get(Tenant, tenant_id)
         if tenant:
-            tenant.settings["launch_approved"] = True
-            tenant.settings["instagram_enabled"] = True
+            tenant.settings = {
+                **tenant.settings,
+                "launch_approved": True,
+                "instagram_enabled": True,
+            }
 
+        await self.session.commit()
         return progress
 
     async def is_launch_approved(self, tenant_id: TenantId) -> bool:

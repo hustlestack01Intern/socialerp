@@ -32,8 +32,6 @@ from packages.integrations.meta.window_tracker import InstagramLimitsManager
 
 logger = logging.getLogger(__name__)
 
-settings = get_settings()
-
 
 class InstagramSender:
     """
@@ -59,12 +57,15 @@ class InstagramSender:
     def http_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client."""
         if self._http_client is None:
-            base_url = "https://graph.facebook.com"
+            conf = get_settings()
+            base_url = conf.meta_graph_url.rstrip("/")
+            if conf.meta_graph_api_version:
+                base_url = f"{base_url}/{conf.meta_graph_api_version}"
             self._http_client = httpx.AsyncClient(
-                base_url=f"{base_url}/{settings.meta_graph_api_version}",
+                base_url=base_url,
                 timeout=30.0,
                 headers={
-                    "Authorization": f"Bearer {settings.meta_app_secret}",
+                    "Authorization": f"Bearer {conf.meta_app_secret}",
                     "Content-Type": "application/json",
                 },
             )
@@ -128,6 +129,8 @@ class InstagramSender:
             meta_message_id=response.get("message_id"),
             metadata_json={"meta_response": response},
         )
+        self.session.add(message)
+        await self.session.flush()
 
         # Update limits
         await self.limits.send_message(tenant_id, thread_id, ig_handle, is_template=False)
@@ -202,6 +205,8 @@ class InstagramSender:
             meta_message_id=response.get("message_id"),
             metadata_json={"meta_response": response},
         )
+        self.session.add(message)
+        await self.session.flush()
 
         # Update limits
         await self.limits.send_message(tenant_id, thread_id, ig_handle, is_template=False)
@@ -276,6 +281,8 @@ class InstagramSender:
             meta_message_id=response.get("message_id"),
             metadata_json={"meta_response": response},
         )
+        self.session.add(message)
+        await self.session.flush()
 
         # Update limits (templates don't consume window)
         await self.limits.send_message(tenant_id, thread_id, ig_handle, is_template=True)
@@ -341,6 +348,8 @@ class InstagramSender:
                 "source_comment_id": comment_id,
             },
         )
+        self.session.add(message)
+        await self.session.flush()
 
         # Mark eligibility as consumed
         await self._consume_eligibility(tenant_id, eligibility.id, message.id)
@@ -359,7 +368,7 @@ class InstagramSender:
 
     async def _send_request(self, tenant_id: TenantId, payload: dict[str, Any]) -> dict[str, Any]:
         """Send request to Meta Graph API."""
-        ig_account_id = settings.meta_instagram_account_id
+        ig_account_id = get_settings().meta_instagram_account_id
         if not ig_account_id:
             raise ValueError("META_INSTAGRAM_ACCOUNT_ID not configured")
 
@@ -590,6 +599,7 @@ class InstagramSender:
             if eligibility.attempts_remaining <= 0:
                 eligibility.consumed_at = datetime.now(UTC)
                 eligibility.consumed_by_message_id = message_id
+            await self.session.flush()
 
 
 class InstagramSenderAdapter:

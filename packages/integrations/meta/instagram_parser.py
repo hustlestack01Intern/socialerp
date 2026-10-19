@@ -41,6 +41,19 @@ def parse_instagram_webhook(payload: dict[str, Any]) -> list[dict[str, Any]]:
                 "ig_professional_account_id": entry.get("id"),
             })
 
+        # Real Meta delivers comments inside `changes[]` with field "comments";
+        # the inner `value` object is the comment itself.
+        for change in entry.get("changes", []):
+            if change.get("field") != "comments":
+                continue
+            value = change.get("value") or {}
+            if value.get("id"):
+                messages.append({
+                    "type": "comment",
+                    "comment": value,
+                    "ig_professional_account_id": entry.get("id"),
+                })
+
         # Process story replies
         for story_reply in entry.get("story_replies", []):
             messages.append({

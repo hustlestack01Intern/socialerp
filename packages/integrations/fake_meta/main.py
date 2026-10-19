@@ -424,6 +424,26 @@ async def send_instagram_message(
 
 
 # =============================================================================
+# Graph-style Instagram send alias
+# =============================================================================
+
+@app.post("/{ig_account_id}/messages")
+async def send_instagram_message_by_account(
+    request: Request,
+    ig_account_id: str,
+    message: InstagramSendMessageRequest,
+    x_hub_signature_256: str = Header(None, alias="X-Hub-Signature-256"),
+):
+    """Graph API style alias: POST /{ig-account-id}/messages.
+
+    The production Graph API posts to `/{ig-account-id}/messages`; the
+    `InstagramSender` uses that shape. Registered after `/instagram/messages`
+    so the more specific literal route still wins.
+    """
+    return await send_instagram_message(request, message, x_hub_signature_256)
+
+
+# =============================================================================
 # Comment-to-DM Private Reply Endpoint
 # =============================================================================
 
@@ -667,6 +687,22 @@ async def get_eligibility_state():
         }
         for comment_id, e in state.instagram_eligibility.items()
     }
+
+
+@app.post("/__fake/state/instagram/eligibility")
+async def seed_eligibility_manual(
+    comment_id: str,
+    thread_id: str,
+    contact_id: str = "unknown",
+):
+    """Seed comment-to-DM eligibility (emulates Meta having seen the comment)."""
+    eligibility = create_instagram_eligibility(
+        comment_id=comment_id,
+        thread_id=thread_id,
+        contact_id=contact_id,
+    )
+    state.instagram_eligibility[comment_id] = eligibility
+    return eligibility
 
 
 @app.post("/__fake/state/instagram/eligibility/{comment_id}/consume")

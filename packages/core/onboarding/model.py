@@ -19,6 +19,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.ext.mutable import MutableDict
 from sqlalchemy.orm import Mapped, mapped_column
 
 from packages.core.models.base import Base
@@ -99,7 +100,7 @@ class OnboardingWizardProgress(Base):
     #   }
     # }
     step_timings: Mapped[dict[str, Any]] = mapped_column(
-        JSONB,
+        MutableDict.as_mutable(JSONB),
         nullable=False,
         default=dict,
         server_default="{}",
@@ -107,7 +108,7 @@ class OnboardingWizardProgress(Base):
 
     # Aggregated fallback flags (for quick queries)
     fallback_flags: Mapped[dict[str, Any]] = mapped_column(
-        JSONB,
+        MutableDict.as_mutable(JSONB),
         nullable=False,
         default=dict,
         server_default="{}",

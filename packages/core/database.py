@@ -48,11 +48,21 @@ def get_session_factory() -> Any:
 
 
 async def get_db_session() -> AsyncGenerator[AsyncSession]:
-    """Get database session for dependency injection."""
+    """Get database session for dependency injection.
+
+    Commits on success and rolls back on error, so a request that mutates the
+    database persists its work when it returns 2xx. Previously the session was
+    only closed, which silently discarded every uncommitted write for handlers
+    that relied on the dependency (webhooks, onboarding).
+    """
     session_factory = get_session_factory()
     async with session_factory() as session:
         try:
             yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
         finally:
             await session.close()
 

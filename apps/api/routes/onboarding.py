@@ -10,6 +10,7 @@ from collections.abc import AsyncGenerator
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from packages.core.auth.dependencies import get_current_tenant_id
@@ -25,6 +26,13 @@ from packages.core.onboarding.steps import (
 )
 
 router = APIRouter(prefix="/api/v1/onboarding", tags=["Onboarding Wizard"])
+
+
+class FallbackRequest(BaseModel):
+    """Request body for recording a step fallback."""
+
+    fallback_type: FallbackType
+    fallback_reason: str | None = Field(default=None)
 
 
 # =============================================================================
@@ -226,8 +234,7 @@ async def resume_step(
 @router.post("/steps/{step}/fallback")
 async def trigger_fallback(
     step: int,
-    fallback_type: str,
-    fallback_reason: str,
+    body: FallbackRequest,
     service: OnboardingWizardService = Depends(get_wizard_service),
     tenant_id: TenantId = Depends(get_tenant_id),
 ) -> dict[str, Any]:
@@ -238,17 +245,11 @@ async def trigger_fallback(
             detail=f"Invalid step: {step}. Must be 1-6.",
         )
 
-    try:
-        fb_type = FallbackType(fallback_type)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid fallback type: {fallback_type}",
-        ) from e
+    fb_type = body.fallback_type
 
     try:
         progress = await service.trigger_fallback(
-            tenant_id, step, fb_type, fallback_reason,
+            tenant_id, step, fb_type, body.fallback_reason,
         )
         return {
             "state": progress.state,

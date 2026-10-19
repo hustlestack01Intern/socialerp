@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import AsyncGenerator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -40,6 +40,7 @@ from packages.core.models.instagram import (
     InstagramConversation,
     InstagramConversationState,
     InstagramDedupe,
+    InstagramDmEligibility,
     InstagramMessage,
     InstagramMessageStatus,
     InstagramMessageType,
@@ -1022,9 +1023,40 @@ async def _process_instagram_comment(
 ) -> None:
     """Process an Instagram comment (for private reply eligibility)."""
 
-    # Comments don't create messages in the same way - they create eligibility records
-    # This is handled by the eligibility tracking in the sender
-    # For now, just log for audit
+    comment_id = norm_comment.get("provider_message_id")
+    if not comment_id:
+        return
+
+    ig_scoped_user_id = norm_comment.get("ig_scoped_user_id")
+
+    # A commenter may be a brand-new contact — create/find them first so the
+    # eligibility row has a valid contact_id.
+    contact_id: UUID | None = None
+    if ig_scoped_user_id:
+        contact = await _get_or_create_instagram_contact(db, tenant_id, norm_comment)
+        contact_id = contact.id
+
+    if contact_id is not None:
+        # Comment-to-DM eligibility: single-use, 7-day window from the comment.
+        existing = await db.execute(
+            select(InstagramDmEligibility).where(
+                InstagramDmEligibility.tenant_id == tenant_id,
+                InstagramDmEligibility.comment_id == comment_id,
+            ),
+        )
+        if existing.scalar_one_or_none() is None:
+            eligibility = InstagramDmEligibility(
+                tenant_id=tenant_id,
+                contact_id=contact_id,
+                comment_id=comment_id,
+                media_id=norm_comment.get("comment_media_id"),
+                thread_id=f"ig:{comment_id}",
+                expires_at=datetime.now(UTC) + timedelta(days=7),
+                attempts_remaining=1,
+            )
+            db.add(eligibility)
+            await db.flush()
+
     audit = AuditLogger(db)
     await audit.log_action(
         tenant_id=tenant_id,
@@ -1032,8 +1064,8 @@ async def _process_instagram_comment(
         action="comment_received",
         resource="instagram_comment",
         after={
-            "comment_id": norm_comment.get("provider_message_id"),
-            "ig_scoped_user_id": norm_comment.get("ig_scoped_user_id"),
+            "comment_id": comment_id,
+            "ig_scoped_user_id": ig_scoped_user_id,
             "ig_handle": norm_comment.get("ig_handle"),
             "media_id": norm_comment.get("comment_media_id"),
             "media_type": norm_comment.get("comment_media_type"),
