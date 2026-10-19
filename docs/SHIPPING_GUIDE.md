@@ -26,7 +26,7 @@ SocialERP is a **multi-tenant, agentic ERP for Kenyan SMEs selling via WhatsApp/
 
 ### Stack (Locked via ADR 0002)
 ```
-Python 3.12 | FastAPI | Pydantic v2 | SQLAlchemy 2 + Alembic
+Python 3.13 (ADR 0022) | FastAPI | Pydantic v2 | SQLAlchemy 2 + Alembic
 PostgreSQL (RLS) | Redis | ARQ (job queue) | Docker Compose
 Next.js PWA (dashboard) | pytest | mypy --strict | ruff
 OpenTelemetry (metrics/traces)

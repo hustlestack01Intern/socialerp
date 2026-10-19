@@ -7,7 +7,7 @@ on:
     branches: [main, develop]
 
 env:
-  PYTHON_VERSION: "3.12"
+  PYTHON_VERSION: "3.13"
   DATABASE_URL: postgresql+asyncpg://socialerp:socialerp@localhost:5432/socialerp
   REDIS_URL: redis://localhost:6379/0
 

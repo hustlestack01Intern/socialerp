@@ -70,7 +70,7 @@ Build a multi-tenant cloud ERP, run by AI agents, that lets a small business in 
 ---
 
 ## 4. ARCHITECTURE
-**Stack** (change only via ADR): Python 3.12, FastAPI, pydantic v2, SQLAlchemy 2 + Alembic, PostgreSQL (RLS), durable job queue (arq/Celery + Redis, or Postgres-based), Docker Compose for local, Next.js PWA for dashboard, pytest, mypy --strict, ruff, OpenTelemetry.
+**Stack** (change only via ADR): Python 3.13 (ADR 0022), FastAPI, pydantic v2, SQLAlchemy 2 + Alembic, PostgreSQL (RLS), durable job queue (arq/Celery + Redis, or Postgres-based), Docker Compose for local, Next.js PWA for dashboard, pytest, mypy --strict, ruff, OpenTelemetry.
 
 **Services** (modular monolith first, clean boundaries for later split):
 1. **channels**: webhook receivers + senders per platform, signature verification, normalized message events, 24h-window tracker, rate limiting.

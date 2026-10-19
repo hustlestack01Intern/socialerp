@@ -6,17 +6,18 @@ services:
     image: postgres:16-alpine
     container_name: socialerp-postgres
     environment:
-      POSTGRES_USER: socialerp
-      POSTGRES_PASSWORD: socialerp
-      POSTGRES_DB: socialerp
+      POSTGRES_USER: ${POSTGRES_USER:-socialerp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-socialerp}
+      POSTGRES_DB: ${POSTGRES_DB:-socialerp}
       POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./infra/sql/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U socialerp -d socialerp"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-socialerp} -d ${POSTGRES_DB:-socialerp}"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -31,15 +32,16 @@ services:
     image: postgres:16-alpine
     container_name: socialerp-postgres-test
     environment:
-      POSTGRES_USER: socialerp
-      POSTGRES_PASSWORD: socialerp
-      POSTGRES_DB: socialerp_test
+      POSTGRES_USER: ${POSTGRES_USER:-socialerp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-socialerp}
+      POSTGRES_DB: ${POSTGRES_DB:-socialerp}_test
     ports:
       - "5433:5432"
     volumes:
       - postgres_test_data:/var/lib/postgresql/data
+      - ./infra/sql/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U socialerp -d socialerp_test"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-socialerp} -d ${POSTGRES_DB:-socialerp}_test"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -103,10 +105,13 @@ services:
       FAKE_META_HOST: 0.0.0.0
       FAKE_META_PORT: 8081
       FAKE_META_LOG_LEVEL: DEBUG
+      META_APP_SECRET: ${META_APP_SECRET:-test_app_secret}
+      META_WEBHOOK_VERIFY_TOKEN: ${META_WEBHOOK_VERIFY_TOKEN:-test_verify_token}
     ports:
       - "8081:8081"
     volumes:
       - ./packages/integrations/fake_meta:/app:ro
+      - ./tests/fixtures/meta:/fixtures:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
       interval: 10s
@@ -131,10 +136,15 @@ services:
       FAKE_DARAJA_HOST: 0.0.0.0
       FAKE_DARAJA_PORT: 8082
       FAKE_DARAJA_LOG_LEVEL: DEBUG
+      DARAJA_CONSUMER_KEY: ${DARAJA_CONSUMER_KEY:-test_consumer_key}
+      DARAJA_CONSUMER_SECRET: ${DARAJA_CONSUMER_SECRET:-test_consumer_secret}
+      DARAJA_PASSKEY: ${DARAJA_PASSKEY:-test_passkey}
+      DARAJA_SHORTCODE: ${DARAJA_SHORTCODE:-174379}
     ports:
       - "8082:8082"
     volumes:
       - ./packages/integrations/fake_daraja:/app:ro
+      - ./tests/fixtures/daraja:/fixtures:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
       interval: 10s
@@ -158,7 +168,7 @@ services:
     environment:
       APP_ENV: development
       APP_DEBUG: "true"
-      DATABASE_URL: postgresql+asyncpg://socialerp:socialerp@postgres:5432/socialerp
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-socialerp}:${POSTGRES_PASSWORD:-socialerp}@postgres:5432/${POSTGRES_DB:-socialerp}
       REDIS_URL: redis://redis:6379/0
       FAKE_META_BASE_URL: http://fake-meta:8081
       FAKE_DARAJA_BASE_URL: http://fake-daraja:8082
@@ -193,7 +203,7 @@ services:
     environment:
       APP_ENV: development
       APP_DEBUG: "true"
-      DATABASE_URL: postgresql+asyncpg://socialerp:socialerp@postgres:5432/socialerp
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-socialerp}:${POSTGRES_PASSWORD:-socialerp}@postgres:5432/${POSTGRES_DB:-socialerp}
       REDIS_URL: redis://redis:6379/0
       FAKE_META_BASE_URL: http://fake-meta:8081
       FAKE_DARAJA_BASE_URL: http://fake-daraja:8082
@@ -216,7 +226,7 @@ services:
       - all
 
   # =============================================================================
-  # Dashboard (Next.js PWA) - placeholder for Phase 0
+  # Dashboard (Next.js PWA)
   # =============================================================================
   dashboard:
     build:

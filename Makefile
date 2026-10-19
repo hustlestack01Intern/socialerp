@@ -106,23 +106,23 @@ eval:
 # =============================================================================
 db-up:
 	@echo "🐳 Starting database services..."
-	docker compose -f infra/docker-compose.yml up -d postgres redis
+	docker compose up -d postgres redis
 
 db-down:
 	@echo "🛑 Stopping database services..."
-	docker compose -f infra/docker-compose.yml down -v
+	docker compose down
 
 migrate: db-up
 	@echo "📦 Running migrations..."
-	cd packages/core && uv run alembic upgrade head
+	uv run alembic upgrade head
 
 migrate-down:
 	@echo "🔄 Rolling back last migration..."
-	cd packages/core && uv run alembic downgrade -1
+	uv run alembic downgrade -1
 
 seed: migrate
 	@echo "🌱 Seeding development data..."
-	cd packages/core && uv run python -m scripts.seed
+	uv run python -m scripts.seed
 
 # =============================================================================
 # RUN SERVICES
@@ -144,11 +144,11 @@ run-dashboard:
 # =============================================================================
 fake-meta:
 	@echo "🤖 Starting Fake Meta server..."
-	docker compose -f infra/docker-compose.yml up -d fake-meta
+	docker compose up -d fake-meta
 
 fake-daraja:
 	@echo "💰 Starting Fake Daraja server..."
-	docker compose -f infra/docker-compose.yml up -d fake-daraja
+	docker compose up -d fake-daraja
 
 fake-all: fake-meta fake-daraja
 
@@ -167,7 +167,7 @@ clean:
 	find . -type f -name ".coverage" -delete 2>/dev/null || true
 	rm -rf htmlcov 2>/dev/null || true
 	rm -rf .coverage 2>/dev/null || true
-	docker compose -f infra/docker-compose.yml down -v 2>/dev/null || true
+	docker compose down 2>/dev/null || true
 
 # =============================================================================
 # CI TARGETS (used in GitHub Actions)

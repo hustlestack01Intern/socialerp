@@ -2,7 +2,7 @@
 name = "socialerp-workspace"
 version = "0.1.0"
 description = "SocialERP - Agentic ERP for Kenyan Social Commerce Sellers"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
     "pydantic>=2.8,<3",
     "pydantic-settings>=2.3,<3",
@@ -114,7 +114,7 @@ members = ["packages/core"]
 socialerp-core = { workspace = true }
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py313"
 line-length = 100
 preview = true
 extend-exclude = [

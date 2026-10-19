@@ -51,7 +51,7 @@ M-Pesa (Safaricom Daraja):
 - STK Push callbacks can be late, duplicated or missing: always support query-status fallback, idempotency and reconciliation.
 
 ## 4. ARCHITECTURE
-Stack (change only via ADR): Python 3.12, FastAPI, pydantic v2, SQLAlchemy 2 + Alembic, PostgreSQL (RLS), a durable job queue (arq/Celery + Redis, or Postgres-based), Docker Compose for local, Next.js PWA for the dashboard, pytest, mypy --strict, ruff, OpenTelemetry.
+Stack (change only via ADR): Python 3.13 (ADR 0022), FastAPI, pydantic v2, SQLAlchemy 2 + Alembic, PostgreSQL (RLS), a durable job queue (arq/Celery + Redis, or Postgres-based), Docker Compose for local, Next.js PWA for the dashboard, pytest, mypy --strict, ruff, OpenTelemetry.
 Services (modular monolith first, with clean boundaries so they can split later):
 1. channels: webhook receivers + senders per platform, signature verification, normalized message events, 24h-window tracker, rate limiting.
 2. conversation: unified inbox, conversation state, human handoff, message log.
