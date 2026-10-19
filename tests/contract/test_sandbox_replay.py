@@ -5,6 +5,8 @@ and real receivers.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 from pathlib import Path
 
@@ -20,7 +22,7 @@ def meta_fixtures():
     fixture_dir = Path(__file__).parent.parent / "fixtures" / "meta"
     fixtures = {}
     for file_path in fixture_dir.glob("*.json"):
-        with open(file_path) as f:
+        with Path(file_path).open() as f:
             fixtures[file_path.stem] = json.load(f)
     return fixtures
 
@@ -31,7 +33,7 @@ def daraja_fixtures():
     fixture_dir = Path(__file__).parent.parent / "fixtures" / "daraja"
     fixtures = {}
     for file_path in fixture_dir.glob("*.json"):
-        with open(file_path) as f:
+        with Path(file_path).open() as f:
             fixtures[file_path.stem] = json.load(f)
     return fixtures
 
@@ -46,8 +48,8 @@ class TestMetaWebhookReplay:
         settings = get_settings()
 
         # Sign the payload
-        import hmac
         import hashlib
+        import hmac
         body = json.dumps(fixture, separators=(",", ":")).encode()
         signature = "sha256=" + hmac.new(
             settings.meta_app_secret.encode(), body, hashlib.sha256
@@ -89,7 +91,9 @@ class TestMetaWebhookReplay:
         assert response.json()["status"] == "received"
 
     @pytest.mark.asyncio
-    async def test_whatsapp_interactive_message_replay(self, api_client: AsyncClient, meta_fixtures):
+    async def test_whatsapp_interactive_message_replay(
+        self, api_client: AsyncClient, meta_fixtures,
+    ):
         """Test replaying a WhatsApp interactive message webhook."""
         fixture = meta_fixtures["whatsapp_interactive_message"]
         settings = get_settings()
@@ -154,7 +158,7 @@ class TestDarajaWebhookReplay:
     async def test_stk_push_callback_success_replay(self, api_client: AsyncClient, daraja_fixtures):
         """Test replaying a successful STK push callback."""
         fixture = daraja_fixtures["stk_push_callback_success"]
-        settings = get_settings()
+        get_settings()
 
         body = json.dumps(fixture, separators=(",", ":")).encode()
 
@@ -167,7 +171,9 @@ class TestDarajaWebhookReplay:
         assert response.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_stk_push_callback_cancelled_replay(self, api_client: AsyncClient, daraja_fixtures):
+    async def test_stk_push_callback_cancelled_replay(
+        self, api_client: AsyncClient, daraja_fixtures,
+    ):
         """Test replaying a cancelled STK push callback."""
         fixture = daraja_fixtures["stk_push_callback_cancelled"]
 
@@ -182,7 +188,9 @@ class TestDarajaWebhookReplay:
         assert response.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_stk_push_callback_user_cancelled_replay(self, api_client: AsyncClient, daraja_fixtures):
+    async def test_stk_push_callback_user_cancelled_replay(
+        self, api_client: AsyncClient, daraja_fixtures,
+    ):
         """Test replaying a user-cancelled STK push callback."""
         fixture = daraja_fixtures["stk_push_callback_user_cancelled"]
 
