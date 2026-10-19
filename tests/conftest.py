@@ -312,13 +312,13 @@ async def api_client(tenant):
 @pytest.fixture
 def fake_meta_base_url():
     """Base URL for fake Meta server."""
-    return os.getenv("DEV_FAKE_META_URL", "http://localhost:8080")
+    return os.getenv("DEV_FAKE_META_URL", "http://localhost:8081")
 
 
 @pytest.fixture
 def fake_daraja_base_url():
     """Base URL for fake Daraja server."""
-    return os.getenv("DEV_FAKE_DARAJA_URL", "http://localhost:8081")
+    return os.getenv("DEV_FAKE_DARAJA_URL", "http://localhost:8082")
 
 
 @pytest.fixture

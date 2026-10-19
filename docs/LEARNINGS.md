@@ -171,6 +171,32 @@ human-approved 2026-10-18).
 
 ---
 
+## 2026-10-19 — Stale green gate discovered (Scribe re-measurement)
+
+### Failures
+- **FAILURE — a green gate claim without a SHA + log after the last code commit is not evidence.**
+  STATE.md reported "764 passed, evals 8/8, ruff clean" from a measurement taken at `e7170d2`,
+  but Phase 9 commits `c4db565..d1344fd`, docs commit `c955fbd` and a dirty Slice-A fragment
+  landed afterwards without any full re-run; CI on `main` was red or absent. Measured
+  2026-10-19 at HEAD `c955fbd` + dirty tree: ruff → 34 errors / 15 files; `pytest tests/contract`
+  → 10 failed / 1 passed; full suite → 788 passed / 15 failed / 22 errors; Makefile references
+  deleted files (lines 109–170). Report: `docs/failures/2026-10-19-stale-green-gate.md`.
+
+### Process fix
+- The scribe re-measures the gate after every wave and records SHA + raw command output in
+  STATE.md; a claim older than the newest code commit is marked stale, not current.
+- CI branch protection on `main` proposed (red gate cannot merge) — pending human approval as
+  a protected zone under `docs/plans/2026-10-19-trial-spine-first-clients.md` (M0).
+
+### Business lesson
+- Projection tables must foot against their own assumptions: PRICING_STRATEGY.md's
+  transaction-MRR projections overstate by ~4–7× vs its own pricing/usage inputs. Corrected,
+  footed figures live in `docs/BUSINESS_PLAN.md` §12 (10 tenants ≈ KES 179K/mo; 50 ≈ 844K;
+  200 ≈ 3.38M; 1000 ≈ 16.9M). PRICING_STRATEGY.md carries a correction banner; its original
+  table is preserved pending owner sign-off. Filed as U59-adjacent uncertainty in UNCERTAINTY.md.
+
+---
+
 ## Template for future entries
 
 ### YYYY-MM-DD — <Phase/Increment name>

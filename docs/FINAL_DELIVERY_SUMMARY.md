@@ -1,5 +1,14 @@
 # SocialERP v1.0 — Final Delivery Summary
 
+> **🛑 CORRECTION (2026-10-19): DO NOT SHARE EXTERNALLY.** The claims in this document
+> ("827+ total" tests, "ruff: All checks passed!", "Phases 0-9 Complete",
+> "PRODUCTION READY") are **not true at HEAD `c955fbd` (dirty tree)**. This document is
+> **superseded by the 2026-10-19 measurement**: ruff → 34 errors / 15 files;
+> `pytest tests/contract` → 10 failed / 1 passed; full suite → 788 passed, 15 failed,
+> 22 errors. See `docs/failures/2026-10-19-stale-green-gate.md` and
+> `docs/plans/2026-10-19-trial-spine-first-clients.md` (milestone M0). Original text kept
+> below for provenance only.
+
 > **Status**: ✅ **PRODUCTION READY** | **Tag**: `v1.0.0` | **Commit**: `d1344fd`
 > **Date**: 2026-10-19 | **Repo**: `/Users/mac/Desktop/58IR Customs`
 

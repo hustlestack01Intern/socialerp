@@ -1,24 +1,47 @@
 # Project State
 
-> State of record. Updated 2026-10-18 by the scribe after the **wave-2** increments:
-> **Phase 8b segments + insights** (`8dbc120`), **Phase 8c owner console** (`fdef945`),
-> **fix pass U30–U37** (`229fd48`), and **skeptic wave-2 fixes F3+F5** (`e7170d2`) — all
-> committed and gate-verified (764 passed, evals 8/8, ruff clean). The earlier **Phase 8a CRM
-> memory** (`713a135`) and **U29 signed tracking tokens** (`19d88ff`) increments are also
-> committed. **Phase 8 is COMPLETE except F1/F2 privacy carve-outs (U51/U52) awaiting human
-> approval**; Phases 0–8 code is done; **Phase 9 is next** (plan at
-> `docs/plans/2026-10-18-phase-9-instagram-onboarding.md`, written, awaiting human go per
-> AGENTS.md §16 sequencing). See UNCERTAINTY.md for U51–U57 (wave-2 residuals). If this
-> contradicts MAP.md or the filesystem, check `git log` and `docs/plans/`.
+> State of record. **Updated 2026-10-19 by the scribe — measured truth at HEAD `c955fbd`
+> with a DIRTY working tree** (uncommitted Slice-A fragment: modified `.github/workflows/ci.yml`,
+> `docker-compose.yml`, `packages/core/pyproject.toml`, `tests/conftest.py`, `uv.lock`, deleted
+> `infra/docker-compose.yml` + `packages/core/alembic*`, plus untracked `docs/BUSINESS_PLAN.md`,
+> `docs/failures/`, `docs/plans/2026-10-19-…`, `tests/contract/`, fake-server pyprojects).
+>
+> **THE GATE IS RED (measured 2026-10-19):**
+> - `uv run ruff check .` → **34 errors across 15 files** (14 in `tests/contract/test_sandbox_replay.py`;
+>   committed-file errors in `packages/core/onboarding/{steps,service,metrics}.py`,
+>   `packages/core/models/instagram.py`, `packages/integrations/meta/webhook.py`,
+>   `packages/integrations/meta/fakes/main.py`, `packages/integrations/fake_meta/main.py`,
+>   `packages/core/socialerp/outbox.py`, `packages/core/models/crm.py`,
+>   `tests/property/test_domain_primitives.py`, `tests/insights/test_insights_reports.py`,
+>   `tests/e2e/test_instagram_channel.py`).
+> - `uv run pytest tests/contract -q` → **10 failed, 1 passed**.
+> - Full suite (subagent run) → **788 passed, 15 failed, 22 errors**.
+> - Makefile lines **109/113/117/121/125/147/151/170** reference deleted
+>   `infra/docker-compose.yml` and `packages/core/alembic.ini`.
+>
+> **SUPERSEDES the previous "764 passed, evals 8/8, ruff clean" claim.** That measurement was
+> taken at `e7170d2` and predates the Phase 9 commits `c4db565..d1344fd`, the docs commit
+> `c955fbd` and the dirty Slice-A fragment; CI on `main` was red or absent. Full failure report:
+> `docs/failures/2026-10-19-stale-green-gate.md`.
+>
+> Phase 9 (Instagram + onboarding) is **merged but was never full-gate-verified**. Billing /
+> trial **does not exist** in the codebase. Next work is **M0 (gate truth)** under
+> `docs/plans/2026-10-19-trial-spine-first-clients.md` — **awaiting human go** (protected zones:
+> billing, tenant-isolation tests, CI gate). See UNCERTAINTY.md U58–U61 (2026-10-19 addendum).
+> Everything below the "Historical" marker describes state as of 2026-10-18 and is retained
+> for context only. If this contradicts MAP.md or the filesystem, check `git log` and `docs/plans/`.
 
 ## Current Phase
-**Phase 8 — COMPLETE except F1/F2 privacy carve-outs (U51/U52) awaiting human approval.**
-Phases 0–8 code is done. **Phase 9 is next** — plan written at
-`docs/plans/2026-10-18-phase-9-instagram-onboarding.md`, awaiting human go per AGENTS.md §16
-sequencing (Phase 9 plan commit `214069c`). Wave-2 commits: `229fd48` (fix pass U30–U37),
-`8dbc120` (Phase 8b segments + insights), `fdef945` (Phase 8c owner console), `e7170d2`
-(skeptic wave-2 fixes F3+F5). The wave-2 gate is green: 764 passed, evals 8/8, ruff clean
-(log: `makecheck-w2-145015.log`, line 163).
+**Gate RED at HEAD `c955fbd` (dirty tree) — measured 2026-10-19; see the header block above
+for exact numbers.** Phase 9 code is merged (`c4db565..d1344fd` + docs `c955fbd`) but never
+passed a full gate. Phase 10 has not started except for an uncommitted Slice-A fragment in the
+working tree. **Next: M0 gate truth → M1 trial spine (B1 tenancy + D-min billing) → M1.5 sales
+surface → M2 pre-go-live gate**, per `docs/plans/2026-10-19-trial-spine-first-clients.md`
+(awaiting human go). No billing, trial or entitlement code exists yet.
+
+---
+
+## HISTORICAL (state as of 2026-10-18 — superseded by the 2026-10-19 measurement above)
 
 - **Phase 8a — CRM memory** (`packages/core/crm/` service + repository, `packages/core/models/crm.py`,
   migration `0012_crm`, `apps/api/routes/crm.py`, `main.py` wiring). Three tenant tables with RLS
@@ -109,6 +132,11 @@ residuals are the honest gaps U22/U25/U26/U27 (U29 RESOLVED by `19d88ff`).
    instrumented 30-minute onboarding wizard.
 
 ## Measured Results (real output, 2026-10-18, at HEAD after `e7170d2` — wave-2 complete)
+> **HISTORICAL — SUPERSEDED (2026-10-19):** this table was measured at `e7170d2`, before the
+> Phase 9 commits `c4db565..d1344fd`, docs `c955fbd` and the dirty Slice-A fragment. The
+> current measured gate at HEAD `c955fbd` is RED — see the header block at the top of this file
+> and `docs/failures/2026-10-19-stale-green-gate.md`. Kept for provenance only.
+
 | Gate | Command | Result |
 |---|---|---|
 | Lint | `uv run ruff check .` | **All checks passed!** |

@@ -312,7 +312,24 @@ Inbound → Webhook → MessageReceived → ConversationManager
     enum rules, read-time evaluation) and deterministic owner reports/anomaly (committed `8dbc120`,
     routers wired at `main.py:165-166`, 37+38 tests green in wave-2 gate)
 
-## Current Phase: Phase 8 COMPLETE (except U51/U52 privacy carve-outs); Phase 9 next
+## Current Phase (updated 2026-10-19 — measured truth)
+
+**Gate is RED at HEAD `c955fbd` with a dirty working tree** (uncommitted Slice-A fragment).
+Measured 2026-10-19: `uv run ruff check .` → 34 errors / 15 files; `uv run pytest tests/contract -q`
+→ 10 failed, 1 passed; full suite (subagent) → 788 passed, 15 failed, 22 errors; Makefile lines
+109/113/117/121/125/147/151/170 reference deleted `infra/docker-compose.yml` and
+`packages/core/alembic.ini`. Evidence: `docs/failures/2026-10-19-stale-green-gate.md`.
+
+- **Phase 9 (Instagram + onboarding wizard)**: commits `c4db565..d1344fd` (+ docs `c955fbd`)
+  are **merged but were never full-gate-verified** — do not treat as complete.
+- **Phase 10**: **not started**, except an uncommitted Slice-A fragment in the working tree.
+- **Billing / trial / entitlement: does not exist** in the codebase.
+- **Next**: M0 (gate truth) → M1 trial spine (B1 tenancy + D-min billing) → M1.5 sales surface
+  → M2 pre-go-live gate, per `docs/plans/2026-10-19-trial-spine-first-clients.md`
+  — **awaiting human go** (protected zones: billing, tenant-isolation tests, CI gate).
+- Prior "764 green" claim (at `e7170d2`) is **superseded** — it predates Phase 9.
+
+### HISTORICAL — phase checklist as of 2026-10-18 (gate claims below were measured at `e7170d2` and are superseded by the RED measurement above)
 - M0: Scaffold, tooling, CI, docs, fake Meta/Daraja servers ✓
 - M1: Multi-tenant core, auth, RLS, audit log, isolation tests ✓
 - M2: WhatsApp channel (webhooks, signature verification, 24h window, inbox, handoff) ✓

@@ -1,5 +1,12 @@
 # SocialERP — Pricing Strategy v1.0
 
+> **⚠️ CORRECTION NOTICE (2026-10-19):** The revenue/projection tables in this document do
+> **not foot against this document's own pricing and usage assumptions** — transaction-MRR
+> projections are overstated by roughly **4–7×**. The corrected, footed figures are in
+> **`docs/BUSINESS_PLAN.md` §12** (10 tenants ≈ KES 179K/mo; 50 ≈ 844K/mo; 200 ≈ 3.38M/mo;
+> 1000 ≈ 16.9M/mo). The original tables below are preserved unchanged pending owner
+> sign-off — do NOT use them for planning or external sharing until corrected.
+
 > **Effective**: 2026-10-19 | **Currency**: KES (Kenyan Shillings) | **Billing**: Monthly in advance
 
 ---
