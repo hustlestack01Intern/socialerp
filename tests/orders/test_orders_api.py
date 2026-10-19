@@ -53,8 +53,8 @@ async def _seed_variant(session, tenant_id: UUID, *, price_cents: int = 5000, qt
 
 
 @pytest.fixture
-async def orders_client(tenant, session_factory) -> AsyncGenerator[AsyncClient, None]:
-    async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
+async def orders_client(tenant, session_factory) -> AsyncGenerator[AsyncClient]:
+    async def override_get_db() -> AsyncGenerator[AsyncSession]:
         async with session_factory() as session:
             yield session
 

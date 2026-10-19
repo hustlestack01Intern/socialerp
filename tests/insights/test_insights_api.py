@@ -51,7 +51,7 @@ def _deny_owner() -> Any:
 
 
 def _install_overrides(tenant: Any, user_id: UUID, session_factory: Any) -> None:
-    async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
+    async def override_get_db() -> AsyncGenerator[AsyncSession]:
         async with session_factory() as session:
             yield session
 
@@ -71,7 +71,7 @@ async def _seed_owner(session_factory: async_sessionmaker[AsyncSession], tenant:
 @pytest.fixture
 async def owner_client(
     tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
-) -> AsyncGenerator[AsyncClient, None]:
+) -> AsyncGenerator[AsyncClient]:
     user_id = await _seed_owner(session_factory, tenant)
     _install_overrides(tenant, user_id, session_factory)
     app.dependency_overrides[require_owner] = lambda: None
@@ -86,7 +86,7 @@ async def owner_client(
 @pytest.fixture
 async def staff_client(
     tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
-) -> AsyncGenerator[AsyncClient, None]:
+) -> AsyncGenerator[AsyncClient]:
     user_id = await _seed_owner(session_factory, tenant)
     _install_overrides(tenant, user_id, session_factory)
     app.dependency_overrides[require_owner] = _deny_owner

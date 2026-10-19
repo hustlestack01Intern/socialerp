@@ -207,7 +207,10 @@ class TestInstagramChannelE2E:
             json={"message": {"text": "Reply 2"}},
         )
         assert response.status_code == 400
-        assert "already sent" in response.json().get("detail", "").lower() or response.status_code == 400
+        assert (
+            "already sent" in response.json().get("detail", "").lower()
+            or response.status_code == 400
+        )
 
     @pytest.mark.asyncio
     async def test_instagram_eligibility_expiry(

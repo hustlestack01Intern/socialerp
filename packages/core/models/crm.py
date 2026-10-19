@@ -264,7 +264,8 @@ class CustomerIdentity(Base):
             name="uq_customer_identities_tenant_customer_channel",
         ),
         Index("ix_customer_identities_tenant_customer", "tenant_id", "customer_id"),
-        Index("ix_customer_identities_tenant_channel_identity", "tenant_id", "channel", "channel_identity"),
+        Index("ix_customer_identities_tenant_channel_identity",
+            "tenant_id", "channel", "channel_identity",),
     )
 
 

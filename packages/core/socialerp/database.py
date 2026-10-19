@@ -63,7 +63,7 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
 
 
 @asynccontextmanager
-async def get_session() -> AsyncGenerator[AsyncSession, None]:
+async def get_session() -> AsyncGenerator[AsyncSession]:
     """Get a database session for a request/worker task."""
     session_factory = get_session_factory()
     async with session_factory() as session:

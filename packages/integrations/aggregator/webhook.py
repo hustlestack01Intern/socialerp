@@ -39,7 +39,7 @@ def get_webhook_settings() -> Any:
     return get_settings()
 
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
+async def get_db() -> AsyncGenerator[AsyncSession]:
     """Get database session."""
     async for session in get_db_session():
         yield session

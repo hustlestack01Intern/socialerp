@@ -196,7 +196,7 @@ async def get_db_session_from_request(request: Request) -> Any:
 
 
 # Alternative: Session dependency that uses middleware context
-async def get_db_with_context(request: Request) -> AsyncGenerator[AsyncSession, None]:
+async def get_db_with_context(request: Request) -> AsyncGenerator[AsyncSession]:
     """Get database session with tenant context already set."""
     from packages.core.database import get_session_factory
 

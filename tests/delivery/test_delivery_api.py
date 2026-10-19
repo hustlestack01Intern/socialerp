@@ -87,7 +87,7 @@ def fake_provider() -> _FakeProvider:
 @pytest.fixture
 async def delivery_client(
     tenant, session_factory, fake_provider, monkeypatch,
-) -> AsyncGenerator[AsyncClient, None]:
+) -> AsyncGenerator[AsyncClient]:
     """Client whose POD provider resolution is stubbed with the fake.
 
     The route resolves the provider *inside* the handler (so a prepay arrival
@@ -101,7 +101,7 @@ async def delivery_client(
 
     monkeypatch.setattr(delivery_routes, "get_tenant_payment_provider", _resolver)
 
-    async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
+    async def override_get_db() -> AsyncGenerator[AsyncSession]:
         async with session_factory() as session:
             yield session
 
@@ -116,10 +116,10 @@ async def delivery_client(
 
 
 @pytest.fixture
-async def plain_client(tenant, session_factory) -> AsyncGenerator[AsyncClient, None]:
+async def plain_client(tenant, session_factory) -> AsyncGenerator[AsyncClient]:
     """Client with NO provider stub: proves prepay arrival never resolves one."""
 
-    async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
+    async def override_get_db() -> AsyncGenerator[AsyncSession]:
         async with session_factory() as session:
             yield session
 

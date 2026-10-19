@@ -27,7 +27,7 @@ def run_uvicorn(
     port: int,
     health_path: str = "/health",
     cleanup_paths: Sequence[str] = (),
-) -> Generator[str, None, None]:
+) -> Generator[str]:
     """Run a uvicorn app in a subprocess until the context exits.
 
     Waits for the health endpoint before yielding. Raises RuntimeError with

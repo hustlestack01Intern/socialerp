@@ -32,7 +32,7 @@ bearer_scheme = HTTPBearer(auto_error=False)
 # =============================================================================
 
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
+async def get_db() -> AsyncGenerator[AsyncSession]:
     """Get database session."""
     async for session in get_db_session():
         yield session

@@ -223,7 +223,7 @@ async def _reset_tables(test_engine):
 
 
 @pytest.fixture(scope="function")
-async def db_session(session_factory) -> AsyncGenerator[AsyncSession, None]:
+async def db_session(session_factory) -> AsyncGenerator[AsyncSession]:
     """Create a new database session for each test."""
     async with session_factory() as session, session.begin():
         yield session

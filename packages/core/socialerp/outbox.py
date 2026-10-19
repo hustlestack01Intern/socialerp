@@ -145,7 +145,10 @@ async def add_outbox_event(
 
 # Convenience functions for common event types
 async def publish_order_created(
-    order_id: UUID, order_data: dict[str, Any], tenant_id: UUID, session: AsyncSession | None = None,
+    order_id: UUID,
+    order_data: dict[str, Any],
+    tenant_id: UUID,
+    session: AsyncSession | None = None,
 ) -> UUID:
     return await add_outbox_event(
         event_type="order.created",

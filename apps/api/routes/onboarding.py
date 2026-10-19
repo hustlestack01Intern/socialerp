@@ -32,7 +32,7 @@ router = APIRouter(prefix="/api/v1/onboarding", tags=["Onboarding Wizard"])
 # =============================================================================
 
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
+async def get_db() -> AsyncGenerator[AsyncSession]:
     async for session in get_db_session():
         yield session
 

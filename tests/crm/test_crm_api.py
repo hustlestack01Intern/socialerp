@@ -49,7 +49,7 @@ async def _seed_actor(session_factory: Any, tenant: Any) -> UUID:
 
 
 def _install_overrides(tenant: Any, user_id: UUID, session_factory: Any) -> None:
-    async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
+    async def override_get_db() -> AsyncGenerator[AsyncSession]:
         async with session_factory() as session:
             yield session
 
@@ -65,7 +65,7 @@ def _deny_owner() -> Any:
 @pytest.fixture
 async def owner_client(
     tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
-) -> AsyncGenerator[AsyncClient, None]:
+) -> AsyncGenerator[AsyncClient]:
     user_id = await _seed_actor(session_factory, tenant)
     _install_overrides(tenant, user_id, session_factory)
     app.dependency_overrides[require_staff] = lambda: None
@@ -81,7 +81,7 @@ async def owner_client(
 @pytest.fixture
 async def staff_client(
     tenant: Tenant, session_factory: async_sessionmaker[AsyncSession],
-) -> AsyncGenerator[AsyncClient, None]:
+) -> AsyncGenerator[AsyncClient]:
     user_id = await _seed_actor(session_factory, tenant)
     _install_overrides(tenant, user_id, session_factory)
     app.dependency_overrides[require_staff] = lambda: None
@@ -403,7 +403,7 @@ async def test_dsr_role_gates_enforced_with_real_jwt_tokens(
     owner_token = create_access_token(str(owner_id), str(tenant.id), [UserRole.OWNER.value])
     staff_token = create_access_token(str(staff_id), str(tenant.id), [UserRole.STAFF.value])
 
-    async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
+    async def override_get_db() -> AsyncGenerator[AsyncSession]:
         async with session_factory() as session:
             yield session
 

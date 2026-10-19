@@ -293,7 +293,7 @@ def get_meter(name: str) -> metrics.Meter:
 @contextmanager
 def trace_operation(
     name: str, attributes: dict[str, Any] | None = None,
-) -> Generator[trace.Span, None, None]:
+) -> Generator[trace.Span]:
     """Context manager for tracing a synchronous operation."""
     tracer = get_tracer(__name__)
     with tracer.start_as_current_span(name) as span:
@@ -311,7 +311,7 @@ def trace_operation(
 @asynccontextmanager
 async def trace_async_operation(
     name: str, attributes: dict[str, Any] | None = None,
-) -> AsyncGenerator[trace.Span, None]:
+) -> AsyncGenerator[trace.Span]:
     """Context manager for tracing an async operation."""
     tracer = get_tracer(__name__)
     span = tracer.start_span(name)

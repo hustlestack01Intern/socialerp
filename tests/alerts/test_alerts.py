@@ -54,10 +54,10 @@ async def _seed_user(session_factory, tenant, user_id: UUID) -> None:
 
 
 @pytest.fixture
-async def alerts_client(tenant, session_factory) -> AsyncGenerator[AsyncClient, None]:
+async def alerts_client(tenant, session_factory) -> AsyncGenerator[AsyncClient]:
     """Client with tenant + db overrides for the authenticated alerts routes."""
 
-    async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
+    async def override_get_db() -> AsyncGenerator[AsyncSession]:
         async with session_factory() as session:
             yield session
 

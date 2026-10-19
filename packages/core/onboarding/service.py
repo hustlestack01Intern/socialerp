@@ -96,7 +96,11 @@ class OnboardingWizardService:
             # Can only start the current step or next step
             if step != progress.current_step and step != progress.current_step + 1:
                 raise ValueError(f"Cannot skip to step {step} from {progress.current_step}")
-        elif progress.state in (OnboardingState.COMPLETED, OnboardingState.FAILED, OnboardingState.ABORTED):
+        elif progress.state in (
+            OnboardingState.COMPLETED,
+            OnboardingState.FAILED,
+            OnboardingState.ABORTED,
+        ):
             raise ValueError(f"Wizard already {progress.state.lower()}")
 
         now = datetime.now(UTC)
@@ -402,7 +406,9 @@ class OnboardingWizardService:
 # =============================================================================
 
 
-async def get_or_create_wizard(tenant_id: TenantId, session: AsyncSession) -> OnboardingWizardProgress:
+async def get_or_create_wizard(
+    tenant_id: TenantId, session: AsyncSession,
+) -> OnboardingWizardProgress:
     """Get or create onboarding wizard progress for a tenant."""
     service = OnboardingWizardService(session)
     return await service.ensure_progress(tenant_id)

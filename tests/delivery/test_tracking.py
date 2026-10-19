@@ -36,10 +36,10 @@ TENANT_PHONE = PII_PHONE
 
 
 @pytest.fixture
-async def tracking_client(tenant, session_factory) -> AsyncGenerator[AsyncClient, None]:
+async def tracking_client(tenant, session_factory) -> AsyncGenerator[AsyncClient]:
     """Client for the PUBLIC tracking routes: get_db override, no auth override."""
 
-    async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
+    async def override_get_db() -> AsyncGenerator[AsyncSession]:
         async with session_factory() as session:
             yield session
 

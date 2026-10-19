@@ -225,7 +225,13 @@ async def test_top_items_respects_top_k(db_session: AsyncSession) -> None:
 
     for i in range(4):
         await add_item(
-            db_session, tenant.id, order, product, quantity=10 - i, name=f"Item-{i}", sku=f"SKU-{i}",
+            db_session,
+            tenant.id,
+            order,
+            product,
+            quantity=10 - i,
+            name=f"Item-{i}",
+            sku=f"SKU-{i}",
         )
 
     report = await InsightsService(db_session).daily_report(TenantId(tenant.id), DAY, top_k=2)

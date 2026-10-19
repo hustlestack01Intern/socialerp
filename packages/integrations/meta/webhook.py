@@ -77,7 +77,7 @@ def get_webhook_settings() -> Any:
 # =============================================================================
 
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
+async def get_db() -> AsyncGenerator[AsyncSession]:
     """Get database session."""
     async for session in get_db_session():
         yield session
@@ -683,7 +683,12 @@ async def _get_or_create_contact(
             (c.get("profile", {}).get("name") for c in contacts if c.get("wa_id") == wa_id), None,
         ),
         profile_picture_url=next(
-            (c.get("profile", {}).get("picture") for c in contacts if c.get("wa_id") == wa_id), None,
+            (
+                c.get("profile", {}).get("picture")
+                for c in contacts
+                if c.get("wa_id") == wa_id
+            ),
+            None,
         ),
     )
 

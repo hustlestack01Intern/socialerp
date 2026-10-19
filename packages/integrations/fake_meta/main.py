@@ -343,7 +343,8 @@ async def send_message(
         # Free-form message - check window
         if not is_within_24h_window(to_phone):
             raise HTTPException(
-                status_code=400, detail="Outside 24h customer service window. Use template message.",
+                status_code=400,
+                detail="Outside 24h customer service window. Use template message.",
             )
     elif message.type == "template":
         # Template messages allowed outside window

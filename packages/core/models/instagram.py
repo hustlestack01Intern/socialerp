@@ -167,8 +167,16 @@ class InstagramContact(Base):
 
     # Indexes & Constraints
     __table_args__ = (
-        UniqueConstraint("tenant_id", "ig_scoped_user_id", name="uq_instagram_contacts_tenant_ig_user_id"),
-        UniqueConstraint("tenant_id", "ig_handle", name="uq_instagram_contacts_tenant_ig_handle"),
+        UniqueConstraint(
+            "tenant_id",
+            "ig_scoped_user_id",
+            name="uq_instagram_contacts_tenant_ig_user_id",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "ig_handle",
+            name="uq_instagram_contacts_tenant_ig_handle",
+        ),
         Index("ix_instagram_contacts_tenant_window", "tenant_id", "window_expires_at"),
         Index("ix_instagram_contacts_tenant_thread", "tenant_id", "thread_id"),
     )
@@ -505,7 +513,11 @@ class InstagramDmEligibility(Base):
 
     # Indexes & Constraints
     __table_args__ = (
-        UniqueConstraint("tenant_id", "comment_id", name="uq_instagram_dm_eligibility_tenant_comment"),
+        UniqueConstraint(
+            "tenant_id",
+            "comment_id",
+            name="uq_instagram_dm_eligibility_tenant_comment",
+        ),
         Index("ix_instagram_dm_eligibility_tenant_expires", "tenant_id", "expires_at"),
     )
 
@@ -547,7 +559,9 @@ class InstagramDedupe(Base):
     # Constraints
     __table_args__ = (
         UniqueConstraint(
-            "tenant_id", "provider_message_id", name="uq_instagram_dedupe_tenant_provider_id",
+            "tenant_id",
+            "provider_message_id",
+            name="uq_instagram_dedupe_tenant_provider_id",
         ),
         Index("ix_instagram_dedupe_tenant_processed", "tenant_id", "processed_at"),
     )

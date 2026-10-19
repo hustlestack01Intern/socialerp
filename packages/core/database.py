@@ -47,7 +47,7 @@ def get_session_factory() -> Any:
     return _session_factory
 
 
-async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
+async def get_db_session() -> AsyncGenerator[AsyncSession]:
     """Get database session for dependency injection."""
     session_factory = get_session_factory()
     async with session_factory() as session:
@@ -58,7 +58,7 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 @asynccontextmanager
-async def get_db_context() -> AsyncGenerator[AsyncSession, None]:
+async def get_db_context() -> AsyncGenerator[AsyncSession]:
     """Context manager for database session (for non-FastAPI usage)."""
     session_factory = get_session_factory()
     async with session_factory() as session:

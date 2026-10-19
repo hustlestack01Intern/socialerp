@@ -86,7 +86,10 @@ TOTAL_TARGET_SECONDS = sum(c.target_seconds for c in STEP_CONFIG.values())
 # Fallback type definitions
 FALLBACK_TYPES: dict[str, dict[str, Any]] = {
     "MANUAL_PAYMENT_MODE": {
-        "description": "No Daraja Till or aggregator credentials; run in manual payment confirmation mode",
+        "description": (
+            "No Daraja Till or aggregator credentials; "
+            "run in manual payment confirmation mode"
+        ),
         "step": 4,
         "blocks_go_live": False,
         "async_guidance": True,
@@ -98,7 +101,10 @@ FALLBACK_TYPES: dict[str, dict[str, Any]] = {
         "async_guidance": False,
     },
     "NO_META_ASSETS": {
-        "description": "No verified FB Page/IG Professional account; assisted mode (agent drafts, owner sends)",
+        "description": (
+            "No verified FB Page/IG Professional account; "
+            "assisted mode (agent drafts, owner sends)"
+        ),
         "step": 2,
         "blocks_go_live": False,
         "async_guidance": True,

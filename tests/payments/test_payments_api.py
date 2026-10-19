@@ -76,10 +76,10 @@ def provider() -> FakeProvider:
 @pytest.fixture
 async def payments_client(
     tenant, session_factory, provider: FakeProvider,
-) -> AsyncGenerator[AsyncClient, None]:
+) -> AsyncGenerator[AsyncClient]:
     """Client with tenant/db/provider overridden for the payments routes."""
 
-    async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
+    async def override_get_db() -> AsyncGenerator[AsyncSession]:
         async with session_factory() as session:
             yield session
 

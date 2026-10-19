@@ -166,7 +166,10 @@ groups:
   rules:
   - alert: OnboardingMedianExceeds30Min
     expr: |
-      histogram_quantile(0.50, sum(rate(onboarding_wizard_total_duration_seconds_bucket[1h])) by (le)) > 1800
+      histogram_quantile(
+        0.50,
+        sum(rate(onboarding_wizard_total_duration_seconds_bucket[1h])) by (le),
+      ) > 1800
     for: 15m
     labels: {severity: "warning", team: "onboarding"}
     annotations:
@@ -175,7 +178,13 @@ groups:
 
   - alert: OnboardingStepMedianExceeds2xTarget
     expr: |
-      sum by (step) (histogram_quantile(0.50, sum(rate(onboarding_wizard_step_duration_seconds_bucket{status="COMPLETED"}[1h])) by (le, step)))
+      sum by (step) (
+        histogram_quantile(
+          0.50,
+          sum(rate(onboarding_wizard_step_duration_seconds_bucket{status="COMPLETED"}[1h]))
+            by (le, step),
+        )
+      )
       >
       sum by (step) (onboarding_wizard_step_target_seconds * 2)
     for: 10m

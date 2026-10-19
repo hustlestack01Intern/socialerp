@@ -147,7 +147,8 @@ class TestMoney:
         assert Money.from_kes(raw_kes).cents == expected_cents
 
     @given(
-        st.integers(min_value=0, max_value=1_000_000), st.integers(min_value=0, max_value=1_000_000),
+        st.integers(min_value=0, max_value=1_000_000),
+        st.integers(min_value=0, max_value=1_000_000),
     )
     def test_addition_commutative(self, a: int, b: int):
         """Money addition is commutative."""
@@ -156,7 +157,8 @@ class TestMoney:
         assert (m1 + m2).cents == (m2 + m1).cents
 
     @given(
-        st.integers(min_value=0, max_value=1_000_000), st.integers(min_value=0, max_value=1_000_000),
+        st.integers(min_value=0, max_value=1_000_000),
+        st.integers(min_value=0, max_value=1_000_000),
     )
     def test_addition_associative(self, a: int, b: int):
         """Money addition is associative."""
@@ -165,14 +167,20 @@ class TestMoney:
         m3 = Money.from_cents(100)
         assert ((m1 + m2) + m3).cents == (m1 + (m2 + m3)).cents
 
-    @given(st.integers(min_value=0, max_value=1_000_000), st.integers(min_value=1, max_value=100))
+    @given(
+        st.integers(min_value=0, max_value=1_000_000),
+        st.integers(min_value=1, max_value=100),
+    )
     def test_multiplication_by_int(self, cents: int, multiplier: int):
         """Multiplication by integer scales correctly."""
         money = Money.from_cents(cents)
         result = money * multiplier
         assert result.cents == cents * multiplier
 
-    @given(st.integers(min_value=100, max_value=1_000_000), st.integers(min_value=1, max_value=100))
+    @given(
+        st.integers(min_value=100, max_value=1_000_000),
+        st.integers(min_value=1, max_value=100),
+    )
     def test_division_by_int(self, cents: int, divisor: int):
         """Integer division truncates correctly."""
         money = Money.from_cents(cents)
@@ -180,7 +188,8 @@ class TestMoney:
         assert result.cents == cents // divisor
 
     @given(
-        st.integers(min_value=0, max_value=1_000_000), st.integers(min_value=0, max_value=1_000_000),
+        st.integers(min_value=0, max_value=1_000_000),
+        st.integers(min_value=0, max_value=1_000_000),
     )
     def test_subtraction_no_negative(self, a: int, b: int):
         """Subtraction never produces negative (raises instead)."""
@@ -199,7 +208,8 @@ class TestMoney:
             Money.from_cents(-1)
 
     @given(
-        st.integers(min_value=0, max_value=1_000_000), st.integers(min_value=0, max_value=1_000_000),
+        st.integers(min_value=0, max_value=1_000_000),
+        st.integers(min_value=0, max_value=1_000_000),
     )
     def test_comparison_operators(self, a: int, b: int):
         """Comparison operators work correctly."""

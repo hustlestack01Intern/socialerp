@@ -462,7 +462,8 @@ async def _send_whatsapp_message(phone_number_id: str, message: WhatsAppMessage)
         if not is_window_open(tenant_id, "whatsapp", customer_id, phone_number_id):
             # Outside window - only templates allowed
             raise HTTPException(
-                status_code=400, detail="Outside 24h customer service window. Use template message.",
+                status_code=400,
+                detail="Outside 24h customer service window. Use template message.",
             )
 
     # Generate Meta message ID
