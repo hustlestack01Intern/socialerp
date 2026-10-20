@@ -16,6 +16,7 @@ Two extractors:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from enum import Enum
@@ -198,6 +199,10 @@ async def extract_intent(
             temperature=0.0,
             response_schema=IntentResult.model_json_schema(),
             tenant_id=tenant_id,
+            # Deterministic key so CachingGateway can dedupe identical extraction
+            # requests (same tenant + model + messages). Without this the cache
+            # layer was inert (U64/U65).
+            cache_key=_extraction_cache_key(tenant_id, model, message),
         ),
     )
     try:
@@ -213,6 +218,16 @@ async def extract_intent(
     if detect_injection(message) and not result.injection_detected:
         result = result.model_copy(update={"injection_detected": True})
     return result
+
+
+def _extraction_cache_key(tenant_id: str | None, model: str, message: str) -> str:
+    """Stable, collision-resistant cache key for one extraction request.
+
+    Scoping by tenant prevents a cache hit from leaking another tenant's
+    completion (and keeps the per-tenant cost accounting honest).
+    """
+    raw = f"{tenant_id or ''}\x00{model}\x00{message}"
+    return hashlib.sha256(raw.encode()).hexdigest()
 
 
 # --- deterministic extractor (offline / CI) --------------------------------
@@ -330,13 +345,23 @@ class LLMIntentExtractor:
         *,
         model: str,
         history: list[LLMMessage] | None = None,
+        tenant_id: str | None = None,
     ) -> None:
         self.gateway = gateway
         self.model = model
         self.history = history
+        self.tenant_id = tenant_id
 
     async def extract(self, message: str) -> IntentResult:
-        return await extract_intent(self.gateway, message, model=self.model, history=self.history)
+        return await extract_intent(
+            self.gateway,
+            message,
+            model=self.model,
+            history=self.history,
+            # Scoping the request to the tenant fixes the shared-bucket spend cap
+            # bug and scopes the completion cache (U64).
+            tenant_id=self.tenant_id,
+        )
 
 
 __all__ = [

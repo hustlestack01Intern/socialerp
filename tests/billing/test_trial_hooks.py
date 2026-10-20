@@ -33,14 +33,15 @@ async def _subscription_row(session_factory, tenant_id):
 
 class TestRegisterCreatesPending:
     async def test_register_creates_pending_subscription(self, api_client, session_factory):
+        email = f"owner-{uuid4().hex[:6]}@example.com"
         # Register a fresh tenant through the real endpoint.
         resp = await api_client.post(
             "/api/v1/auth/register",
             json={
                 "business_name": "Kibera Kicks",
                 "slug": f"kibera-{uuid4().hex[:6]}",
-                "email": f"owner-{uuid4().hex[:6]}@example.com",
-                "owner_email": f"owner-{uuid4().hex[:6]}@example.com",
+                "email": email,
+                "owner_email": email,
                 "owner_password": "S3cret-pass!",
                 "owner_name": "Amina",
                 "phone": "254712000111",
@@ -52,24 +53,28 @@ class TestRegisterCreatesPending:
             row = (
                 await session.execute(
                     text(
-                        "SELECT plan, status, period_end FROM subscriptions "
-                        "ORDER BY created_at DESC LIMIT 1"
-                    )
+                        "SELECT s.plan, s.status, s.period_end FROM subscriptions s "
+                        "JOIN tenants t ON t.id = s.tenant_id "
+                        "WHERE t.owner_email = :email"
+                    ),
+                    {"email": email},
                 )
-            ).one()
+            ).one_or_none()
+        assert row is not None
         assert row.plan == "trial"
         assert row.status == SubscriptionStatus.PENDING.value
         # Pending must NOT have burned the trial clock.
         assert row.period_end is None
 
     async def test_register_does_not_start_trial_clock(self, api_client, session_factory):
+        email = f"nochan-{uuid4().hex[:6]}@example.com"
         resp = await api_client.post(
             "/api/v1/auth/register",
             json={
                 "business_name": "No Channel Biz",
                 "slug": f"nochan-{uuid4().hex[:6]}",
-                "email": f"nochan-{uuid4().hex[:6]}@example.com",
-                "owner_email": f"nochan-{uuid4().hex[:6]}@example.com",
+                "email": email,
+                "owner_email": email,
                 "owner_password": "S3cret-pass!",
                 "owner_name": "Owner",
                 "phone": "254712000222",
@@ -79,9 +84,15 @@ class TestRegisterCreatesPending:
         async with session_factory() as session:
             row = (
                 await session.execute(
-                    text("SELECT status, period_start FROM subscriptions LIMIT 1")
+                    text(
+                        "SELECT s.status, s.period_start FROM subscriptions s "
+                        "JOIN tenants t ON t.id = s.tenant_id "
+                        "WHERE t.owner_email = :email"
+                    ),
+                    {"email": email},
                 )
-            ).one()
+            ).one_or_none()
+        assert row is not None
         assert row.status == SubscriptionStatus.PENDING.value
         assert row.period_start is None
 
@@ -144,49 +155,54 @@ class TestOnboardingStepTwoStartsTrial:
 
 
 class TestPendingExpiry:
-    async def test_pending_past_window_is_cancelled(self, session_factory, tenant):
-        """A signup that never connects for TRIAL_PENDING_EXPIRY_DAYS is cancelled."""
-        from packages.core.billing import BillingService
-
+    async def _fresh_tenant(self, session_factory, *, pending_since):
+        tid = uuid4()
         async with session_factory() as session, session.begin():
-            older = datetime.now(UTC) - timedelta(days=45)
+            await session.execute(
+                text(
+                    "INSERT INTO tenants "
+                    "(id, name, owner_phone, owner_email, is_active, settings) "
+                    "VALUES (:id, 'Never Connected', '254700000000', "
+                    "'never@example.com', true, '{}'::jsonb) ON CONFLICT DO NOTHING"
+                ),
+                {"id": str(tid)},
+            )
             await session.execute(
                 text(
                     "INSERT INTO subscriptions "
                     "(id, tenant_id, plan, status, created_at, updated_at) "
                     "VALUES (gen_random_uuid(), :tid, 'trial', 'pending', :ts, :ts)"
                 ),
-                {"tid": str(tenant.id), "ts": older},
+                {"tid": str(tid), "ts": pending_since},
             )
+        return tid
 
+    async def test_pending_past_window_is_cancelled(self, session_factory):
+        """A signup that never connects for TRIAL_PENDING_EXPIRY_DAYS is cancelled."""
+        from packages.core.billing import BillingService
+
+        tid = await self._fresh_tenant(
+            session_factory, pending_since=datetime.now(UTC) - timedelta(days=45)
+        )
         async with session_factory() as session:
             svc = BillingService(session)
             cancelled = await svc.expire_pending_subscriptions()
             await session.commit()
         assert cancelled >= 1
 
-        row = await _subscription_row(session_factory, tenant.id)
+        row = await _subscription_row(session_factory, tid)
         assert row is not None
         assert row.status == SubscriptionStatus.CANCELLED.value
 
-    async def test_recent_pending_is_not_cancelled(self, session_factory, tenant):
+    async def test_recent_pending_is_not_cancelled(self, session_factory):
         from packages.core.billing import BillingService
 
-        async with session_factory() as session, session.begin():
-            await session.execute(
-                text(
-                    "INSERT INTO subscriptions "
-                    "(id, tenant_id, plan, status, created_at, updated_at) "
-                    "VALUES (gen_random_uuid(), :tid, 'trial', 'pending', now(), now())"
-                ),
-                {"tid": str(tenant.id)},
-            )
-
+        tid = await self._fresh_tenant(session_factory, pending_since=datetime.now(UTC))
         async with session_factory() as session:
             svc = BillingService(session)
             cancelled = await svc.expire_pending_subscriptions()
             await session.commit()
         assert cancelled == 0
-        row = await _subscription_row(session_factory, tenant.id)
+        row = await _subscription_row(session_factory, tid)
         assert row is not None
         assert row.status == SubscriptionStatus.PENDING.value

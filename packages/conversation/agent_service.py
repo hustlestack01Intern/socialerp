@@ -55,6 +55,15 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_AUTONOMY = AutonomyLevel.L0_SHADOW
 
+# Deterministic, safe holding reply sent when the tenant is not entitled to the
+# agent (plan expired/cancelled/pending). It contains no price, stock, delivery
+# promise or payment claim — it only acknowledges and routes to a human, so the
+# customer is never silently dropped (invariant I3/I4).
+HOLDING_REPLY = (
+    "Asante kwa ujumbe wako! Tumepokea ombi lako na mtu wa timu yetu "
+    "atakujibu hivi punde. Thank you — our team will get back to you shortly."
+)
+
 # Facts keys read from ``tenant.settings`` (all optional, never invented).
 _FACT_HOURS = "hours"
 _FACT_DELIVERY_AREAS = "delivery_areas"
@@ -160,7 +169,7 @@ class ConversationAgentService:
 
         settings = get_settings()
         gateway = build_default_gateway(settings)
-        return LLMIntentExtractor(gateway, model=settings.LLM_MODEL)
+        return LLMIntentExtractor(gateway, model=settings.LLM_MODEL, tenant_id=str(self.tenant_id))
 
     async def aclose(self) -> None:
         """Release the sender's resources (no-op for test doubles)."""
@@ -224,6 +233,17 @@ class ConversationAgentService:
         if owner_result is not None:
             return owner_result
 
+        # Billing entitlement gate (plan M1.4). Runs BEFORE any LLM construction,
+        # so a denied tenant costs zero model spend. The gate can only deny agent
+        # LLM spend; inbound persistence, the holding reply and human handoff are
+        # always available (invariant I3/I4).
+        denial = await self._check_entitlement(
+            conversation_id=conversation_id,
+            contact_id=contact_id,
+        )
+        if denial is not None:
+            return denial
+
         settings = await self._load_settings()
         autonomy = self._autonomy or autonomy_from_settings(settings)
         catalog = await self._build_catalog()
@@ -276,6 +296,85 @@ class ConversationAgentService:
         )
 
     # -- owner console hook (Phase 8c) -------------------------------------
+
+    async def _check_entitlement(
+        self,
+        *,
+        conversation_id: UUID,
+        contact_id: UUID,
+    ) -> ConversationAgentResult | None:
+        """Return a safe result if the tenant may not use the agent, else None.
+
+        No LLM is constructed on the denied path (zero model spend). The denial
+        is audited and the deterministic holding reply is persisted as a draft
+        (never auto-sent): the customer is acknowledged and the owner can step in.
+        """
+        from socialerp.settings import get_settings
+
+        if not get_settings().BILLING_ENTITLEMENT_ENABLED:
+            return None
+
+        # Lazy import keeps billing out of the import graph unless used.
+        from packages.core.billing import BillingService
+
+        decision = await BillingService(self.session).check_entitlement(self.tenant_id)
+        if decision.entitled:
+            return None
+
+        await self._audit_entitlement_denial(decision)
+        sent = await self._persist_holding_reply(
+            conversation_id=conversation_id,
+            contact_id=contact_id,
+        )
+        logger.info(
+            "Agent denied by entitlement",
+            extra={"tenant_id": str(self.tenant_id), "reason": decision.reason},
+        )
+        return ConversationAgentResult(
+            intent="entitlement_denied",
+            action=decision.reason,
+            reply_text=HOLDING_REPLY,
+            sent=sent,
+            grounded=True,
+            requires_human=True,
+            order_id="",
+            tools_used=(),
+        )
+
+    async def _audit_entitlement_denial(self, decision: object) -> None:
+        reason = getattr(decision, "reason", "unknown")
+        plan = getattr(decision, "plan", "unknown")
+        audit = AuditLogger(self.session)
+        await audit.log_action(
+            tenant_id=self.tenant_id,
+            user_id=None,
+            action="billing.agent_denied",
+            resource="tenant",
+            resource_id=str(self.tenant_id),
+            after={"reason": reason, "plan": str(plan)},
+        )
+        await self.session.flush()
+
+    async def _persist_holding_reply(
+        self,
+        *,
+        conversation_id: UUID,
+        contact_id: UUID,
+    ) -> bool:
+        """Persist the holding reply as a draft (never auto-sent)."""
+        message = WhatsAppMessage(
+            tenant_id=self.tenant_id,
+            contact_id=contact_id,
+            conversation_id=conversation_id,
+            direction="outbound",
+            message_type=WhatsAppMessageType.TEXT,
+            status=WhatsAppMessageStatus.DRAFT,
+            text_body=HOLDING_REPLY,
+            metadata_json={"autonomy": "entitlement_gate", "action": "holding_reply"},
+        )
+        self.session.add(message)
+        await self.session.flush()
+        return False
 
     async def _try_owner_console(
         self,

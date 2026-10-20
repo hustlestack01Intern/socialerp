@@ -282,6 +282,14 @@ async def tenant(test_engine) -> Tenant:
         )
         session.add(tenant)
         await session.flush()
+
+        # Baseline entitlement (M1.4): a persisted, active tenant is entitled to
+        # the agent, so tests that exercise real agent behaviour do not have to
+        # provision billing. Tests that assert *denial* overwrite/replace this
+        # row (expired / pending / cancelled) explicitly.
+        from packages.core.billing import BillingService
+
+        await BillingService(session).start_trial(tenant.id, channel="whatsapp")
         return tenant
 
 
