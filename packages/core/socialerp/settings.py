@@ -170,6 +170,29 @@ class Settings(BaseSettings):
     FEATURE_AI_AGENT_L3: bool = False
 
     # -------------------------------------------------------------------------
+    # Tenancy / billing gates (trial spine, plan M1)
+    # -------------------------------------------------------------------------
+    # When True, `TenantContextMiddleware` is registered on the API: it fails
+    # closed (401) on non-public paths without a valid bearer JWT and sets the
+    # `app.current_tenant_id` GUC so Row-Level Security is active on the API
+    # path (U23). Default False so dev/test keep today's behaviour; a production
+    # startup guard refuses to boot prod with this off.
+    TENANCY_MIDDLEWARE_ENABLED: bool = False
+    # When True (default in production), the agent entitlement gate denies LLM
+    # spend for tenants whose plan is expired/pending or over cap, replying with
+    # a deterministic holding message + handoff (zero LLM calls). Emergency
+    # escape hatch: set False to bypass the gate entirely.
+    BILLING_ENTITLEMENT_ENABLED: bool = True
+    # Trial length from channel connect (U60). One human-approved extension of
+    # TRIAL_EXTENSION_DAYS is permitted.
+    TRIAL_LENGTH_DAYS: int = 14
+    TRIAL_EXTENSION_DAYS: int = 7
+    # A tenant that signs up but never connects a channel stays `pending`; after
+    # this many days the pending row expires to `cancelled` so a verified number
+    # is not permanently blocked (M1.3).
+    TRIAL_PENDING_EXPIRY_DAYS: int = 30
+
+    # -------------------------------------------------------------------------
     # Onboarding
     # -------------------------------------------------------------------------
     ONBOARDING_WIZARD_ENABLED: bool = True

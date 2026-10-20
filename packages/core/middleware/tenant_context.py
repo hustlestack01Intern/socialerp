@@ -1,71 +1,92 @@
 """
 Tenant Context Middleware
 
-FastAPI middleware that extracts JWT from Authorization header,
-validates it, and sets the PostgreSQL session variable
-`app.current_tenant_id` for Row-Level Security enforcement.
+FastAPI middleware that extracts the JWT from the ``Authorization`` header,
+validates it, and records which tenant is acting.
+
+Design (ADR 0023, plan M1.1 / U62):
+
+* The middleware decides *whether* a tenant is acting at the HTTP edge. When
+  ``TENANCY_MIDDLEWARE_ENABLED`` is on it fails closed (401) on non-public paths
+  without a valid bearer token.
+* The middleware never owns a database session. It publishes the tenant id via
+  the ``socialerp.tenancy.current_tenant_id`` contextvar and on ``request.state``;
+  ``packages.core.database.get_db_session`` reads the contextvar and runs a
+  **parameterized** ``set_config('app.current_tenant_id', :tid, true)`` on the
+  session the route actually uses, so Row-Level Security is active (U23).
+
+Path matching is prefix-based (see ``PUBLIC_EXACT_PATHS`` / ``PUBLIC_PATH_PREFIXES``).
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncGenerator, Awaitable, Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
-from fastapi import HTTPException, Request, Response, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import Request, Response, status
+from socialerp.settings import get_settings
+from socialerp.tenancy import reset_current_tenant_id, set_current_tenant_id
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
 from packages.core.auth.jwt import decode_access_token
-from packages.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# Paths that don't require authentication
-PUBLIC_PATHS = {
+# Paths matched exactly (never as a prefix — ``/`` as a prefix would match
+# the whole API).
+PUBLIC_EXACT_PATHS: frozenset[str] = frozenset({
+    "/",
     "/health",
+    "/metrics",
     "/docs",
-    "/openapi.json",
     "/redoc",
-    "/auth/login",
-    "/auth/refresh",
-    "/api/v1/webhooks/whatsapp",
-    "/api/v1/webhooks/instagram",
-    "/api/v1/webhooks/daraja",
-    "/api/v1/webhooks/aggregator",
-}
+    "/openapi.json",
+    "/api/v1/auth/login",
+    "/api/v1/auth/register",
+    "/api/v1/auth/refresh",
+})
+
+# Prefixes matched with ``str.startswith``. Every entry ends in ``/`` so a
+# sibling route (e.g. ``/api/v1/tracking-admin``) can never sneak in.
+PUBLIC_PATH_PREFIXES: tuple[str, ...] = (
+    "/api/v1/webhooks/",
+    "/api/v1/payments/stk/callback/",
+    "/api/v1/tracking/",
+    "/tracking/",
+)
+
+
+def is_public_path(path: str) -> bool:
+    """Return True if ``path`` is public (no bearer token required)."""
+    if path in PUBLIC_EXACT_PATHS:
+        return True
+    return any(path.startswith(prefix) for prefix in PUBLIC_PATH_PREFIXES)
 
 
 class TenantContextMiddleware(BaseHTTPMiddleware):
-    """
-    Middleware that sets tenant context for RLS.
-
-    Flow:
-    1. Extract JWT from Authorization header
-    2. Validate token and extract tenant_id, user_id, roles
-    3. Set `SET LOCAL app.current_tenant_id = <tenant_id>` on database session
-    4. Attach tenant/user info to request.state for downstream use
-    """
+    """Set tenant context for RLS at the HTTP edge (Fails closed when enabled)."""
 
     def __init__(self, app: Any, exclude_paths: set[str] | None = None) -> None:
         super().__init__(app)
-        self.exclude_paths = exclude_paths or PUBLIC_PATHS
+        # Kept for backwards-compatibility with callers that passed a custom set.
+        self.exclude_paths = exclude_paths
         self.settings = get_settings()
 
     async def dispatch(
-        self, request: Request, call_next: Callable[[Request], Awaitable[Response]],
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
-        # Skip authentication for public paths
-        if request.url.path in self.exclude_paths:
+        path = request.url.path
+
+        if self.exclude_paths and path in self.exclude_paths:
             return await call_next(request)
 
-        # Skip for paths starting with public prefixes
-        for prefix in ("/docs", "/redoc", "/openapi", "/health"):
-            if request.url.path.startswith(prefix):
-                return await call_next(request)
+        if is_public_path(path):
+            return await call_next(request)
 
-        # Extract Authorization header
         auth_header = request.headers.get("Authorization")
         if not auth_header or not auth_header.startswith("Bearer "):
             return JSONResponse(
@@ -74,9 +95,7 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        token = auth_header[7:]  # Remove "Bearer " prefix
-
-        # Validate JWT and extract claims
+        token = auth_header[7:]
         try:
             payload = decode_access_token(token)
         except ValueError as e:
@@ -86,31 +105,33 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Extract tenant and user info
-        tenant_id = payload.tenant_id
-        user_id = payload.sub
-        roles = payload.roles
+        from uuid import UUID
 
-        # Attach to request state for downstream dependencies
-        request.state.tenant_id = tenant_id
-        request.state.user_id = user_id
-        request.state.roles = roles
-        request.state.token_payload = payload
+        tenant_id: UUID | None = None
+        try:
+            tenant_id = UUID(payload.tenant_id)
+        except (ValueError, AttributeError, TypeError):
+            tenant_id = None
 
-        # Set PostgreSQL session variable for RLS
-        # This must be done within the database session
-        # The actual SET LOCAL is executed by the database session dependency
-        # We store the tenant_id in request.state for the session to pick up
-
-        # Log for debugging (in development)
-        if self.settings.app_debug:
-            logger.debug(
-                f"Tenant context set: tenant_id={tenant_id}, user_id={user_id}, roles={roles}",
+        if tenant_id is None:
+            return JSONResponse(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                content={"detail": "Token is missing a valid tenant"},
+                headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Continue to next middleware/route
-        response = await call_next(request)
-        return response
+        # Publish tenant context for downstream (contextvar is read by
+        # get_db_session; request.state is read by handlers).
+        request.state.tenant_id = tenant_id
+        request.state.user_id = payload.sub
+        request.state.roles = payload.roles
+        request.state.token_payload = payload
+
+        token_ctx = set_current_tenant_id(tenant_id)
+        try:
+            return await call_next(request)
+        finally:
+            reset_current_tenant_id(token_ctx)
 
 
 def get_tenant_id_from_request(request: Request) -> str | None:
@@ -133,86 +154,13 @@ def get_token_payload_from_request(request: Request) -> dict[str, Any] | None:
     return getattr(request.state, "token_payload", None)
 
 
-class DatabaseSessionMiddleware(BaseHTTPMiddleware):
-    """
-    Middleware that manages database session and sets RLS context.
-
-    This middleware works with the TenantContextMiddleware to:
-    1. Create a database session for each request
-    2. Set the tenant context (SET LOCAL app.current_tenant_id)
-    3. Commit/rollback transaction
-    4. Close session
-    """
-
-    def __init__(self, app: Any) -> None:
-        super().__init__(app)
-
-    async def dispatch(
-        self, request: Request, call_next: Callable[[Request], Awaitable[Response]],
-    ) -> Response:
-        # Get tenant_id from request state (set by TenantContextMiddleware)
-        tenant_id = getattr(request.state, "tenant_id", None)
-
-        # Get database session from app state (set by lifespan)
-        from packages.core.database import get_session_factory
-
-        session_factory = get_session_factory()
-        async with session_factory() as session:
-            try:
-                # Set RLS context if tenant_id is available
-                if tenant_id:
-                    await session.execute(f"SET LOCAL app.current_tenant_id = '{tenant_id}'")
-
-                # Attach session to request state
-                request.state.db = session
-
-                # Process request
-                response = await call_next(request)
-
-                # Commit transaction
-                await session.commit()
-
-                return response
-
-            except HTTPException:
-                # Re-raise HTTP exceptions (don't rollback for client errors)
-                await session.rollback()
-                raise
-
-            except Exception:
-                # Rollback on any other exception
-                await session.rollback()
-                logger.exception("Database error")
-                raise
-
-            finally:
-                await session.close()
-
-
-# Dependency for getting database session in route handlers
-async def get_db_session_from_request(request: Request) -> Any:
-    """Get database session from request state."""
-    return request.state.db
-
-
-# Alternative: Session dependency that uses middleware context
-async def get_db_with_context(request: Request) -> AsyncGenerator[AsyncSession]:
-    """Get database session with tenant context already set."""
-    from packages.core.database import get_session_factory
-
-    session_factory = get_session_factory()
-    async with session_factory() as session:
-        # Get tenant_id from request state
-        tenant_id = getattr(request.state, "tenant_id", None)
-
-        if tenant_id:
-            await session.execute(f"SET LOCAL app.current_tenant_id = '{tenant_id}'")
-
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
-        finally:
-            await session.close()
+__all__ = [
+    "PUBLIC_EXACT_PATHS",
+    "PUBLIC_PATH_PREFIXES",
+    "TenantContextMiddleware",
+    "get_roles_from_request",
+    "get_tenant_id_from_request",
+    "get_token_payload_from_request",
+    "get_user_id_from_request",
+    "is_public_path",
+]

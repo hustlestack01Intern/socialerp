@@ -54,9 +54,28 @@ async def get_db_session() -> AsyncGenerator[AsyncSession]:
     database persists its work when it returns 2xx. Previously the session was
     only closed, which silently discarded every uncommitted write for handlers
     that relied on the dependency (webhooks, onboarding).
+
+    Before yielding, if a tenant is acting (set by the API middleware or a
+    worker/test via the ``socialerp.tenancy`` contextvar) the session-local
+    ``app.current_tenant_id`` GUC is set with a *parameterized* call so Row-Level
+    Security scopes the request. With no tenant the GUC stays unset and RLS
+    denies by default (fail closed).
+
+    Pattern rule: routes must not call ``db.commit()`` mid-request — that ends
+    the transaction-local GUC — use ``flush`` instead.
     """
+    from socialerp.tenancy import get_current_tenant_id
+
     session_factory = get_session_factory()
     async with session_factory() as session:
+        tenant_id = get_current_tenant_id()
+        if tenant_id is not None:
+            from sqlalchemy import text as sa_text
+
+            await session.execute(
+                sa_text("SELECT set_config('app.current_tenant_id', :tid, true)"),
+                {"tid": str(tenant_id)},
+            )
         try:
             yield session
             await session.commit()

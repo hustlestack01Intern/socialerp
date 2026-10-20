@@ -161,7 +161,10 @@ class TenantAwareSession:
         # Set PostgreSQL session variable for RLS (don't start transaction if already in one)
         if not session.in_transaction():
             await session.begin()
-        await session.execute(text(f"SET LOCAL app.current_tenant_id = '{self.tenant_id}'"))
+        await session.execute(
+            text("SELECT set_config('app.current_tenant_id', :tid, true)"),
+            {"tid": str(self.tenant_id)},
+        )
 
         return session
 

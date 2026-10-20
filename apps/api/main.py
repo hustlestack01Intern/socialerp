@@ -26,6 +26,13 @@ settings = get_socialerp_settings()
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Application lifespan manager."""
     # Startup
+    # Production guard (plan M1.1, skepticism G10): refuse to boot production
+    # with the tenant middleware off, because then RLS is inert on the API path.
+    if settings.ENVIRONMENT == "production" and not settings.TENANCY_MIDDLEWARE_ENABLED:
+        raise RuntimeError(
+            "TENANCY_MIDDLEWARE_ENABLED must be on in production "
+            "(Row-Level Security tenant context would otherwise be inert).",
+        )
     configure_logging()
     init_tracing()
     init_metrics()
@@ -50,6 +57,16 @@ def create_app() -> FastAPI:
         redoc_url="/redoc" if settings.ENVIRONMENT != "production" else None,
     )
 
+    # Tenant context middleware (plan M1.1, U62/U63): sets the tenant contextvar
+    # so get_db_session activates RLS, and fails closed (401) on non-public
+    # paths. Only registered when the flag is on, so dev/test are unchanged.
+    # Middleware order (Starlette adds at index 0, so last added is outermost):
+    # observability (outermost) -> CORS -> tenant.
+    if settings.TENANCY_MIDDLEWARE_ENABLED:
+        from packages.core.middleware.tenant_context import TenantContextMiddleware
+
+        app.add_middleware(TenantContextMiddleware)
+
     # CORS
     app.add_middleware(
         CORSMiddleware,
@@ -59,7 +76,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Observability middleware
+    # Observability middleware (outermost)
     app.middleware("http")(observability_middleware)
 
     # =========================================================================
