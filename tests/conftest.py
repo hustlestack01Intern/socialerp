@@ -83,6 +83,9 @@ _RLS_TENANT_TABLES = (
     "customer_events",
     "consent_records",
     "customer_traits",
+    "subscriptions",
+    "usage_counters",
+    "usage_events",
 )
 
 

@@ -10,6 +10,13 @@ from packages.core.models.alert import (
     OwnerAlert,
 )
 from packages.core.models.base import Base
+from packages.core.models.billing import (
+    PlanTier,
+    Subscription,
+    SubscriptionStatus,
+    UsageCounter,
+    UsageEvent,
+)
 from packages.core.models.catalog import (
     Category,
     Location,
@@ -127,6 +134,7 @@ __all__ = [
     "PaymentMethodType",
     "PaymentRecordStatus",
     "PaymentStatus",
+    "PlanTier",
     "Product",
     "ProductStatus",
     "ProductVariant",
@@ -137,8 +145,12 @@ __all__ = [
     "StockMovement",
     "StockMovementReason",
     "StockMovementType",
+    "Subscription",
+    "SubscriptionStatus",
     "Supplier",
     "Tenant",
+    "UsageCounter",
+    "UsageEvent",
     "User",
     "UserRole",
     "VariantAttributeType",
