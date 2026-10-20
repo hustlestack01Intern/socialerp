@@ -23,6 +23,7 @@ from packages.core.onboarding.model import (
 from packages.core.onboarding.steps import (
     FALLBACK_TYPES,
     STEP_CONFIG,
+    OnboardingStep,
     get_total_target_seconds,
     is_valid_step,
 )
@@ -213,6 +214,21 @@ class OnboardingWizardService:
         progress.step_timings = dict(progress.step_timings)
 
         progress.updated_at = now
+
+        # Trial spine (M1.3): completing step 2 (CONNECT_CHANNELS) is the moment
+        # the trial clock starts. The hook is idempotent — a replayed step-2
+        # completion (or the event firing twice) must NOT move `period_end`
+        # (trial-clock gaming defense, U67). The channel comes from the step's
+        # recorded fallback/data if present, else defaults to WhatsApp.
+        if step == OnboardingStep.CONNECT_CHANNELS.value:
+            from packages.core.billing import BillingService
+
+            channel = "whatsapp"
+            await BillingService(self.session).start_trial(
+                tenant_id,
+                channel=channel,
+                idempotency_key=f"onboarding_step2:{tenant_id}",
+            )
 
         # If this is the last step, mark wizard as completed
         if step == 6:

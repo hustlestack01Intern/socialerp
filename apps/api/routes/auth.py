@@ -241,7 +241,7 @@ async def register(
             )
 
     tenant = Tenant(
-        name=data.name if hasattr(data, "name") else data.business_name,
+        name=data.business_name,
         slug=data.slug,
         owner_phone=data.phone,
         owner_email=data.email,
@@ -261,6 +261,15 @@ async def register(
         is_active=True,
     )
     session.add(owner)
+
+    # Trial spine (M1.3): create the `pending` subscription row now. The 14-day
+    # trial clock does NOT start until a channel is connected (onboarding step 2),
+    # so a signup that never connects does not burn the trial. The row is
+    # committed with the tenant/user in the same transaction.
+    from packages.core.billing import BillingService
+
+    await BillingService(session).ensure_pending(tenant.id)
+
     await session.commit()
     await session.refresh(owner)
 

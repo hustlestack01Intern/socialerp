@@ -77,6 +77,28 @@ async def expire_reservations(ctx: dict[str, Any]) -> None:
         logger.exception("Failed to expire reservations", error=str(e))
 
 
+async def expire_subscriptions(ctx: dict[str, Any]) -> None:
+    """Flip active trials past period_end to expired, and stale pendings to cancelled.
+
+    Sweeps every tenant at once (the worker's role can see all tenants). The
+    entitlement gate also does a lazy expiry check on read, so this cron is a
+    backstop, not the only path (plan M1.3/M1.4; INV4).
+    """
+    from socialerp.database import get_session_factory
+
+    from packages.core.billing import BillingService
+
+    try:
+        async with get_session_factory()() as session:
+            service = BillingService(session)
+            expired = await service.expire_due_subscriptions()
+            cancelled = await service.expire_pending_subscriptions()
+            await session.commit()
+        logger.info("Expired subscriptions", expired=expired, pending_cancelled=cancelled)
+    except Exception as e:
+        logger.exception("Failed to expire subscriptions", error=str(e))
+
+
 # =============================================================================
 # OUTBOX HANDLERS
 # =============================================================================
@@ -315,6 +337,7 @@ class WorkerSettings:
         process_outbox,
         reconcile_stale_payments,
         expire_reservations,
+        expire_subscriptions,
     ]
     cron_jobs: ClassVar[list[Any]] = [
         # Cleanup every hour
@@ -323,6 +346,9 @@ class WorkerSettings:
         {"func": "reconcile_stale_payments", "cron": "*/5 * * * *"},
         # Release unpaid reservations past their TTL, every minute.
         {"func": "expire_reservations", "cron": "* * * * *"},
+        # Flip active trials past period_end to expired; stale pendings to
+        # cancelled. Hourly is enough; the gate also checks lazily on read.
+        {"func": "expire_subscriptions", "cron": "0 * * * *"},
     ]
     on_startup = None
     on_shutdown = None

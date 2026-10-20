@@ -22,6 +22,7 @@ from packages.core.billing.service import (
     utc_day_key,
     utc_month_key,
 )
+from packages.core.models.billing import PlanTier, SubscriptionStatus
 
 __all__ = [
     "METRIC_LLM_CALLS",
@@ -32,6 +33,8 @@ __all__ = [
     "BillingService",
     "EntitlementDecision",
     "Entitlements",
+    "PlanTier",
+    "SubscriptionStatus",
     "all_plans",
     "entitlements_for",
     "utc_day_key",
