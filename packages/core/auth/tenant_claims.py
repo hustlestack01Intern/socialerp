@@ -35,8 +35,11 @@ which needs the human's approval.
 
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import InstrumentedAttribute
 
 from packages.core.models.core import Tenant
 
@@ -60,7 +63,10 @@ async def claim_owner_email(session: AsyncSession, email: str) -> bool:
 
 
 async def _claim(
-    session: AsyncSession, namespace: str, value: str, column
+    session: AsyncSession,
+    namespace: str,
+    value: str,
+    column: InstrumentedAttribute[Any],
 ) -> bool:
     """Serialise on the value, then look it up. Same transaction, no race."""
     await session.execute(
