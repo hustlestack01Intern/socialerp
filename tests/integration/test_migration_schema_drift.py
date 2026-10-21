@@ -37,6 +37,20 @@ def _orm_tables() -> set[str]:
     return set(Base.metadata.tables)
 
 
+# Platform-scoped tables that carry a ``tenant_id`` column but deliberately
+# have NO row-level security. Each entry must state why it is safe (the
+# constitution's stop-rule was followed for the first one: see
+# docs/failures/2026-10-21-platform-ledger-vs-rls-guard.md).
+#
+# - ``billing_payment_references`` (F2/U68): append-only ledger of M-Pesa
+#   confirmation codes used to pay for plan changes. Its invariant is
+#   cross-tenant UNIQUE(reference) — RLS would hide other tenants' rows and
+#   destroy the dedupe. No customer PII (codes are merchant-facing); app-role
+#   grants are SELECT/INSERT only (no UPDATE/DELETE). Compensating test:
+#   tests/billing/test_billing_api.py::TestLedgerInvariants.
+_PLATFORM_TABLES = frozenset({"billing_payment_references"})
+
+
 def _orm_tenant_tables() -> set[str]:
     """ORM tables that carry a ``tenant_id`` column (must be RLS protected)."""
     import socialerp.idempotency  # ruff: ignore[unused-import]
@@ -47,13 +61,17 @@ def _orm_tenant_tables() -> set[str]:
     return {
         name
         for name, table in Base.metadata.tables.items()
-        if "tenant_id" in table.columns
+        if "tenant_id" in table.columns and name not in _PLATFORM_TABLES
     }
 
 
 @pytest.fixture(scope="module")
 def migrated_schema() -> dict[str, object]:
-    """Run ``alembic upgrade head`` on a scratch DB and return its schema."""
+    """Run ``alembic upgrade head`` on a scratch DB and return its schema.
+
+    Yields while the scratch database still exists (a later test inspects its
+    grants); the DB is dropped in teardown.
+    """
     db_name = f"socialerp_migcheck_{uuid.uuid4().hex[:8]}"
 
     try:
@@ -116,13 +134,18 @@ def migrated_schema() -> dict[str, object]:
                 policies = dict(cur.fetchall())
         finally:
             conn.close()
+
+        tables.discard("alembic_version")
+        yield {
+            "tables": tables,
+            "rls": rls,
+            "policies": policies,
+            "db_name": db_name,
+        }
     finally:
         with admin.cursor() as cur:
             cur.execute(f'DROP DATABASE IF EXISTS "{db_name}" WITH (FORCE)')
         admin.close()
-
-    tables.discard("alembic_version")
-    return {"tables": tables, "rls": rls, "policies": policies}
 
 
 def test_migrations_create_every_orm_table(migrated_schema) -> None:
@@ -158,3 +181,42 @@ def test_every_tenant_table_has_a_policy(migrated_schema) -> None:
     policies: dict[str, int] = migrated_schema["policies"]  # type: ignore[assignment]
     missing = sorted(t for t in _orm_tenant_tables() if policies.get(t, 0) == 0)
     assert not missing, f"Tenant tables without an RLS policy: {missing}"
+
+
+def test_platform_tables_keep_their_carve_out_narrow(migrated_schema) -> None:
+    """Compensating guard for the _PLATFORM_TABLES allowlist (F2/U68).
+
+    The exempted ledger must stay exactly as designed: no RLS (cross-tenant
+    uniqueness is the invariant), and the app role must hold only the
+    append-only grants — if anyone widens the grants or the allowlist picks up
+    a table that DOES have RLS (meaning someone enabled it and forgot to
+    remove the carve-out), this fails and forces the accounting to be redone.
+    """
+    assert {"billing_payment_references"} == _PLATFORM_TABLES, (
+        "the platform-table carve-out must stay a single, reviewed entry"
+    )
+    rls: dict[str, tuple[bool, bool]] = migrated_schema["rls"]  # type: ignore[assignment]
+    for table in _PLATFORM_TABLES:
+        assert rls.get(table, (False, False))[0] is False, (
+            f"{table} now has RLS — remove it from _PLATFORM_TABLES"
+        )
+
+    conn = psycopg2.connect(
+        f"postgresql://socialerp:socialerp@localhost:5432/{migrated_schema['db_name']}",
+    )
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT privilege_type FROM information_schema.role_table_grants
+                WHERE table_name = 'billing_payment_references'
+                  AND grantee = 'socialerp_app'
+                ORDER BY privilege_type
+                """
+            )
+            grants = [row[0] for row in cur.fetchall()]
+        assert grants == ["INSERT", "SELECT"], (
+            f"billing_payment_references app grants must be append-only, got {grants}"
+        )
+    finally:
+        conn.close()
