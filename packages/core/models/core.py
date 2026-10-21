@@ -63,7 +63,19 @@ class Tenant(Base):
         default=uuid.uuid4,
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
-    owner_phone: Mapped[str] = mapped_column(String(20), nullable=False)
+    # The WhatsApp number IS the business identity (Coexistence connects the
+    # existing number to one business), so it is unique: one number, one
+    # business, one trial. Enforced where the business is created - the
+    # signup and the admin route both claim the number under a
+    # transaction-scoped advisory lock, so a check in the route alone cannot
+    # be raced away by two concurrent registrations
+    # (packages/core/auth/tenant_claims.py). The index is a plain lookup
+    # index, not UNIQUE: see migration 0020 for why.
+    owner_phone: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        index=True,
+    )
     owner_email: Mapped[str] = mapped_column(String(255), nullable=False)
     # Optional public slug (onboarding/URLs). Nullable + unique; Postgres allows
     # multiple NULLs under a unique index. See ADR 0008.

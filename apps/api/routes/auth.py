@@ -34,11 +34,14 @@ from packages.core.auth.dependencies import get_current_tenant_id, get_current_u
 from packages.core.auth.invites import InviteCodeError, InviteCodeService
 from packages.core.auth.jwt import create_access_token, create_refresh_token
 from packages.core.auth.password import hash_password, verify_password
+from packages.core.auth.tenant_claims import claim_business_number, claim_owner_email
 from packages.core.auth.tokens import TokenManager
 from packages.core.domain.auth import ApiKeyCreate as ApiKeyCreateInput
 from packages.core.domain.user import User as UserDomain
 from packages.core.models import Tenant, User, UserRole
 from packages.core.socialerp.settings import get_settings
+
+from apps.api.routes._gates import require_api_access, require_seat
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
@@ -264,12 +267,21 @@ async def register(
                 detail=_INVITE_REFUSED,
             ) from None
 
-    # Guard against duplicate owner email within the platform (login is email-based).
-    existing = await session.execute(select(User).where(User.email == data.owner_email))
-    if existing.scalars().first():
+    # Guard against duplicate owner email within the platform (login is
+    # email-based) and one business per WhatsApp number (U81). Both claims are
+    # taken under a transaction-scoped advisory lock, so two registrations that
+    # race on the same email or number cannot both win (packages/core/auth/
+    # tenant_claims.py explains why this is an application rule).
+    if not await claim_owner_email(session, data.owner_email):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="A user with this email already exists",
+        )
+
+    if not await claim_business_number(session, data.phone):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A business with this WhatsApp number already exists",
         )
 
     if data.slug is not None:
@@ -452,6 +464,20 @@ async def create_tenant(
                 detail="Tenant with this slug already exists",
             )
 
+    # The same two rules as the self-serve signup: one owner email, one
+    # business per WhatsApp number (U81). The platform-admin route creates
+    # tenants too, so it must not be a way around the rule.
+    if not await claim_owner_email(session, tenant_data.email):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A user with this email already exists",
+        )
+    if not await claim_business_number(session, tenant_data.phone):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A business with this WhatsApp number already exists",
+        )
+
     tenant = Tenant(
         name=tenant_data.name,
         slug=tenant_data.slug,
@@ -547,6 +573,11 @@ async def create_tenant_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Cannot create users in other tenants",
         )
+
+    # The plan's seat count is a limit, not a decoration (M1.6, U80): a trial
+    # has one seat (the owner), so a second user is refused with a 402 that
+    # says which plan and how many seats it includes.
+    await require_seat(session, tenant_id)
 
     tenant = await session.get(Tenant, tenant_id)
     if tenant is None:
@@ -661,12 +692,20 @@ async def create_api_key(
             detail="Cannot create API keys for other tenants",
         )
 
+    # API access is a paid feature (M1.6, U80): a plan without it cannot
+    # mint keys, so the key can never be used either.
+    await require_api_access(session, tenant_id)
+
     manager = ApiKeyManager(session)
     created = await manager.create(
         tenant_id,
         ApiKeyCreateInput(
             name=api_key_data.name,
-            scopes=api_key_data.scopes,
+            # A key with no scope would be a key that opens nothing, so the
+            # default is the read scope. "write" and "admin" are recorded but
+            # open no endpoint yet (the developer API is read-only) - the
+            # pricing page says so.
+            scopes=api_key_data.scopes or ["read"],
             expires_in_days=api_key_data.expires_in_days,
         ),
     )

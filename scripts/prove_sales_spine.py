@@ -64,7 +64,10 @@ async def main() -> int:
     payload = {
         "business_name": "Proof Traders Ltd",
         "slug": f"proof-{uuid.uuid4().hex[:6]}",
-        "phone": "254712000111",
+        # A fresh number per run: one business per WhatsApp number is
+        # enforced (U81), so a fixed number would answer 409 on the second
+        # run against the same database.
+        "phone": f"2547{uuid.uuid4().hex[:8]}",
         # A fresh identity per run: the script must be re-runnable against a
         # database that already holds a previous run (the owner email is
         # unique, so a fixed one would answer 409 on the second run).
