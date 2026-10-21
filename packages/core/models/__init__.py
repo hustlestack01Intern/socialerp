@@ -56,6 +56,9 @@ from packages.core.models.instagram import (
     InstagramMessageStatus,
     InstagramMessageType,
 )
+from packages.core.models.invites import (
+    InviteCode,
+)
 from packages.core.models.order import (
     Customer,
     Order,
@@ -122,6 +125,7 @@ __all__ = [
     "InstagramMessage",
     "InstagramMessageStatus",
     "InstagramMessageType",
+    "InviteCode",
     "Location",
     "OnboardingState",
     "OnboardingWizardProgress",

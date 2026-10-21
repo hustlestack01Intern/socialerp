@@ -33,6 +33,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             "TENANCY_MIDDLEWARE_ENABLED must be on in production "
             "(Row-Level Security tenant context would otherwise be inert).",
         )
+    # Production guard (M1.5, approved 2026-10-21): refuse to boot production
+    # with the invite-code gate off, because then anybody on the internet can
+    # start a trial (trial stacking, U68). The first cohort is invited.
+    if settings.ENVIRONMENT == "production" and not settings.INVITE_CODES_REQUIRED:
+        raise RuntimeError(
+            "INVITE_CODES_REQUIRED must be on in production "
+            "(self-serve registration would otherwise be open to the internet).",
+        )
     configure_logging()
     init_tracing()
     init_metrics()

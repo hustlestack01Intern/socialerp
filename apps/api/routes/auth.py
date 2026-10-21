@@ -30,14 +30,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from packages.core.auth.api_keys import ApiKeyManager
 from packages.core.auth.dependencies import get_current_tenant_id, get_current_user, get_db
+from packages.core.auth.invites import InviteCodeError, InviteCodeService
 from packages.core.auth.jwt import create_access_token, create_refresh_token
 from packages.core.auth.password import hash_password, verify_password
 from packages.core.auth.tokens import TokenManager
 from packages.core.domain.auth import ApiKeyCreate as ApiKeyCreateInput
 from packages.core.domain.user import User as UserDomain
 from packages.core.models import Tenant, User, UserRole
+from packages.core.socialerp.settings import get_settings
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
+
+# The one answer the invite gate gives for every failure (missing, unknown,
+# expired, exhausted, disabled). Identical for all of them on purpose: the
+# endpoint must not be an oracle for "does this code exist" (M1.5).
+_INVITE_REFUSED = "This invite code is not valid."
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
@@ -60,6 +67,9 @@ class RegisterRequest(BaseModel):
     owner_name: str = Field(..., min_length=1, max_length=255)
     owner_email: EmailStr
     owner_password: str = Field(..., min_length=12, max_length=128)
+    # Invite code (M1.5). Required when INVITE_CODES_REQUIRED is on: the first
+    # cohort is invited, not open to the internet (trial stacking, U68).
+    invite_code: str | None = Field(None, max_length=32)
 
 
 class UserLogin(BaseModel):
@@ -223,7 +233,31 @@ async def register(
     data: RegisterRequest,
     session: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
-    """Self-serve signup: create a tenant and its owner user, then log in."""
+    """Self-serve signup: create a tenant and its owner user, then log in.
+
+    When ``INVITE_CODES_REQUIRED`` is on, the registration must carry a valid
+    invite code (M1.5). The check is server-side and every failure looks the
+    same (403, one message), so the endpoint is not a code oracle.
+    """
+    invites = InviteCodeService(session)
+    gate_on = get_settings().INVITE_CODES_REQUIRED
+
+    if gate_on:
+        if not data.invite_code:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=_INVITE_REFUSED,
+            )
+        try:
+            # Order the errors: a bad code is refused before anything is
+            # created, and before the email/slug checks can answer.
+            await invites.validate(data.invite_code)
+        except InviteCodeError:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=_INVITE_REFUSED,
+            ) from None
+
     # Guard against duplicate owner email within the platform (login is email-based).
     existing = await session.execute(select(User).where(User.email == data.owner_email))
     if existing.scalars().first():
@@ -261,6 +295,18 @@ async def register(
         is_active=True,
     )
     session.add(owner)
+
+    if gate_on and data.invite_code:
+        # The authoritative, race-safe consumption of the code. If it fails
+        # (someone took the last use in the meantime) the whole registration
+        # is refused and the transaction rolls back — no half-registered tenant.
+        try:
+            await invites.redeem(data.invite_code, tenant_id=tenant.id)
+        except InviteCodeError:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=_INVITE_REFUSED,
+            ) from None
 
     # Trial spine (M1.3): create the `pending` subscription row now. The 14-day
     # trial clock does NOT start until a channel is connected (onboarding step 2),

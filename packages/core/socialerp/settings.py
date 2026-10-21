@@ -192,6 +192,11 @@ class Settings(BaseSettings):
     # A paid plan always has a period: without one the entitlement would never
     # end and the tenant could never be re-decided.
     BILLING_PAID_PERIOD_DAYS: int = 30
+    # Invite-code gate on self-serve registration (M1.5). When on, a
+    # registration must carry a valid invite code; the founder issues one code
+    # per prospect. Must be ON in production (startup guard) so the first
+    # cohort is invited rather than open to the internet (trial stacking, U68).
+    INVITE_CODES_REQUIRED: bool = False
     # A tenant that signs up but never connects a channel stays `pending`; after
     # this many days the pending row expires to `cancelled` so a verified number
     # is not permanently blocked (M1.3).
