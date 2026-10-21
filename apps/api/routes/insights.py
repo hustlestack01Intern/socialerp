@@ -33,6 +33,8 @@ from packages.core.auth.dependencies import get_current_tenant_id, get_db, requi
 from packages.core.domain import TenantId
 from packages.core.insights import Anomaly, InsightsService, PeriodReport, StockAlert
 
+from apps.api.routes._gates import require_insights
+
 router = APIRouter(prefix="/api/v1/insights", tags=["insights"])
 
 
@@ -144,6 +146,10 @@ async def daily_report(
     report_date: Annotated[date | None, Query(alias="date")] = None,
 ) -> ReportView:
     """One UTC day's report plus its order-count anomaly."""
+    # The matrix grants insights on every plan today; the gate is what keeps
+    # that true if a future plan does not (M1.6, U80). Insights are the
+    # owner's own data, so this is not state-gated (I3).
+    await require_insights(db, tenant_id)
     on_date = report_date if report_date is not None else datetime.now(UTC).date()
     service = InsightsService(db)
     report = await service.daily_report(TenantId(tenant_id), on_date)
@@ -158,6 +164,7 @@ async def weekly_report(
     week_start: Annotated[date | None, Query()] = None,
 ) -> ReportView:
     """A 7-day report; defaults to the current UTC week (Monday-anchored)."""
+    await require_insights(db, tenant_id)
     if week_start is None:
         today = datetime.now(UTC).date()
         week_start = today - timedelta(days=today.weekday())  # ISO Monday
@@ -173,6 +180,7 @@ async def stock_alerts(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> list[StockAlertView]:
     """Active variants below their reorder level (read-only, no durable alert)."""
+    await require_insights(db, tenant_id)
     alerts = await InsightsService(db).stock_alerts(TenantId(tenant_id))
     return [_stock_alert(a) for a in alerts]
 

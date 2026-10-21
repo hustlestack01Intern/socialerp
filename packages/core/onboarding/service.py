@@ -339,14 +339,57 @@ class OnboardingWizardService:
         # column, so in-place mutation is invisible to the unit of work.
         tenant = await self.session.get(Tenant, tenant_id)
         if tenant:
-            tenant.settings = {
-                **tenant.settings,
-                "launch_approved": True,
-                "instagram_enabled": True,
-            }
+            # The plan decides which channels are switched on (M1.6, U80):
+            # Instagram is a Professional feature, so a trial or starter
+            # tenant is NOT switched on - the matrix is enforced, not
+            # decoration. The refusal is audited so the owner can see it.
+            instagram_allowed, reason = await self._plan_includes(
+                tenant_id, "instagram"
+            )
+            settings = {**tenant.settings, "launch_approved": True}
+            if instagram_allowed:
+                settings["instagram_enabled"] = True
+            else:
+                settings.pop("instagram_enabled", None)
+            tenant.settings = settings
+            if not instagram_allowed:
+                await self._audit_channel_refusal(tenant_id, "instagram", reason)
 
         await self.session.commit()
         return progress
+
+    async def _plan_includes(
+        self,
+        tenant_id: TenantId,
+        channel: str,
+    ) -> tuple[bool, str]:
+        """Does the tenant's plan include ``channel``? (True, 'ok') or (False, reason)."""
+        # Lazy import keeps billing out of the import graph unless used.
+        from packages.core.billing.enforcer import EntitlementEnforcer
+
+        decision = await EntitlementEnforcer(self.session).check_channel(
+            tenant_id, channel
+        )
+        return decision.allowed, decision.reason
+
+    async def _audit_channel_refusal(
+        self,
+        tenant_id: TenantId,
+        channel: str,
+        reason: str,
+    ) -> None:
+        """Record that a channel was not switched on because of the plan."""
+        from packages.core.audit.logger import AuditLogger
+
+        await AuditLogger(self.session).log_action(
+            tenant_id=tenant_id,
+            user_id=None,
+            action="billing.channel_not_included",
+            resource="tenant",
+            resource_id=str(tenant_id),
+            after={"channel": channel, "reason": reason},
+        )
+        await self.session.flush()
 
     async def is_launch_approved(self, tenant_id: TenantId) -> bool:
         """Check if launch has been approved for a tenant."""

@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import json
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -57,6 +58,22 @@ async def ig_tenant(test_engine, monkeypatch):
             settings={"instagram_enabled": True, "launch_approved": True},
         )
         session.add(tenant)
+        await session.flush()
+
+        # The plan decides which channels are processed (M1.6, U80): Instagram
+        # is a Professional feature, so this tenant needs a Professional
+        # subscription or the webhook is refused.
+        from packages.core.models.billing import Subscription, SubscriptionStatus
+
+        session.add(
+            Subscription(
+                tenant_id=tenant.id,
+                plan="professional",
+                status=SubscriptionStatus.ACTIVE.value,
+                period_start=datetime.now(UTC),
+                period_end=datetime.now(UTC) + timedelta(days=30),
+            )
+        )
         await session.flush()
 
     monkeypatch.setenv("META_INSTAGRAM_ACCOUNT_ID", str(tenant.id))

@@ -346,6 +346,35 @@ async def meta_webhook_receive(
                 "enabled": False,
             }
 
+        # The plan decides which channels are processed (M1.6, U80). A
+        # tenant whose plan does not include Instagram gets no Instagram
+        # conversations: the raw event is still recorded (the webhook log
+        # above), so nothing is lost, but no customer is answered on a
+        # channel the tenant did not buy.
+        from packages.core.billing.enforcer import EntitlementEnforcer
+
+        decision = await EntitlementEnforcer(db).check_channel(tenant_id, "instagram")
+        if not decision.allowed:
+            logger.info(
+                "Instagram webhook refused: the plan does not include it",
+                extra={"tenant_id": tenant_id, "reason": decision.reason},
+            )
+            await AuditLogger(db).log_action(
+                tenant_id=tenant_id,
+                user_id=None,
+                action="billing.channel_not_included",
+                resource="tenant",
+                resource_id=str(tenant_id),
+                after={"channel": "instagram", "reason": decision.reason},
+            )
+            await db.flush()
+            return {
+                "status": "received",
+                "tenant_found": True,
+                "channel": "instagram",
+                "enabled": False,
+            }
+
     # Parse and process based on channel
     if channel == "whatsapp":
         normalized_messages = parse_whatsapp_webhook(payload)

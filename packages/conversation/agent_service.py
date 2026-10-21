@@ -246,6 +246,17 @@ class ConversationAgentService:
 
         settings = await self._load_settings()
         autonomy = self._autonomy or autonomy_from_settings(settings)
+        # The plan is a *limit* on the autonomy, not a switch (M1.6, U80): a
+        # tenant whose plan grants less than it asked for runs at the ceiling.
+        # The cap is audited, so the owner can see the plan - not a bug -
+        # limited the agent.
+        autonomy, denial = await self._cap_by_plan(
+            autonomy,
+            conversation_id=conversation_id,
+            contact_id=contact_id,
+        )
+        if denial is not None:
+            return denial
         catalog = await self._build_catalog()
 
         agent = Agent(
@@ -321,7 +332,107 @@ class ConversationAgentService:
         if decision.entitled:
             return None
 
-        await self._audit_entitlement_denial(decision)
+        return await self._deny(
+            reason=decision.reason,
+            plan=decision.plan,
+            conversation_id=conversation_id,
+            contact_id=contact_id,
+        )
+
+    async def _cap_by_plan(
+        self,
+        requested: AutonomyLevel,
+        *,
+        conversation_id: UUID,
+        contact_id: UUID,
+    ) -> tuple[AutonomyLevel, ConversationAgentResult | None]:
+        """Cap the requested autonomy at the plan's ceiling (M1.6, U80).
+
+        The plan is a limit, not a switch: a tenant whose plan grants L1 while
+        it asked for L2 keeps *answering* - it is not silenced, and its
+        customers are not left in the dark. Only a plan that grants no agent
+        at all takes the safe path (holding reply + human), because then
+        there is no level to fall back to.
+        """
+        from socialerp.settings import get_settings
+
+        if not get_settings().BILLING_ENTITLEMENT_ENABLED:
+            return requested, None
+
+        # Lazy import keeps billing out of the import graph unless used.
+        from packages.core.billing.enforcer import EntitlementEnforcer
+
+        decision = await EntitlementEnforcer(self.session).check_agent_level(
+            self.tenant_id, str(requested.value)
+        )
+        if decision.allowed:
+            return requested, None
+
+        ceiling = decision.limit
+        if not ceiling.startswith("L") or not ceiling[1:].isdigit():
+            # No usable agent level (the plan grants none): the same safe
+            # path as a stopped plan - a holding reply and a human.
+            denial = await self._deny(
+                reason=decision.reason,
+                plan=decision.plan,
+                conversation_id=conversation_id,
+                contact_id=contact_id,
+            )
+            return requested, denial
+
+        capped = AutonomyLevel(ceiling)
+        await self._audit_agent_cap(decision, requested=requested, capped=capped)
+        logger.info(
+            "Agent autonomy capped by the plan",
+            extra={
+                "tenant_id": str(self.tenant_id),
+                "requested": str(requested.value),
+                "ceiling": ceiling,
+                "plan": decision.plan,
+            },
+        )
+        return capped, None
+
+    async def _audit_agent_cap(
+        self,
+        decision: object,
+        *,
+        requested: AutonomyLevel,
+        capped: AutonomyLevel,
+    ) -> None:
+        """Record the cap so the owner can see why the agent did less."""
+        audit = AuditLogger(self.session)
+        await audit.log_action(
+            tenant_id=self.tenant_id,
+            user_id=None,
+            action="billing.agent_level_capped",
+            resource="tenant",
+            resource_id=str(self.tenant_id),
+            after={
+                "requested": str(requested.value),
+                "ceiling": str(capped.value),
+                "plan": str(getattr(decision, "plan", "unknown")),
+                "reason": str(getattr(decision, "reason", "unknown")),
+            },
+        )
+        await self.session.flush()
+
+    async def _deny(
+        self,
+        *,
+        reason: str,
+        plan: str,
+        conversation_id: UUID,
+        contact_id: UUID,
+    ) -> ConversationAgentResult:
+        """The safe path: a holding reply as a draft, the owner takes over.
+
+        No LLM is constructed on this path (zero model spend). The denial is
+        audited and the deterministic holding reply is persisted as a draft
+        (never auto-sent): the customer is acknowledged and the owner can
+        step in.
+        """
+        await self._audit_entitlement_denial(reason=reason, plan=plan)
         sent = await self._persist_holding_reply(
             conversation_id=conversation_id,
             contact_id=contact_id,
@@ -337,11 +448,11 @@ class ConversationAgentService:
         )
         logger.info(
             "Agent denied by entitlement",
-            extra={"tenant_id": str(self.tenant_id), "reason": decision.reason},
+            extra={"tenant_id": str(self.tenant_id), "reason": reason},
         )
         return ConversationAgentResult(
             intent="entitlement_denied",
-            action=decision.reason,
+            action=reason,
             reply_text=HOLDING_REPLY,
             sent=sent,
             grounded=True,
@@ -350,9 +461,7 @@ class ConversationAgentService:
             tools_used=(),
         )
 
-    async def _audit_entitlement_denial(self, decision: object) -> None:
-        reason = getattr(decision, "reason", "unknown")
-        plan = getattr(decision, "plan", "unknown")
+    async def _audit_entitlement_denial(self, *, reason: str, plan: str) -> None:
         audit = AuditLogger(self.session)
         await audit.log_action(
             tenant_id=self.tenant_id,
@@ -360,7 +469,7 @@ class ConversationAgentService:
             action="billing.agent_denied",
             resource="tenant",
             resource_id=str(self.tenant_id),
-            after={"reason": reason, "plan": str(plan)},
+            after={"reason": reason, "plan": plan},
         )
         await self.session.flush()
 
