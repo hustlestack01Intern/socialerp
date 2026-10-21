@@ -56,18 +56,8 @@ async def test_registration_is_audited(api_client, session_factory, monkeypatch)
     resp = await api_client.post("/api/v1/auth/register", json=payload)
     assert resp.status_code == 201, resp.text
 
-    async with session_factory() as session:
-        rows = (
-            await session.execute(
-                text(
-                    "SELECT action, resource, tenant_id FROM audit_log "
-                    "WHERE action = 'auth.tenant_registered' AND tenant_id = :tid"
-                ),
-                {"tid": resp.json()["tenant_id"] if "tenant_id" in resp.json() else None},
-            )
-        ).all()
-    # The response may not carry the tenant id; find the row by action and
-    # by the email that was registered.
+    # The response does not carry the tenant id, so the row is found by the
+    # action and the email that was registered.
     async with session_factory() as session:
         rows = (
             await session.execute(

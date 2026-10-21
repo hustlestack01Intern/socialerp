@@ -11,7 +11,10 @@ socialerp/
 ├── apps/
 │   ├── api/           # FastAPI application (HTTP endpoints, webhooks, owner pages)
 │   ├── worker/        # Background job worker (ARQ/asyncio)
-│   └── dashboard/     # Owner dashboard (Jinja2 + HTMX, server-rendered)
+│   └── dashboard/     # Owner PWA (Next.js App Router + Tailwind, TypeScript)
+│       ├── src/app/      # Routes: /, /pricing, /login, /signup, /terms, /privacy, /dpa, /security
+│       ├── src/lib/      # pricing.json (the price source of truth), api.ts (login/register/subscription), session.ts
+│       └── src/components/  # TrialStatusBanner.tsx, DraftBanner.tsx
 ├── packages/
 │   ├── core/          # Domain primitives, events, security (NO external deps)
 │   │   ├── domain/    # Value objects: TenantId, CustomerPhone, Money, Quantity, SKU
@@ -20,8 +23,11 @@ socialerp/
 │   │   ├── orders/    # OrderService (reserve/sell/cancel/expiry), FSM transitions, `is_order_paid`
 │   │   ├── payments/  # PaymentService (protected zone): STK flows, callbacks, reconciliation
 │   │   ├── alerts/    # AlertService: durable, deduped, tenant-scoped owner alerts (RLS 0011)
+│   │   ├── auth/      # JWT, passwords, API keys, **invites.py** (platform-scoped invite codes, no RLS)
+│   │   ├── middleware/  # tenant_context.py (the tenant GUC + fail-closed 401), **rate_limit.py** (auth endpoints)
 │   │   ├── delivery/  # DeliveryService: zones, riders, FSM, POD gates + tracking projection (no PII)
 │   │   │   └── tracking_token.py  # HMAC-SHA256 signed, expiring `?t=` capability tokens (U29)
+│   │   ├── billing/   # BillingService + entitlements + PaymentProvider (the SaaS subscription, NOT tenant payments)
 │   │   └── crm/       # CRMService: events, consent, versioned evidence-backed traits, export/erasure (RLS 0012)
 │   │       ├── segments.py        # Phase 8b: fixed enum rules + pure JSON predicate evaluator
 │   │       └── segment_service.py # Phase 8b: tenant-scoped batch latest-trait evaluation (no persistence)
@@ -44,6 +50,8 @@ socialerp/
 │   └── agent/         # LLM gateway, prompts, tools, policy, evals
 ├── infra/             # Infrastructure as code (Docker, Kubernetes, Terraform)
 ├── tests/             # Unit, integration, contract tests
+│   └── architecture/  # Cross-boundary guards (pricing vs code, link integrity, no dead CTAs)
+├── scripts/           # Ops + proof scripts (create_invite_code, prove_sales_spine, seed, migration verifiers)
 ├── evals/             # LLM evaluation sets and runner
 └── docs/              # SPEC, ADRs, THREAT_MODEL, STATE, MAP, UNCERTAINTY
 ```
@@ -62,6 +70,7 @@ graph TD
     worker --> agent
     worker --> conversation
     dashboard[apps/dashboard] --> core
+    dashboard --> api[apps/api REST]
     
     %% Packages
     core[packages/core]
@@ -77,6 +86,8 @@ graph TD
     core --> payments[packages/core/payments]
     core --> delivery[packages/core/delivery]
     core --> crm[packages/core/crm]
+    core --> billing[packages/core/billing]
+    core --> auth[packages/core/auth]
     
     %% Integrations submodules
     integrations --> meta[packages/integrations/meta]
@@ -307,28 +318,45 @@ Inbound → Webhook → MessageReceived → ConversationManager
 17. **packages/core/delivery/tracking.py + tracking_token.py + apps/api/routes/tracking.py** - public PII-free tracking, signed-token gated (U29)
 18. **packages/core/alerts/** + **apps/api/routes/alerts.py** - durable owner alerts (0011 RLS)
 19. **packages/core/crm/** + **apps/api/routes/crm.py** - CRM memory: events/consent/traits (0012 RLS), export + owner-approved erasure
-20. **docs/adr/0018-segments-insights.md** + **packages/core/crm/segments.py + segment_service.py** +
+20. **packages/core/auth/invites.py** + **packages/core/models/invites.py** + **alembic/versions/0017_invite_codes.py** — the platform-scoped invite gate (atomic redemption, uniform 403, audited) (ADR 0023)
+21. **packages/core/billing/** + **apps/api/routes/billing.py** — the SaaS subscription: entitlements, the 30-day paid period, payment-verified plan changes
+22. **apps/dashboard/src/lib/pricing.json** + **tests/architecture/test_pricing_page_matches_code.py** — the price source of truth and the guard that keeps the page honest
+23. **scripts/prove_sales_spine.py** — the end-to-end proof (invite gate → signup → trial decision → login) against a *migrated* database
+23a. **packages/core/middleware/rate_limit.py** — the per-IP limiter on the auth endpoints (a registration's status code is a probe)
+23b. **tests/integration/test_migration_column_drift.py** — the guard that compares every ORM column (and every enum value) with a migrated database
+24. **docs/adr/0018-segments-insights.md** + **packages/core/crm/segments.py + segment_service.py** +
     **packages/core/insights/** + **apps/api/routes/{segments,insights}.py** - Phase 8b segments (fixed
     enum rules, read-time evaluation) and deterministic owner reports/anomaly (committed `8dbc120`,
     routers wired at `main.py:165-166`, 37+38 tests green in wave-2 gate)
 
 ## Current Phase (updated 2026-10-21 — measured truth)
 
-**Money path F0→F2 in flight** (plan `docs/plans/2026-10-21-money-path-f0-f2.md`,
-human-approved 2026-10-21). Correction: the 2026-10-19 note below ("billing does not
-exist", "awaiting human go") was **stale** — M0 gate repair and M1.1–M1.4 (tenancy
-middleware, billing domain + `0015_billing`, trial-at-connect, entitlement gate) are
-committed `17bafc8`…`a0dff1d`. Measured 2026-10-21 after the F1 fix pass: ruff clean,
-mypy success (130 files), `tests/billing tests/architecture` → 30 passed.
+**M1.5 (the sales surface) and the money path F0→F3 are DONE** (human-approved
+2026-10-21). Measured at the wave's gate SHA — see the numbers in `docs/STATE.md`.
 
-- **F0 (done 2026-10-21)**: docs honesty — SHIPPING_GUIDE/FINAL_DELIVERY_SUMMARY no
-  longer claim "PRODUCTION READY"; STATE/MAP headers synced to HEAD.
-- **F1 (this session)**: M1.5 billing API (`GET/POST /api/v1/billing/*`) committed.
-- **F2 (next, protected zone — approved)**: non-trial plan change requires a unique
-  M-Pesa payment reference (no owner self-upgrade; U68).
-- Then: M1.5 sales surface → M2 pre-go-live gate (sandbox phone test, U61 scope
-  decision) → concierge pilot. Transaction fees stay blocked on external
-  Meta/Daraja KYC (owner applies in parallel).
+- **F0**: docs honesty (no "PRODUCTION READY" claims) ✓
+- **F1**: M1.5 billing API (`GET/POST /api/v1/billing/*`) ✓
+- **F2**: payment-verified plan changes (no owner self-upgrade; U68) ✓
+- **F3**: the paid period — 30 days, from the payment date, never shortening a
+  live period, no trial rollover (U60 answered by the human) ✓
+- **B4**: the invite gate (protected zone, approved) — `invite_codes` is
+  platform-scoped, redeemed atomically, audited per tenant ✓
+- **B2/B3/B5/B6/B7**: the sales surface — `/pricing` (data-driven from
+  `pricing.json` and guarded against the code), `/login`, `/signup`, the legal
+  pages, the trial banner, and a landing page with no dead CTAs ✓
+- **The column-drift fix** (`338d8d6`): migration `0018_missing_columns` plus the
+  new guard `tests/integration/test_migration_column_drift.py`. The migration
+  chain had never created ten ORM columns (including every agent-action
+  `audit_log` field), so a **migrated** database could not register a user.
+  The test schema is built from ORM metadata, which is why 915 green tests
+  could not see it. Record: `docs/failures/2026-10-21-column-drift-green-suite.md`.
+- **Deferred with a reason**: B8 (`make seed-demo`) — there is no owner console
+  yet, so a seeded tenant would have no visible surface to demo.
+
+**Next**: M2 pre-go-live gate (a sandbox phone test — needs the human's U61
+scope decision) → the owner console (the thing B8 was waiting for) →
+concierge pilot. Transaction fees stay blocked on external Meta/Daraja KYC
+(the owner applies in parallel).
 
 ### HISTORICAL — phase checklist as of 2026-10-19 (superseded by the 2026-10-21 measurement above)
 - M0: Scaffold, tooling, CI, docs, fake Meta/Daraja servers ✓

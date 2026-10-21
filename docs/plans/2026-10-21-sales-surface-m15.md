@@ -20,8 +20,9 @@ page can never point at a 404 again (today 14 of its links are dead).
   (U60 stays a human pricing decision).
 - No Stripe, no self-serve Embedded Signup (white-glove for cohort 1).
 - No owner-dashboard UI work (that is a later milestone).
-- No CI/Makefile edits (CI gate definitions = protected zone; reported, not
-  self-edited).
+- No CI/Makefile edits *in the original plan* — the CI gate definitions are a
+  protected zone, so the JS-toolchain finding was **reported** and the human
+  **approved** the CI wiring separately on 2026-10-21 (see "Measured result").
 - No `SalesIntent` taxonomy inside `packages/agent/intent.py` and nothing added
   to `/evals` (held-out).
 
@@ -174,3 +175,97 @@ page can never point at a 404 again (today 14 of its links are dead).
 `docs/STATE.md`, `docs/MAP.md`, `docs/UNCERTAINTY.md` (U60 note, CI-JS finding,
 link-guard note), `docs/LEARNINGS.md` (M1.6 + M1.5 calibration), this plan's
 measured-results section.
+
+## Measured result (2026-10-21)
+
+**Human approval**: 2026-10-21, bundled with F3, the CI wiring and the U60
+trial decision — the invite gate (B4, protected zone) was approved.
+
+### Commits
+
+| Commit | What |
+|---|---|
+| `c1d1c5f` | B0 — pnpm toolchain (`pnpm-lock.yaml`, `.eslintrc.json`) |
+| `3953ab7` | B1 — the link-integrity guard (in `make check`) |
+| `81a50a4` | B4 — the invite gate (table, service, route, script, 16 tests, ADR 0023) |
+| `d475ee9` | the CI wiring (pnpm + Node in CI, honest timeouts) — approved |
+| `7fc25d8` | B2/B3/B5/B6/B7 — the sales surface (pricing, legal, login, signup, banner) + the landing-page repair |
+| `338d8d6` | the column-drift fix the sales-spine proof found (migration `0018`, the column guard, the `User.role` enum fix) |
+| `921f2de` | the failure record for the column drift |
+
+### What landed
+
+- **B2** `/terms`, `/privacy`, `/dpa`: DRAFT-bannered, and they state the two
+  open erasure gaps (U51, U52) instead of claiming a deletion the system
+  cannot do. `/security` (not in the plan) lists what is enforced and what is
+  not done yet.
+- **B3** `/pricing` renders `apps/dashboard/src/lib/pricing.json`; a new
+  in-gate test (`tests/architecture/test_pricing_page_matches_code.py`)
+  compares that file with `_PRICE_KES` and the entitlement matrix, so a price
+  or a feature change in the backend fails the gate until the page is
+  updated. The unenforced costs are listed as sold separately.
+- **B4** the invite gate: `invite_codes` is a platform-scoped table (no
+  `tenant_id`, no RLS, no PII — ADR 0023), the redemption is one atomic
+  `UPDATE` (two racing registrations cannot both take the last use), every
+  failure is the same 403 (no oracle), the redemption is audited per tenant,
+  and `INVITE_CODES_REQUIRED` must be on in production (the API refuses to
+  boot otherwise).
+- **B5/B6** `/login` and `/signup` post the real contracts (OAuth2 form
+  login; `RegisterRequest` with the Kenyan phone format, a 12+ character
+  password and the invite code) and render the real 403/409/422 states.
+- **B7** the trial banner renders the server's decision only and renders
+  **nothing** when the API errors.
+- The landing page: 14 dead CTAs removed (it now links only to pages that
+  exist), the fake waitlist form deleted, the absolute claims ("100% tenant
+  isolation", "30 min", "Watch Demo") replaced with what the system does.
+- The link guard's `xfail(strict=True)` markers are **removed**: the debt is
+  paid, so the assertions are unconditional.
+
+### B8 (the demo seed) — deferred, with a reason
+
+`make seed-demo` was **not** built: the owner console (the thing a demo
+tenant would be shown in) does not exist yet, so a seeded tenant would have
+no visible surface. Seeding demo data before there is something to look at
+is work for a demo nobody can see. It moves to the owner-console milestone.
+
+### The unplanned finding: the green suite could not see a broken database
+
+`scripts/prove_sales_spine.py` (a real registration against a database built
+by `alembic upgrade head`) failed with `column users.full_name does not
+exist`. The migrations had never created ten columns the ORM has: `tenants.slug`,
+`users.full_name`, `users.phone` and seven agent-action `audit_log` columns.
+The 915-test suite was green throughout, because **the test schema is built
+from ORM metadata** — the tests never see the migrations' schema.
+
+Fixed in `338d8d6`: migration `0018_missing_columns` adds the columns and the
+indexes, `User.role` now persists the lowercase value (it wrote `OWNER` into a
+Postgres enum that only accepts `owner`), and the new guard
+`tests/integration/test_migration_column_drift.py` compares every ORM column
+(name, type family, nullability) with a migrated scratch database — proven
+red on 0017, green on 0018.
+
+The record is `docs/failures/2026-10-21-column-drift-green-suite.md`.
+
+### Evidence
+
+- `pnpm lint` → "✔ No ESLint warnings or errors"
+- `pnpm typecheck` → clean (`tsc --noEmit`)
+- `pnpm build` → "✓ Compiled successfully", 11 routes
+- `uv run pytest tests/architecture tests/auth tests/integration tests/billing tests/e2e`
+  → 120 passed
+- `scripts/prove_sales_spine.py` → "SALES SPINE OK" (403 without a code, 201
+  with one, `status=pending plan=trial entitled=False`, the code cannot be
+  reused, login agrees with the same decision)
+
+### Acceptance criteria
+
+| # | Criterion | Result |
+|---|---|---|
+| 1 | `make check` EXIT=0 at a named SHA, JS output pasted | See the measured gate in `docs/STATE.md` |
+| 2 | no dead internal link | done (the guard is unconditional) |
+| 3 | `/pricing` shows the code prices and only matrix-enforced features | done (data-driven + tested) |
+| 4 | legal pages carry a DRAFT banner | done (`/terms`, `/privacy`, `/dpa`) |
+| 5 | `/login` posts to the real endpoint and renders the real errors | done |
+| 6 | `/signup` creates a pending trial and says the clock starts at connect | done (proof script) |
+| 7 | the banner renders the server's decision only; nothing on an API error | done |
+| 8 | `make seed-demo` creates a demo tenant | **deferred** (no surface to demo yet — see B8) |

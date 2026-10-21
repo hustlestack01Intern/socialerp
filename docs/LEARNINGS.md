@@ -197,6 +197,75 @@ human-approved 2026-10-18).
 
 ---
 
+## 2026-10-21 — M1.5: the sales surface, the invite gate, and the column drift
+
+### Rewards
+
+**EXEMPLAR — A real HTTP proof against a migrated database found what 915 green tests could not.**
+`scripts/prove_sales_spine.py` registers a tenant over HTTP against a database built by
+`alembic upgrade head`. It failed with `column users.full_name does not exist` — the migration
+chain had never created ten ORM columns (including all seven agent-action `audit_log` fields).
+The suite was green because **the test schema is built from ORM metadata**, so the tests exercise
+the ORM's idea of the schema, never the migrations' idea of it. The lesson is not "the tests were
+bad": the tests were green and correct. **The gate had no assertion about the thing that was
+broken.** Fix (`338d8d6`): migration `0018_missing_columns` + a column-drift guard proven red on
+0017 and green on 0018. Record: `docs/failures/2026-10-21-column-drift-green-suite.md`.
+
+**EXEMPLAR — Red → green for the drift, shown with the database, not asserted.**
+The drift was demonstrated on the live dev database (the RED listing of the ten missing columns at
+`0017_invite_codes`) and then re-measured after `alembic upgrade head` (GREEN, no missing
+columns). The guard test was run against both revisions.
+
+**EXEMPLAR — The proof script caught a second, different bug in the same flow.**
+`User.role` used `Enum(UserRole)` without `values_callable`, so the ORM wrote `OWNER` into a
+Postgres enum that only accepts `owner`. A first fix would have stopped at the first error; the
+proof ran the whole spine to the login.
+
+**EXEMPLAR — A protected-zone change was approved BEFORE the edit, with the approval recorded.**
+The invite gate (B4) touched auth, the migration chain and the production boot guard. The plan
+named the protected zone, the human approved it in the same bundle as F3/CI/U60, and the ADR
+(`0023`) records the design decisions. The F3 plan's approval box is now ticked with the
+human's answers, not with a retrospective claim.
+
+**EXEMPLAR — The billing guard is in the gate, not in a reviewer's head.**
+`tests/architecture/test_pricing_page_matches_code.py` compares `pricing.json` with `_PRICE_KES`
+and the entitlement matrix: a price change in the backend fails the gate until the page is
+updated. The xfail markers on the link guard are gone, so the debt is now paid and the
+assertions are unconditional.
+
+### Failures
+
+**FAILURE — "The gate is green" was read as "the platform works".**
+915 passing tests, ruff clean, mypy clean, evals 8/8 — and a production database that could not
+register a user. The belief was not unreasonable; the measurement was simply measuring the wrong
+thing. Root cause: the test schema is generated from the code under test, so a whole class of
+bugs (schema drift) is invisible to it. Change: a migrated database is now a first-class test
+target, and the guard lives in the gate. Filed as U71 (the guard is a floor: defaults, indexes,
+policies and triggers are still unchecked).
+
+**FAILURE — A local dev default that lies.**
+`Settings.POSTGRES_PASSWORD` defaults to `socialerp_dev_password` while compose defaults to
+`socialerp`; the API's "cannot connect" error reads like a broken database. Filed as U72 (LOW).
+
+**FAILURE — An acceptance criterion quietly downgraded to "deferred".**
+B8 (`make seed-demo`) was not built. The reason is defensible (there is no owner console, so a
+seeded tenant has no surface to demo) but it would have been easy to mark the criterion done.
+It is recorded as deferred **with the reason** in the plan, MAP and STATE.
+
+### Metrics
+
+| Metric | Before | After | Delta | Evidence |
+|--------|--------|-------|-------|----------|
+| ORM columns missing from the migrated schema | 10 (unmeasured) | 0 | -10 | `alembic upgrade head` + `information_schema` comparison, red on 0017 / green on 0018 |
+| Columns the gate now compares | 0 (tables only) | all ORM columns (name, type family, nullability) | +all | `tests/integration/test_migration_column_drift.py` |
+| Dead internal links on the public pages | 14 | 0 | -14 | `tests/architecture/test_dashboard_links.py` (xfails removed) |
+| xfail(strict) markers in the architecture guard | 3 | 0 | -3 | same file |
+| Absolute marketing claims on the public pages | 5 ("30 min", "watch demo", "100% isolation", …) | 0 | -5 | `apps/dashboard/src/app/page.tsx`, `tests/architecture/test_pricing_page_matches_code.py` |
+| Invited registrations without a valid code | accepted | 403 with one uniform body | closed | `scripts/prove_sales_spine.py` |
+| Rate limit on the auth endpoints | none (the setting existed, nothing read it) | 100/min per IP, per process | closed (first layer) | `tests/integration/test_rate_limit.py` |
+
+---
+
 ## Template for future entries
 
 ### YYYY-MM-DD — <Phase/Increment name>

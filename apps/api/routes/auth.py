@@ -43,8 +43,13 @@ from packages.core.socialerp.settings import get_settings
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
 # The one answer the invite gate gives for every failure (missing, unknown,
-# expired, exhausted, disabled). Identical for all of them on purpose: the
-# endpoint must not be an oracle for "does this code exist" (M1.5).
+# expired, exhausted, disabled). The body is identical for all of them on
+# purpose: it must not tell an attacker which case it was (M1.5).
+#
+# Honest note: the STATUS code still distinguishes a valid code (201) from an
+# invalid one (403) for an otherwise satisfiable request - no uniform status
+# code can avoid that. The mitigations are the per-IP rate limit on the auth
+# endpoints and the single use per code. See ADR 0023.
 _INVITE_REFUSED = "This invite code is not valid."
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -237,8 +242,8 @@ async def register(
     """Self-serve signup: create a tenant and its owner user, then log in.
 
     When ``INVITE_CODES_REQUIRED`` is on, the registration must carry a valid
-    invite code (M1.5). The check is server-side and every failure looks the
-    same (403, one message), so the endpoint is not a code oracle.
+    invite code (M1.5). The check is server-side and every failure returns
+    the same 403 body, so the response does not say which case it was.
     """
     invites = InviteCodeService(session)
     gate_on = get_settings().INVITE_CODES_REQUIRED

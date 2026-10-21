@@ -96,5 +96,29 @@ Explicitly **not** in this change:
 
 ## Approval
 
-- [ ] Human approves F3 (payment code, protected zone).
-- [ ] Human answers 1–3 above.
+- [x] Human approves F3 (payment code, protected zone) — **YES, 2026-10-21**,
+  bundled with the invite-code gate, the CI wiring and the U60 trial decision.
+- [x] Human answers 1–3 above — **1: 30 days** (monthly in advance, per
+  `docs/PRICING_STRATEGY.md`); **2: no rollover** of unused trial time; **3: the
+  period runs from the payment date and a live period is never shortened**.
+
+## Measured result (2026-10-21)
+
+- Commit `3cba4e6` (F3), `10e8ee5` (this plan), `ba89d34` (the handoff fix
+  the F3 test found).
+- `packages/core/socialerp/settings.py`: `BILLING_PAID_PERIOD_DAYS = 30`.
+- `packages/core/billing/service.py` `apply_plan_change`: a paid plan gets
+  `period_end = max(live period_end, now + 30 days)`; trial-plan changes keep
+  the trial semantics (the clock starts at channel connect, U67); the audit
+  entry records `period_end` before and after.
+- Tests: `tests/billing/test_paid_period.py` (6) — the expired-trial buyer is
+  entitled after paying, the pending upgrade gets a real period, the live
+  period is never shortened, the trial rollover is refused, the audit records
+  the period.
+- The M1.6 spine test's `xfail` marker was **removed** and both spine tests
+  are green (`tests/e2e/test_trial_to_subscription_spine.py`).
+- Follow-on defect found by the F3 test: the entitlement-denial path returned
+  `requires_human=True` but never set `handoff_requested`, so a denied tenant
+  was left in silence. Fixed in `ba89d34`
+  (`ConversationManager.set_handoff(..., reason="entitlement_denied")`) with
+  the test `tests/billing/test_entitlement_gate.py::test_denied_path_hands_off_to_a_human`.

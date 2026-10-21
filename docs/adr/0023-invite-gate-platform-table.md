@@ -52,8 +52,20 @@ so an expired code can never be redeemed even in a race.
 
 **All failures are the same failure.** Unknown, expired, exhausted and disabled
 codes raise one error with one message, and the HTTP layer answers every case
-with the same 403 body. The endpoint must not be an oracle for "does this code
-exist" (that would leak whether a code was ever issued).
+with the same 403 body. The *body* does not leak whether a code was ever
+issued.
+
+**What this does and does not hide (corrected 2026-10-21, skeptic).** The
+error *body* is uniform, but the *status code* cannot be: a registration with
+a valid code and a free email succeeds (201) while the same request with an
+invalid code is refused (403). Any gate that lets a valid code through and
+refuses an invalid one is therefore a code oracle for a request that is
+otherwise satisfiable - a uniform 403 does not change that. The mitigations
+are (a) the per-IP rate limit on the auth endpoints, which makes probing
+expensive, and (b) the single-use-per-code consumption, which limits the
+value of a discovered code to one tenant. The alternative - refusing every
+registration until a human approves it - is a different product (a concierge
+onboarding), and it is not what this gate is.
 
 The redemption is audited against the tenant that used it
 (`auth.invite_redeemed` in the tenant-scoped `audit_log`), so the founder can
@@ -89,7 +101,8 @@ predecessor guard in `apps/api/main.py`).
 - **Codes in the audit log**: the log is append-only and tenant-scoped, and it
   would make the code unqueryable in practice.
 - **Allow enumeration (different 403 bodies for unknown vs exhausted)**: it
-  turns the endpoint into a code oracle, which is a reconnaissance tool for
-  anyone who guesses the alphabet.
+  hands an attacker a cheap oracle for the code space. (The status code
+  already distinguishes a *valid* code from an invalid one for an otherwise
+  satisfiable request; the body must not make it easier still.)
 - **Charge the code only after the tenant is committed** (two-phase): leaves a
   window in which N registrations can all pass the check for one use.

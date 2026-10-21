@@ -8,8 +8,8 @@ Covered here:
 - with the gate on, a registration without a code is refused (403);
 - with the gate on, a registration with a valid code succeeds and the code is
   consumed;
-- with the gate on, an invalid code is refused with the same 403 as a missing
-  one (no oracle);
+- with the gate on, an invalid code is refused with the same 403 *body* as a
+  missing one (the status code cannot hide a valid code; see ADR 0023);
 - with the gate off (dev/test default), registration still works as before.
 """
 
