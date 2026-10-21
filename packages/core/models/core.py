@@ -24,7 +24,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from packages.core.models.base import Base
+from packages.core.models.base import Base, enum_values
 
 # =============================================================================
 # Enums
@@ -153,7 +153,12 @@ class User(Base):
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
     role: Mapped[UserRole] = mapped_column(
-        Enum(UserRole, native_enum=False),
+        # `values_callable=enum_values` persists the lowercase *value*
+        # ("owner"), not the member name ("OWNER"): the migration chain
+        # created `users.role` as a Postgres enum with lowercase labels and
+        # a 'staff' server_default, so without this the ORM wrote a value the
+        # database refused (found by the M1.5 sales-spine proof, 2026-10-21).
+        Enum(UserRole, native_enum=False, values_callable=enum_values),
         nullable=False,
         default=UserRole.STAFF,
         server_default="staff",
