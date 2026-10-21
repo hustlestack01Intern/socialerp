@@ -268,6 +268,7 @@ markers = [
     "property: Property-based tests",
     "slow: Slow tests",
     "eval: Evaluation tests",
+    "architecture: Architecture and consistency guards (code vs page)",
 ]
 
 [tool.coverage.run]

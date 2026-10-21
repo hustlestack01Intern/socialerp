@@ -1,0 +1,82 @@
+{
+  "currency": "KES",
+  "trial_note": "Free for 14 days, starting when you connect your WhatsApp number - not when you sign up. One trial per business.",
+  "plans": [
+    {
+      "id": "trial",
+      "name": "Trial",
+      "price": 0,
+      "price_label": "Free",
+      "period": "14 days from channel connect",
+      "channels": ["whatsapp"],
+      "agent_level": "L2",
+      "insights": true,
+      "api_access": "none",
+      "seats": 1,
+      "summary": "The whole selling loop on WhatsApp: the agent takes orders, reserves stock, asks for M-Pesa payment and keeps the customer posted.",
+      "highlight": "The agent transacts (L2), so a trial is the real product, not a demo."
+    },
+    {
+      "id": "starter",
+      "name": "Starter",
+      "price": 2999,
+      "price_label": "KES 2,999",
+      "period": "per month, from the payment date",
+      "channels": ["whatsapp"],
+      "agent_level": "L1",
+      "insights": true,
+      "api_access": "none",
+      "seats": 1,
+      "summary": "For a business that wants the agent answering questions all day, and wants to approve each order itself.",
+      "highlight": "The agent answers (L1): FAQs, prices, availability, hours, delivery areas - from your own catalogue and rules."
+    },
+    {
+      "id": "professional",
+      "name": "Professional",
+      "price": 7999,
+      "price_label": "KES 7,999",
+      "period": "per month, from the payment date",
+      "channels": ["whatsapp", "instagram"],
+      "agent_level": "L2",
+      "insights": true,
+      "api_access": "api",
+      "seats": 3,
+      "summary": "For a business selling on two channels with more than one person working in the business.",
+      "highlight": "The agent transacts on both channels (L2), and you get API access and 3 seats."
+    },
+    {
+      "id": "enterprise",
+      "name": "Enterprise",
+      "price": 19999,
+      "price_label": "KES 19,999",
+      "period": "per month, from the payment date",
+      "channels": ["whatsapp", "instagram", "tiktok"],
+      "agent_level": "L3",
+      "insights": true,
+      "api_access": "api + webhooks",
+      "seats": null,
+      "summary": "For a business that wants the agent optimising stock and campaigns, with webhooks and unlimited seats.",
+      "highlight": "The agent optimises (L3): it may propose low-risk stock and follow-up actions, and you decide what it may apply."
+    }
+  ],
+  "sold_separately": [
+    {
+      "label": "M-Pesa transaction charges",
+      "note": "Safaricom's charges on your own M-Pesa are your costs, not ours. We do not add a transaction fee."
+    },
+    {
+      "label": "Onboarding and number verification",
+      "note": "We help you connect your existing WhatsApp Business number and verify your M-Pesa Till. Any charge by Meta or Safaricom for approval is separate."
+    },
+    {
+      "label": "Rider and delivery costs",
+      "note": "Rider pay, fuel and delivery fees are arranged with your riders; we do not mark them up."
+    }
+  ],
+  "included_in_every_plan": [
+    "Unlimited customer conversations on the channels your plan includes",
+    "Your own catalogue, stock ledger and order history",
+    "M-Pesa STK Push with callback confirmation and reconciliation",
+    "An append-only audit log of what the agent did"
+  ]
+}

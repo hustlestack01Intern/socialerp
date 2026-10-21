@@ -1,11 +1,8 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 
 export default function HomePage() {
-  const [email, setEmail] = useState("");
-
   return (
     <main className="min-h-screen flex flex-col">
       {/* Hero Section */}
@@ -20,32 +17,36 @@ export default function HomePage() {
               payments, and delivery — all inside the social channels your customers already use.
             </p>
             <div className="mt-10 flex items-center justify-center gap-4">
-              <Link href="/onboarding" className="btn-primary text-lg px-8 py-3">
+              <Link href="/signup" className="btn-primary text-lg px-8 py-3">
                 Start Free Trial
               </Link>
-              <Link href="/demo" className="btn-secondary text-lg px-8 py-3">
-                Watch Demo
+              <Link href="/pricing" className="btn-secondary text-lg px-8 py-3">
+                See Pricing
               </Link>
             </div>
+            <p className="mt-4 text-sm text-gray-500">
+              The first cohort is invite-only: you need a code from us. Your 14-day
+              trial starts when you connect your WhatsApp number, not when you sign up.
+            </p>
           </div>
 
-          {/* Trust Indicators */}
+          {/* What the system does (claims map to enforced behaviour) */}
           <div className="mt-16 grid grid-cols-2 gap-8 md:grid-cols-4">
             <div className="text-center">
-              <div className="text-3xl font-bold text-primary-600">30 min</div>
-              <div className="text-sm text-gray-600">Onboarding Time</div>
+              <div className="text-3xl font-bold text-primary-600">14 days</div>
+              <div className="text-sm text-gray-600">Free trial, from channel connect</div>
             </div>
             <div className="text-center">
-              <div className="text-3xl font-bold text-primary-600">24/7</div>
-              <div className="text-sm text-gray-600">AI Agent Response</div>
+              <div className="text-3xl font-bold text-primary-600">Always on</div>
+              <div className="text-sm text-gray-600">The agent never sleeps</div>
             </div>
             <div className="text-center">
               <div className="text-3xl font-bold text-primary-600">M-Pesa</div>
-              <div className="text-sm text-gray-600">Native Integration</div>
+              <div className="text-sm text-gray-600">STK Push, confirmed by callback</div>
             </div>
             <div className="text-center">
-              <div className="text-3xl font-bold text-primary-600">100%</div>
-              <div className="text-sm text-gray-600">Tenant Isolation</div>
+              <div className="text-3xl font-bold text-primary-600">Per tenant</div>
+              <div className="text-sm text-gray-600">Isolation enforced by the database</div>
             </div>
           </div>
         </div>
@@ -59,7 +60,7 @@ export default function HomePage() {
               Everything You Need to Sell on Social
             </h2>
             <p className="mt-4 text-lg text-gray-600">
-              One platform. Zero app switching. Your customers never leave the chat.
+              One platform. Your customers never leave the chat.
             </p>
           </div>
 
@@ -67,33 +68,33 @@ export default function HomePage() {
             {[
               {
                 title: "Conversations",
-                description: "Unified inbox for WhatsApp, Instagram DMs, and TikTok. AI agent handles FAQs, orders, and payments 24/7.",
-                icon: "MessageSquare",
+                description:
+                  "One inbox for WhatsApp and Instagram DMs. The agent answers, takes orders and asks for payment, and hands over to you when it is unsure.",
               },
               {
                 title: "Inventory & Orders",
-                description: "Live stock, reservations, and order state machine. Never oversell. Automatic stock updates from sales.",
-                icon: "Package",
+                description:
+                  "Stock is a ledger, not a number that gets overwritten: every receipt, reservation and sale is recorded, so the last item cannot be oversold.",
               },
               {
                 title: "M-Pesa Payments",
-                description: "STK Push at order or delivery. Callbacks, reconciliation, and fallback handling built-in.",
-                icon: "CreditCard",
+                description:
+                  "STK Push at order time or at delivery. Callbacks are checked against the order, replayed callbacks cannot credit you twice, and every day is reconciled.",
               },
               {
                 title: "Delivery & Riders",
-                description: "WhatsApp-based rider flow. Live tracking, proof of delivery, pay-on-delivery triggers.",
-                icon: "Truck",
+                description:
+                  "Riders work over WhatsApp: picked up, arrived, delivered. Customers get a status message at each step.",
               },
               {
                 title: "Customer Memory",
-                description: "Unified profiles across channels. Preferences, history, RFM scores. Personalized offers.",
-                icon: "Users",
+                description:
+                  "One profile per customer, with the evidence behind what we remember: what they bought, when they reorder, what they prefer.",
               },
               {
                 title: "Owner Console",
-                description: "Run your business from WhatsApp. \"How many orders today?\" \"Mark order 1042 delivered.\"",
-                icon: "Smartphone",
+                description:
+                  "Ask your business in plain language: “how many orders today?”, “restock 20 of the black hoodie”.",
               },
             ].map((feature) => (
               <div key={feature.title} className="card">
@@ -118,21 +119,17 @@ export default function HomePage() {
             Ready to start selling smarter?
           </h2>
           <p className="mt-4 text-lg text-primary-100">
-            Join the waitlist for early access. 30-minute onboarding. No credit card required.
+            We are onboarding the first cohort by hand, one business at a time. No
+            credit card, and your trial only starts when you connect your number.
           </p>
-          <form className="mt-8 flex flex-col sm:flex-row gap-4 justify-center" onSubmit={(e) => { e.preventDefault(); alert("Thanks for joining the waitlist!"); }}>
-            <input
-              type="email"
-              placeholder="your@email.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="flex-1 max-w-md px-4 py-3 rounded-lg text-gray-900 placeholder-gray-400"
-              required
-            />
-            <button type="submit" className="bg-white text-primary-600 px-8 py-3 rounded-lg font-medium hover:bg-primary-50 transition-colors">
-              Join Waitlist
-            </button>
-          </form>
+          <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center">
+            <Link href="/signup" className="btn-secondary text-lg px-8 py-3">
+              Start with your invite code
+            </Link>
+            <Link href="/pricing" className="text-lg px-8 py-3 text-white underline">
+              What it costs
+            </Link>
+          </div>
         </div>
       </section>
 
@@ -147,33 +144,28 @@ export default function HomePage() {
             <div>
               <h4 className="text-white font-medium mb-4">Product</h4>
               <ul className="space-y-2 text-sm">
-                <li><Link href="/features" className="hover:text-white">Features</Link></li>
                 <li><Link href="/pricing" className="hover:text-white">Pricing</Link></li>
-                <li><Link href="/docs" className="hover:text-white">Documentation</Link></li>
-                <li><Link href="/api" className="hover:text-white">API Reference</Link></li>
+                <li><Link href="/signup" className="hover:text-white">Start your trial</Link></li>
+                <li><Link href="/login" className="hover:text-white">Log in</Link></li>
               </ul>
             </div>
             <div>
-              <h4 className="text-white font-medium mb-4">Company</h4>
+              <h4 className="text-white font-medium mb-4">What we enforce</h4>
               <ul className="space-y-2 text-sm">
-                <li><Link href="/about" className="hover:text-white">About</Link></li>
-                <li><Link href="/blog" className="hover:text-white">Blog</Link></li>
-                <li><Link href="/careers" className="hover:text-white">Careers</Link></li>
-                <li><Link href="/contact" className="hover:text-white">Contact</Link></li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="text-white font-medium mb-4">Legal</h4>
-              <ul className="space-y-2 text-sm">
-                <li><Link href="/privacy" className="hover:text-white">Privacy Policy</Link></li>
-                <li><Link href="/terms" className="hover:text-white">Terms of Service</Link></li>
-                <li><Link href="/dpa" className="hover:text-white">Data Protection</Link></li>
                 <li><Link href="/security" className="hover:text-white">Security</Link></li>
+              </ul>
+            </div>
+            <div>
+              <h4 className="text-white font-medium mb-4">Legal (draft)</h4>
+              <ul className="space-y-2 text-sm">
+                <li><Link href="/privacy" className="hover:text-white">Privacy notice</Link></li>
+                <li><Link href="/terms" className="hover:text-white">Terms of service</Link></li>
+                <li><Link href="/dpa" className="hover:text-white">Data protection</Link></li>
               </ul>
             </div>
           </div>
           <div className="mt-8 border-t border-gray-800 pt-8 text-center text-sm">
-            © 2024 SocialERP. Built for Kenyan sellers.
+            © 2026 SocialERP. Built for Kenyan sellers.
           </div>
         </div>
       </footer>

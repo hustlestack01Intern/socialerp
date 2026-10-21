@@ -15,14 +15,14 @@ Two invariants are enforced here:
    nothing). ``alert(`` is banned in the dashboard.
 
 The test reads the source as text, so it runs in ``make check`` without the
-JavaScript toolchain (which CI cannot install yet — see docs/STATE.md).
+JavaScript toolchain.
 
-Status: the *mechanism* is proven here (the guard is tested against a
-synthetic dead link, so it really has teeth). The *current debt* — the
-landing page's 14 dead links and the waitlist ``alert`` — is asserted with
-``xfail(strict=True)``: the moment the M1.5 pages land, these turn into
-XPASS and strict mode makes them FAIL, which is the signal to remove the
-markers. They cannot rot into a silent pass.
+Status: the M1.5 sales surface landed (2026-10-21) — ``/pricing``, ``/login``,
+``/signup``, ``/terms``, ``/privacy``, ``/dpa`` and ``/security`` exist, the
+landing page points at them instead of at 14 dead routes, and the waitlist
+form that showed a success ``alert`` while recording nothing is gone. The
+``xfail(strict=True)`` markers that used to hold this debt are removed: the
+debt is paid, so the assertions are now unconditional.
 """
 
 from __future__ import annotations
@@ -122,16 +122,10 @@ def test_guard_ignores_external_links(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# The current debt (xfail(strict=True) until the M1.5 pages land).
+# The surface itself (unconditional since the M1.5 pages landed).
 # ---------------------------------------------------------------------------
 
-_DEBT = (
-    "M1.5 sales surface: the pages are being built; the landing page still points at "
-    "routes that do not exist yet"
-)
 
-
-@pytest.mark.xfail(strict=True, reason=_DEBT)
 def test_no_dead_internal_links() -> None:
     """Every internal link must resolve to a page that exists."""
     dead = _dead_links(DASHBOARD_SRC)
@@ -140,7 +134,6 @@ def test_no_dead_internal_links() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_DEBT)
 def test_no_fake_success_alerts() -> None:
     """The surface may not claim a success the system does not record."""
     offenders = [
@@ -159,7 +152,6 @@ def test_home_page_exists() -> None:
     assert (APP_DIR / "page.tsx").exists()
 
 
-@pytest.mark.xfail(strict=True, reason=_DEBT)
 @pytest.mark.parametrize(
     "href", ["/pricing", "/login", "/signup", "/terms", "/privacy", "/dpa"]
 )
