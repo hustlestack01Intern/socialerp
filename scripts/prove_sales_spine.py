@@ -65,9 +65,12 @@ async def main() -> int:
         "business_name": "Proof Traders Ltd",
         "slug": f"proof-{uuid.uuid4().hex[:6]}",
         "phone": "254712000111",
-        "email": "proof@example.com",
+        # A fresh identity per run: the script must be re-runnable against a
+        # database that already holds a previous run (the owner email is
+        # unique, so a fixed one would answer 409 on the second run).
+        "email": f"proof-{uuid.uuid4().hex[:6]}@example.com",
         "owner_name": "Proof Owner",
-        "owner_email": "proof-owner@example.com",
+        "owner_email": f"proof-owner-{uuid.uuid4().hex[:6]}@example.com",
         "owner_password": PASSWORD,
     }
 
