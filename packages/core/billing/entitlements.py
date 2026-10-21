@@ -54,7 +54,9 @@ class Entitlements:
 
 
 # WhatsApp is the primary channel; Instagram is Professional+; TikTok is
-# feature-flagged and not sold on any plan yet.
+# feature-flagged and not sold on any plan yet (AGENTS.md §3, Phase 10) - a
+# plan may not grant a channel the software does not implement, or the pricing
+# page would be selling a promise nobody can keep.
 _MATRIX: dict[PlanTier, Entitlements] = {
     PlanTier.TRIAL: Entitlements(
         plan=PlanTier.TRIAL,
@@ -82,9 +84,16 @@ _MATRIX: dict[PlanTier, Entitlements] = {
     ),
     PlanTier.ENTERPRISE: Entitlements(
         plan=PlanTier.ENTERPRISE,
-        channels=frozenset({"whatsapp", "instagram", "tiktok"}),
+        # TikTok is NOT sold yet: the assisted mode is Phase 10 and behind a
+        # feature flag. Listing it here would be a promise the software
+        # cannot keep (M1.6, U80).
+        channels=frozenset({"whatsapp", "instagram"}),
         agent_level=AgentLevel.L3,
-        api_access=ApiAccess.API_AND_WEBHOOKS,
+        # "api + webhooks" is NOT sold: there is no inbound webhook API in the
+        # software, so selling it would be a promise nobody can keep (M1.6,
+        # U80). The API access that is sold is the read-only developer API
+        # (apps/api/routes/developer.py).
+        api_access=ApiAccess.API,
         insights=True,
         seats=None,
     ),

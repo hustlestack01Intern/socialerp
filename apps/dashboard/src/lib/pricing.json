@@ -1,6 +1,6 @@
 {
   "currency": "KES",
-  "trial_note": "Free for 14 days, starting when you connect your WhatsApp number - not when you sign up. One owner account per email address; we ask for one trial per business.",
+  "trial_note": "Free for 14 days, starting when you connect your WhatsApp number - not when you sign up. One owner account per email address, and one business per WhatsApp number.",
   "plans": [
     {
       "id": "trial",
@@ -59,15 +59,14 @@
       "period": "per month, from the payment date",
       "channels": [
         "whatsapp",
-        "instagram",
-        "tiktok"
+        "instagram"
       ],
       "agent_level": "L3",
       "insights": true,
-      "api_access": "api + webhooks",
+      "api_access": "api",
       "seats": null,
-      "summary": "For a business that wants the agent optimising stock and campaigns, with webhooks and unlimited seats.",
-      "highlight": "The agent optimises (L3): it may propose low-risk stock and follow-up actions, and you decide what it may apply."
+      "summary": "For a business with a team that needs unlimited seats, and that wants the agent's ceiling raised to L3.",
+      "highlight": "Unlimited seats, and L3 recorded as the agent's ceiling. The L3 optimisation actions are not switched on yet - see below."
     }
   ],
   "sold_separately": [
@@ -91,13 +90,46 @@
     "An append-only audit log of what the agent did"
   ],
   "enforced_today": [
-    "If your plan has expired, has been cancelled or has not started yet, the agent stops working and your customers get a holding message and a human instead. This is switched on today.",
-    "Your plan, its state and its dates are published by the API and shown in your dashboard. This is switched on today.",
-    "The trial clock starts when you connect your number, not when you sign up, so a signup that never connects does not burn your trial. This is switched on today."
+    {
+      "feature": "plan_state",
+      "statement": "If your plan has expired, has been cancelled or has not started yet, the agent stops working and your customer gets a holding message and a human instead. This is switched on today."
+    },
+    {
+      "feature": "plan_published",
+      "statement": "Your plan, its state and its dates are published by the API and shown in your dashboard. This is switched on today."
+    },
+    {
+      "feature": "trial_clock",
+      "statement": "The trial clock starts when you connect your number, not when you sign up, so a signup that never connects does not burn your trial. This is switched on today."
+    },
+    {
+      "feature": "channels",
+      "statement": "The channels on your plan are switched on and off for real: Instagram needs Professional or Enterprise, so on the Trial and Starter plans Instagram is not switched on and Instagram messages are not processed. This is switched on today."
+    },
+    {
+      "feature": "agent_level",
+      "statement": "The agent level on your plan is a ceiling, not a switch: on the Starter plan the agent answers questions (L1) even if you ask it to take an order, and it never takes an order above your plan. This is switched on today."
+    },
+    {
+      "feature": "api_access",
+      "statement": "API access is a limit: a plan without it cannot create an API key, so a key can never be used. The key opens a read-only API for your catalogue, your stock and your orders. This is switched on today."
+    },
+    {
+      "feature": "insights",
+      "statement": "Your daily, weekly and low-stock reports are included on every plan, and the pages that serve them check the plan before they answer. This is switched on today."
+    },
+    {
+      "feature": "seats",
+      "statement": "The seat count on your plan is a limit: a plan with one seat cannot add a second user, and a plan with three seats cannot add a fourth. This is switched on today."
+    },
+    {
+      "feature": "one_business_per_number",
+      "statement": "One business per WhatsApp number: the number is the business identity, so the same number cannot open a second account or a second trial. This is switched on today."
+    }
   ],
   "not_enforced_yet": [
-    "The channel list per plan (Instagram on Professional, TikTok on Enterprise) is recorded on your plan and published by the API, but the system does not yet refuse a request because of it.",
-    "The agent-level ceiling per plan is recorded the same way, but is not yet enforced per request.",
-    "API access and the seat count are recorded on your plan, but are not yet switched on as limits."
+    "The Enterprise plan records L3 as the agent level and that ceiling is enforced, but the L3 optimisation actions themselves - the agent proposing stock and follow-up work - are not built yet. Until they are, L3 behaves like L2.",
+    "TikTok is not on any plan. The assisted mode is still being built, and we will not sell a channel before it works.",
+    "The API is read-only. Writing back to your catalogue from the API, and inbound webhooks, are not built yet, so no plan sells them."
   ]
 }

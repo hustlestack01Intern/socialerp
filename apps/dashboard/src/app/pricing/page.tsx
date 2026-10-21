@@ -7,6 +7,23 @@ export const metadata = {
     "What each plan costs and what it includes - and, separately, what the system enforces today.",
 };
 
+// What each level means, in the words the code uses. L3 is a ceiling that is
+// enforced; the optimisation actions behind it are not built yet, and the page
+// must not say otherwise.
+const AGENT_LEVEL_TEXT: Record<string, string> = {
+  L0: "shadow mode - you approve every reply",
+  L1: "answers questions, you approve the orders",
+  L2: "takes orders and asks for payment",
+  L3: "ceiling of L3 - the optimisation actions are not switched on yet",
+};
+
+// "api" means the read-only developer API (catalogue, stock, orders). No plan
+// sells writes or inbound webhooks, so the label must not imply them.
+const API_ACCESS_TEXT: Record<string, string> = {
+  none: "not included",
+  api: "read-only API (your catalogue, stock and orders)",
+};
+
 function PlanCard({ plan }: { plan: (typeof pricing.plans)[number] }) {
   return (
     <div className="card flex flex-col">
@@ -20,14 +37,15 @@ function PlanCard({ plan }: { plan: (typeof pricing.plans)[number] }) {
           {plan.channels.join(", ")}
         </li>
         <li>
-          <span className="font-medium">Agent:</span> {plan.agent_level} - {plan.agent_level === "L2" ? "takes orders and asks for payment" : plan.agent_level === "L1" ? "answers questions, you approve the orders" : plan.agent_level === "L3" ? "answers, transacts and proposes optimisations" : "not included"}
+          <span className="font-medium">Agent:</span> {plan.agent_level} - {AGENT_LEVEL_TEXT[plan.agent_level] ?? "not included"}
         </li>
         <li>
           <span className="font-medium">Insights:</span>{" "}
           {plan.insights ? "included" : "not included"}
         </li>
         <li>
-          <span className="font-medium">API access:</span> {plan.api_access}
+          <span className="font-medium">API access:</span>{" "}
+          {API_ACCESS_TEXT[plan.api_access] ?? plan.api_access}
         </li>
         <li>
           <span className="font-medium">Seats:</span>{" "}
@@ -94,11 +112,11 @@ export default function PricingPage() {
           </h2>
           <ul className="mt-4 space-y-2 text-gray-700">
             {pricing.enforced_today.map((item) => (
-              <li key={item} className="flex gap-2">
+              <li key={item.feature} className="flex gap-2">
                 <span aria-hidden="true" className="text-primary-600">
                   &#10003;
                 </span>
-                {item}
+                {item.statement}
               </li>
             ))}
           </ul>
