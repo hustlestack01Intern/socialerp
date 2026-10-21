@@ -2,17 +2,25 @@
 
 > State of record. **Updated 2026-10-21 by the Chief Engineer — measured truth.**
 >
-> **HEAD `0b7e2a3`** ("the honest version of the invite gate, the pages and the
-> open risks"). The wave below landed in this order:
+> **HEAD `c4e9317`** ("the records, and the dev password that read like a broken
+> database"). The wave below landed in this order:
 > `81a50a4` the invite gate · `d475ee9` the CI wiring · `7fc25d8` the sales
 > surface · `338d8d6` the column-drift fix · `921f2de` the failure record ·
 > `8faac57` the registration is one transaction and is audited ·
 > `ac2d7ed` the public pages say what the software does ·
-> `6c1c5d3` the rate limit on the auth endpoints · `0b7e2a3` the honest records.
+> `6c1c5d3` the rate limit on the auth endpoints · `0b7e2a3` the honest records ·
+> `c4e9317` the state of record.
 >
-> **Measured 2026-10-21 (this session, the final gate — log `/tmp/gate-final2.log`):**
-> - `make check` → **GATE_NUMBERS**
-> - `pnpm lint` → "✔ No ESLint warnings or errors"; `pnpm typecheck` → clean; `pnpm build` → 11 routes.
+> **Measured 2026-10-21 (this session, the final gate at `c4e9317`, clean tree —
+> log `/tmp/gate-c4e9317.log`):**
+> - `make check` → **EXIT 0**:
+>   - `ruff check .` → **All checks passed!**
+>   - `pnpm lint` (eslint) → **✔ No ESLint warnings or errors**
+>   - `mypy packages apps` (strict) → **Success: no issues found in 133 source files**
+>   - `pnpm typecheck` (tsc --noEmit) → **clean**
+>   - `pytest` → **978 passed**, 155 warnings, 0 failed, 24:53
+>   - `make eval` → **cases: 8  passed: 8  failed: 0** → "OK: all active checks passed"
+> - `pnpm build` → **"✓ Compiled successfully"**, 11 routes.
 > - `scripts/prove_sales_spine.py` → **"SALES SPINE OK"** against a database built by
 >   `alembic upgrade head` (not the metadata-built test schema).
 >
