@@ -28,6 +28,7 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apps.api.routes._gates import require_api_access, require_seat
 from packages.core.audit.logger import AuditLogger
 from packages.core.auth.api_keys import ApiKeyManager
 from packages.core.auth.dependencies import get_current_tenant_id, get_current_user, get_db
@@ -40,8 +41,6 @@ from packages.core.domain.auth import ApiKeyCreate as ApiKeyCreateInput
 from packages.core.domain.user import User as UserDomain
 from packages.core.models import Tenant, User, UserRole
 from packages.core.socialerp.settings import get_settings
-
-from apps.api.routes._gates import require_api_access, require_seat
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 

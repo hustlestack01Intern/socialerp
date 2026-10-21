@@ -221,10 +221,10 @@ async def test_insights_are_not_state_gated(tenant_session, tenant) -> None:
 
 def test_the_enforced_set_covers_every_cell() -> None:
     """Every cell the matrix has is a cell the code decides."""
-    assert ENFORCED_FEATURES == {
+    assert {
         "channels",
         "agent_level",
         "api_access",
         "insights",
         "seats",
-    }
+    } == ENFORCED_FEATURES

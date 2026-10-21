@@ -29,11 +29,10 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apps.api.routes._gates import require_insights
 from packages.core.auth.dependencies import get_current_tenant_id, get_db, require_owner
 from packages.core.domain import TenantId
 from packages.core.insights import Anomaly, InsightsService, PeriodReport, StockAlert
-
-from apps.api.routes._gates import require_insights
 
 router = APIRouter(prefix="/api/v1/insights", tags=["insights"])
 

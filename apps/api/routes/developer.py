@@ -26,14 +26,13 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from packages.core.auth.dependencies import get_db, require_api_key
 from packages.core.models.catalog import Product as ProductModel
 from packages.core.models.core import ApiKey
-from packages.core.models.order import Order as OrderModel
 from packages.core.orders import OrderService
 
 router = APIRouter(prefix="/api/v1/developer", tags=["developer API"])
