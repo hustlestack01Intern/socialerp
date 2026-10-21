@@ -312,24 +312,25 @@ Inbound → Webhook → MessageReceived → ConversationManager
     enum rules, read-time evaluation) and deterministic owner reports/anomaly (committed `8dbc120`,
     routers wired at `main.py:165-166`, 37+38 tests green in wave-2 gate)
 
-## Current Phase (updated 2026-10-19 — measured truth)
+## Current Phase (updated 2026-10-21 — measured truth)
 
-**Gate is RED at HEAD `c955fbd` with a dirty working tree** (uncommitted Slice-A fragment).
-Measured 2026-10-19: `uv run ruff check .` → 34 errors / 15 files; `uv run pytest tests/contract -q`
-→ 10 failed, 1 passed; full suite (subagent) → 788 passed, 15 failed, 22 errors; Makefile lines
-109/113/117/121/125/147/151/170 reference deleted `infra/docker-compose.yml` and
-`packages/core/alembic.ini`. Evidence: `docs/failures/2026-10-19-stale-green-gate.md`.
+**Money path F0→F2 in flight** (plan `docs/plans/2026-10-21-money-path-f0-f2.md`,
+human-approved 2026-10-21). Correction: the 2026-10-19 note below ("billing does not
+exist", "awaiting human go") was **stale** — M0 gate repair and M1.1–M1.4 (tenancy
+middleware, billing domain + `0015_billing`, trial-at-connect, entitlement gate) are
+committed `17bafc8`…`a0dff1d`. Measured 2026-10-21 after the F1 fix pass: ruff clean,
+mypy success (130 files), `tests/billing tests/architecture` → 30 passed.
 
-- **Phase 9 (Instagram + onboarding wizard)**: commits `c4db565..d1344fd` (+ docs `c955fbd`)
-  are **merged but were never full-gate-verified** — do not treat as complete.
-- **Phase 10**: **not started**, except an uncommitted Slice-A fragment in the working tree.
-- **Billing / trial / entitlement: does not exist** in the codebase.
-- **Next**: M0 (gate truth) → M1 trial spine (B1 tenancy + D-min billing) → M1.5 sales surface
-  → M2 pre-go-live gate, per `docs/plans/2026-10-19-trial-spine-first-clients.md`
-  — **awaiting human go** (protected zones: billing, tenant-isolation tests, CI gate).
-- Prior "764 green" claim (at `e7170d2`) is **superseded** — it predates Phase 9.
+- **F0 (done 2026-10-21)**: docs honesty — SHIPPING_GUIDE/FINAL_DELIVERY_SUMMARY no
+  longer claim "PRODUCTION READY"; STATE/MAP headers synced to HEAD.
+- **F1 (this session)**: M1.5 billing API (`GET/POST /api/v1/billing/*`) committed.
+- **F2 (next, protected zone — approved)**: non-trial plan change requires a unique
+  M-Pesa payment reference (no owner self-upgrade; U68).
+- Then: M1.5 sales surface → M2 pre-go-live gate (sandbox phone test, U61 scope
+  decision) → concierge pilot. Transaction fees stay blocked on external
+  Meta/Daraja KYC (owner applies in parallel).
 
-### HISTORICAL — phase checklist as of 2026-10-18 (gate claims below were measured at `e7170d2` and are superseded by the RED measurement above)
+### HISTORICAL — phase checklist as of 2026-10-19 (superseded by the 2026-10-21 measurement above)
 - M0: Scaffold, tooling, CI, docs, fake Meta/Daraja servers ✓
 - M1: Multi-tenant core, auth, RLS, audit log, isolation tests ✓
 - M2: WhatsApp channel (webhooks, signature verification, 24h window, inbox, handoff) ✓

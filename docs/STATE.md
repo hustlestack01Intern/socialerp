@@ -1,43 +1,38 @@
 # Project State
 
-> State of record. **Updated 2026-10-19 by the scribe — measured truth at HEAD `c955fbd`
-> with a DIRTY working tree** (uncommitted Slice-A fragment: modified `.github/workflows/ci.yml`,
-> `docker-compose.yml`, `packages/core/pyproject.toml`, `tests/conftest.py`, `uv.lock`, deleted
-> `infra/docker-compose.yml` + `packages/core/alembic*`, plus untracked `docs/BUSINESS_PLAN.md`,
-> `docs/failures/`, `docs/plans/2026-10-19-…`, `tests/contract/`, fake-server pyprojects).
+> State of record. **Updated 2026-10-21 by the Chief Engineer — measured truth.**
 >
-> **THE GATE IS RED (measured 2026-10-19):**
-> - `uv run ruff check .` → **34 errors across 15 files** (14 in `tests/contract/test_sandbox_replay.py`;
->   committed-file errors in `packages/core/onboarding/{steps,service,metrics}.py`,
->   `packages/core/models/instagram.py`, `packages/integrations/meta/webhook.py`,
->   `packages/integrations/meta/fakes/main.py`, `packages/integrations/fake_meta/main.py`,
->   `packages/core/socialerp/outbox.py`, `packages/core/models/crm.py`,
->   `tests/property/test_domain_primitives.py`, `tests/insights/test_insights_reports.py`,
->   `tests/e2e/test_instagram_channel.py`).
-> - `uv run pytest tests/contract -q` → **10 failed, 1 passed**.
-> - Full suite (subagent run) → **788 passed, 15 failed, 22 errors**.
-> - Makefile lines **109/113/117/121/125/147/151/170** reference deleted
->   `infra/docker-compose.yml` and `packages/core/alembic.ini`.
+> **HEAD `a0dff1d`** (M1.4 entitlement gate committed) + a working tree carrying the
+> M1.5 billing API (untracked `apps/api/routes/billing.py`, `packages/core/billing/provider.py`).
+> **The docs of 2026-10-19 ("billing does not exist / awaiting go") were stale** — M0
+> (gate repair) and M1.1–M1.4 landed 2026-10-19/20 without this file being updated.
 >
-> **SUPERSEDES the previous "764 passed, evals 8/8, ruff clean" claim.** That measurement was
-> taken at `e7170d2` and predates the Phase 9 commits `c4db565..d1344fd`, the docs commit
-> `c955fbd` and the dirty Slice-A fragment; CI on `main` was red or absent. Full failure report:
-> `docs/failures/2026-10-19-stale-green-gate.md`.
+> **Measured 2026-10-21 (this session, after the F1 lint/mypy fix pass):**
+> - `uv run ruff check .` → **All checks passed!**
+> - `uv run mypy packages apps` (strict) → **Success: no issues found in 130 source files**
+> - `uv run pytest tests/billing tests/architecture` → **30 passed** (billing suite + deps)
+> - Full `make check` → **pending** (run lands with the F1/F2 commits; paste counts here)
+> - Infra: colima + root `docker-compose.yml` (postgres :5432 with `socialerp_test`,
+>   postgres-test :5433, redis, redis-test) — **compose, not ad-hoc containers**.
 >
-> Phase 9 (Instagram + onboarding) is **merged but was never full-gate-verified**. Billing /
-> trial **does not exist** in the codebase. Next work is **M0 (gate truth)** under
-> `docs/plans/2026-10-19-trial-spine-first-clients.md` — **awaiting human go** (protected zones:
-> billing, tenant-isolation tests, CI gate). See UNCERTAINTY.md U58–U61 (2026-10-19 addendum).
-> Everything below the "Historical" marker describes state as of 2026-10-18 and is retained
-> for context only. If this contradicts MAP.md or the filesystem, check `git log` and `docs/plans/`.
+> **Money path (plan `docs/plans/2026-10-21-money-path-f0-f2.md`, human-approved 2026-10-21):**
+> F0 docs-honesty DONE this session (SHIPPING_GUIDE/FINAL_DELIVERY_SUMMARY no longer
+> claim "PRODUCTION READY"); F1 = commit M1.5 billing API (this session);
+> F2 = payment-verified plan changes (billing protected zone — approved) in progress.
+> Known hole being fixed by F2: `POST /billing/subscription` lets an owner self-upgrade
+> with no payment check (U68). U60 (trial policy) remains a HUMAN decision — the 14-day
+> default in settings is an implementation placeholder, not an approved policy.
+>
+> Everything below the "Historical" marker predates this measurement. If it contradicts
+> MAP.md or the filesystem, check `git log` and `docs/plans/`.
 
 ## Current Phase
-**Gate RED at HEAD `c955fbd` (dirty tree) — measured 2026-10-19; see the header block above
-for exact numbers.** Phase 9 code is merged (`c4db565..d1344fd` + docs `c955fbd`) but never
-passed a full gate. Phase 10 has not started except for an uncommitted Slice-A fragment in the
-working tree. **Next: M0 gate truth → M1 trial spine (B1 tenancy + D-min billing) → M1.5 sales
-surface → M2 pre-go-live gate**, per `docs/plans/2026-10-19-trial-spine-first-clients.md`
-(awaiting human go). No billing, trial or entitlement code exists yet.
+**Money path F0→F2 (2026-10-21, human-approved).** M0 + M1.1–M1.4 are COMMITTED
+(`17bafc8`…`a0dff1d`); M1.5 billing API is being committed now; F2 (payment-verified
+plan changes) follows, then a solo full `make check` is measured and pasted above.
+Next after this: M1.5 sales surface (`/pricing /signup /login`) → M2 pre-go-live gate
+(sandbox phone test — needs the human's U61 scope answer) → concierge pilot.
+External critical path (owner, parallel): Meta business verification + Daraja/aggregator KYC.
 
 ---
 

@@ -1,7 +1,11 @@
 # SocialERP v1.0 — Shipping Documentation & Business Package
 
-> **Version**: 1.0.0 | **Date**: 2026-10-19 | **Status**: PRODUCTION READY
-> **Repo**: `/Users/mac/Desktop/58IR Customs` | **Branch**: `main` | **Tag**: `v1.0.0`
+> **Version**: 1.0.1 | **Date**: 2026-10-21 | **Status**: PILOT CANDIDATE — NOT production-ready
+> (honesty correction: the 2026-10-19 "PRODUCTION READY" claim was false — the
+> test gate was never green at the then-HEAD and SaaS billing did not exist.
+> Authoritative status lives in `docs/STATE.md`; do not quote this guide to a
+> prospect without checking it.)
+> **Repo**: `/Users/mac/Desktop/58IR Customs` | **Branch**: `main`
 
 ---
 
@@ -550,41 +554,32 @@ draft → awaiting_payment → paid → packed → out_for_delivery → delivere
 
 ---
 
-## 🏁 FINAL STATUS
+## 🏁 CURRENT STATUS (2026-10-21 honesty pass)
 
 | Component | Status |
 |-----------|--------|
-| **Core Platform** | ✅ SHIPPED |
-| **WhatsApp Channel** | ✅ SHIPPED |
-| **Instagram Channel** | ✅ SHIPPED |
-| **Payments (M-Pesa)** | ✅ SHIPPED |
-| **Orders + Inventory** | ✅ SHIPPED |
-| **Delivery + POD** | ✅ SHIPPED |
-| **CRM + Memory** | ✅ SHIPPED |
-| **Agent (L0-L2)** | ✅ SHIPPED |
-| **Onboarding Wizard** | ✅ SHIPPED |
-| **Owner Console** | ✅ SHIPPED |
-| **Insights + Segments** | ✅ SHIPPED |
-| **TikTok** | 🚧 Phase 10 (flagged) |
-| **Billing** | 🚧 Phase 10 |
-| **Load/Security** | 🚧 Phase 10 |
+| WhatsApp channel, orders, stock ledger, M-Pesa STK path, delivery/POD, CRM, agent L0–L2, owner console, insights | ✅ implemented and unit/integration tested (see `docs/STATE.md` for the measured gate) |
+| Instagram + onboarding wizard (Phase 9) | ✅ merged, gate-verified in the 2026-10-21 repair |
+| SaaS billing (trial clock, entitlements) | 🔨 M1.4 committed; M1.5 API landing |
+| TikTok assisted, Stripe, load/security review | ⏳ not started |
 
 ---
 
-## ✅ READY FOR FIRST CLIENT
+## ⚠️ BEFORE THE FIRST CLIENT — remaining gates
 
-**All technical prerequisites met.** The platform is production-ready for pilot merchants.
+1. Measured-green `make check` at a named SHA (authoritative numbers in `docs/STATE.md`).
+2. Billing plan changes payment-verified (no free self-upgrade) — see plan
+   `docs/plans/2026-10-21-money-path-f0-f2.md`.
+3. Sandbox phone test (WhatsApp inbound → reply; sandbox STK → paid) — M2.
+4. Terms/Privacy reviewed by a Kenyan lawyer before charging (`BUSINESS_PLAN.md` §15).
+5. External applications: Meta business verification + Safaricom Daraja/aggregator
+   KYC (longest lead time — start immediately, parallel).
 
-### To Onboard Your First Client:
-1. **Gather prerequisites** (see checklist above)
-2. **Schedule 30-min onboarding call**
-3. **Run through wizard** (you guide, they click)
-4. **Approve launch** (zero-interference gate)
-5. **Monitor first 48h** (CS check-in)
-6. **Collect feedback** → iterate
-
-**You are now unblocked. Go get your first paying customer.** 🚀
+*This document is an internal delivery package, not a customer-facing readiness
+claim. When the gates above are green, `docs/STATE.md` will say so with real
+output — quote that, not this file.*
 
 ---
 
-*Document generated from codebase state at `git log --oneline -1` → `d1344fd` (2026-10-19). All claims backed by tests, ADRs, and measurable gate outputs.*
+*Originally generated 2026-10-19 from `d1344fd`; status corrected 2026-10-21.
+Authoritative measured state: `docs/STATE.md`. Do not claim readiness from this file.*

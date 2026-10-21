@@ -9,7 +9,8 @@
 > `docs/plans/2026-10-19-trial-spine-first-clients.md` (milestone M0). Original text kept
 > below for provenance only.
 
-> **Status**: ✅ **PRODUCTION READY** | **Tag**: `v1.0.0` | **Commit**: `d1344fd`
+> ~~**Status**: ✅ **PRODUCTION READY**~~ **(FALSE — struck 2026-10-21; see the correction banner above. Never was, at any SHA.)**
+> ~~**Tag**: `v1.0.0`~~ | **Commit**: `d1344fd` (historical)
 > **Date**: 2026-10-19 | **Repo**: `/Users/mac/Desktop/58IR Customs`
 
 ---
