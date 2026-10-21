@@ -22,6 +22,7 @@ packages/**/venv/
 node_modules/
 .next/
 out/
+*.tsbuildinfo
 
 # OS / editor
 .DS_Store
