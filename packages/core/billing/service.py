@@ -18,6 +18,7 @@ tenant customer payments (dependency test ``test_billing_no_payments_import``).
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
@@ -30,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from packages.core.audit.logger import AuditLogger
 from packages.core.billing.entitlements import AgentLevel, Entitlements, entitlements_for
 from packages.core.models.billing import (
+    BillingPaymentReference,
     PlanTier,
     Subscription,
     SubscriptionStatus,
@@ -38,6 +40,34 @@ from packages.core.models.billing import (
 )
 
 logger = logging.getLogger(__name__)
+
+# M-Pesa confirmation codes are merchant-facing transaction ids, typically
+# 10 alphanumeric characters. Shape check only — the founder still verifies
+# the code against the Till/Paybill statement (billing-ops runbook).
+_PAYMENT_REFERENCE_RE = re.compile(r"^[A-Z0-9]{6,20}$")
+
+
+class PaymentReferenceUsedError(ValueError):
+    """The M-Pesa reference was already used for another plan change (F2/U68)."""
+
+    def __init__(self, reference: str) -> None:
+        super().__init__(f"payment reference {reference!r} already used")
+        self.reference = reference
+
+
+def normalize_payment_reference(raw: str) -> str:
+    """Strip, upper-case and shape-validate an M-Pesa reference.
+
+    Raises ``ValueError`` with a customer-safe message on a bad shape.
+    """
+    reference = raw.strip().upper()
+    if not _PAYMENT_REFERENCE_RE.match(reference):
+        raise ValueError(
+            "payment_reference must be 6-20 alphanumeric characters "
+            "(the M-Pesa confirmation code)"
+        )
+    return reference
+
 
 # Metrics and their grain. A cap check must name (metric, unit, window).
 METRIC_MESSAGES_INBOUND = "messages_inbound"
@@ -357,6 +387,47 @@ class BillingService:
         )
         return int(result.scalar_one() or 0)
 
+    # -- payment references (F2 / U68) --------------------------------------
+
+    async def record_payment_reference(
+        self,
+        tenant_id: UUID,
+        *,
+        reference: str,
+        plan: PlanTier,
+        amount_kes: int,
+        recorded_by_user_id: UUID | None = None,
+    ) -> UUID:
+        """Record an M-Pesa reference for a paid plan change; dedupe UNIQUE.
+
+        The insert races safely: ``ON CONFLICT (reference) DO NOTHING`` means
+        a concurrent double-submit of the same code inserts exactly one row;
+        the loser raises :class:`PaymentReferenceUsedError`. Cross-tenant
+        reuse is caught by the same constraint — the table has no RLS by
+        design (platform-scoped append-only ledger).
+
+        The caller owns the transaction: on any later failure (e.g.
+        ``apply_plan_change``), the reference insert rolls back with it, so a
+        failed upgrade never burns a code.
+        """
+        normalized = normalize_payment_reference(reference)
+        stmt = (
+            pg_insert(BillingPaymentReference)
+            .values(
+                reference=normalized,
+                tenant_id=tenant_id,
+                plan=plan.value,
+                amount_kes=amount_kes,
+                recorded_by_user_id=recorded_by_user_id,
+            )
+            .on_conflict_do_nothing(index_elements=["reference"])
+            .returning(BillingPaymentReference.__table__.c.id)
+        )
+        inserted = (await self.session.execute(stmt)).scalar_one_or_none()
+        if inserted is None:
+            raise PaymentReferenceUsedError(normalized)
+        return UUID(str(inserted))
+
     # -- plan change (human-confirmed, audited) ----------------------------
 
     async def apply_plan_change(
@@ -401,6 +472,8 @@ __all__ = [
     "METRIC_MESSAGES_INBOUND",
     "BillingService",
     "EntitlementDecision",
+    "PaymentReferenceUsedError",
+    "normalize_payment_reference",
     "utc_day_key",
     "utc_month_key",
 ]

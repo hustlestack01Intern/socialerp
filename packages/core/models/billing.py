@@ -172,6 +172,48 @@ class UsageCounter(Base):
     )
 
 
+class BillingPaymentReference(Base):
+    """Platform-scoped ledger of subscription payment references (F2 / U68).
+
+    One row per accepted M-Pesa code used to pay for a NON-trial plan change.
+    Deliberately **without RLS**: the whole point is cross-tenant uniqueness —
+    one code can pay for at most one plan change, ever. No customer PII: an
+    M-Pesa confirmation code is a merchant-facing transaction id.
+    """
+
+    __tablename__ = "billing_payment_references"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    reference: Mapped[str] = mapped_column(String(30), nullable=False)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    plan: Mapped[str] = mapped_column(String(20), nullable=False)
+    amount_kes: Mapped[int] = mapped_column(Integer, nullable=False)
+    recorded_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    __table_args__ = (
+        UniqueConstraint("reference", name="uq_billing_payment_references_ref"),
+    )
+
+
 class UsageEvent(Base):
     """Append-only ledger: counters are the sum of these (INV11, U66).
 
@@ -224,6 +266,7 @@ class UsageEvent(Base):
 
 
 __all__ = [
+    "BillingPaymentReference",
     "PlanTier",
     "Subscription",
     "SubscriptionStatus",

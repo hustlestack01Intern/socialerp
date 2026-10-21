@@ -27,6 +27,8 @@ from packages.core.billing.service import (
     METRIC_MESSAGES_INBOUND,
     BillingService,
     EntitlementDecision,
+    PaymentReferenceUsedError,
+    normalize_payment_reference,
     utc_day_key,
     utc_month_key,
 )
@@ -46,11 +48,13 @@ __all__ = [
     "Entitlements",
     "ManualBillingProvider",
     "NoopBillingProvider",
+    "PaymentReferenceUsedError",
     "PlanTier",
     "SubscriptionStatus",
     "all_plans",
     "build_default_billing_provider",
     "entitlements_for",
+    "normalize_payment_reference",
     "utc_day_key",
     "utc_month_key",
 ]

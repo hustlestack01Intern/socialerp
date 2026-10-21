@@ -75,6 +75,10 @@ class UsageView(BaseModel):
 
 class PlanChangeRequest(BaseModel):
     plan: PlanTier
+    # M-Pesa confirmation code for the transfer that pays for a NON-trial
+    # plan change (F2/U68): required when plan != trial, deduped UNIQUE
+    # across all tenants, audited on the subscription row as evidence.
+    payment_reference: str | None = Field(None, max_length=30)
     evidence: str | None = Field(None, max_length=500)
 
 
@@ -156,9 +160,15 @@ async def change_plan(
 ) -> PlanChangeResponse:
     """Owner-only, audited plan change.
 
-    The tenant/approver come from the authenticated token, never the body. The
-    manual provider is used to validate the collection path in production; here
-    we apply the change directly (a human-confirmed back-office action).
+    The tenant/approver come from the authenticated token, never the body, so a
+    forged ``tenant_id`` cannot change another tenant's plan. A NON-trial plan
+    change additionally requires the ``payment_reference`` (the M-Pesa
+    confirmation code of the manual transfer that pays for it): it is
+    shape-validated, durably deduped UNIQUE across tenants, recorded on the
+    platform ledger and stored as the plan-change evidence (F2 / U68 — a
+    tenant owner must not be able to self-upgrade for free). Applying the
+    change and recording the reference share one transaction: a failed upgrade
+    never burns a code.
     """
     service = BillingService(db)
     sub = await service.get_subscription(tenant_id)
@@ -166,11 +176,38 @@ async def change_plan(
     if sub is not None and sub.plan == body.plan.value and sub.status == "active":
         return PlanChangeResponse(plan=sub.plan, status=sub.status, changed=False)
 
+    evidence = body.evidence
+    if body.plan is not PlanTier.TRIAL:
+        if not body.payment_reference or not body.payment_reference.strip():
+            raise HTTPException(
+                status_code=422,
+                detail="payment_reference is required for a non-trial plan change "
+                "(the M-Pesa confirmation code of the transfer that pays for it)",
+            )
+        try:
+            await service.record_payment_reference(
+                tenant_id,
+                reference=body.payment_reference,
+                plan=body.plan,
+                amount_kes=_PRICE_KES[body.plan],
+                recorded_by_user_id=user_id,
+            )
+        except ValueError as exc:
+            # Bad shape (normalize) or already used (dedupe) — both are 4xx.
+            detail = str(exc)
+            code = (
+                status.HTTP_409_CONFLICT
+                if "already used" in detail
+                else 422
+            )
+            raise HTTPException(status_code=code, detail=detail) from exc
+        evidence = body.payment_reference.strip().upper()
+
     updated = await service.apply_plan_change(
         tenant_id,
         plan=body.plan,
         approver_user_id=user_id,
-        evidence=body.evidence,
+        evidence=evidence,
     )
     await db.commit()
     return PlanChangeResponse(

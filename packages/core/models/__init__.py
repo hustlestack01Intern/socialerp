@@ -11,6 +11,7 @@ from packages.core.models.alert import (
 )
 from packages.core.models.base import Base
 from packages.core.models.billing import (
+    BillingPaymentReference,
     PlanTier,
     Subscription,
     SubscriptionStatus,
@@ -104,6 +105,7 @@ __all__ = [
     "ApiKeyScope",
     "AuditLog",
     "Base",
+    "BillingPaymentReference",
     "Category",
     "ConsentRecord",
     "Customer",
