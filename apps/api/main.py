@@ -47,10 +47,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     await init_db()
     init_instrumentation(app)
 
+    # The rate limiter's counters (U78): shared in Redis when it is
+    # configured and answering, per process otherwise. Built here so the
+    # client lives in the serving event loop and is closed on shutdown.
+    from packages.core.middleware.rate_limit import build_rate_limit_store
+
+    app.state.rate_limit_store = await build_rate_limit_store(str(settings.REDIS_URL))
+
     try:
         yield
     finally:
         # Shutdown
+        await app.state.rate_limit_store.close()
         await close_db()
 
 

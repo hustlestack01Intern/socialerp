@@ -155,6 +155,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         client = request.client
         return client.host if client is not None else "unknown"
 
+    def _store_for(self, request: Request) -> RateLimitStore:
+        """The store the app built at startup, or the one the middleware has.
+
+        The app builds the store in its lifespan, so in production the Redis
+        client is created in the serving event loop and closed on shutdown.
+        """
+        built = getattr(request.app.state, "rate_limit_store", None)
+        return built if built is not None else self.store
+
     async def dispatch(self, request: Request, call_next):  # type: ignore[no-untyped-def]
         path = request.url.path
         if self.limit <= 0 or path not in self.paths:
@@ -162,7 +171,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         key = f"{path}|{self._client_key(request)}"
         try:
-            result = await self.store.hit(key, self.window_seconds)
+            result = await self._store_for(request).hit(key, self.window_seconds)
         except Exception as exc:  # pragma: no cover - the store failing
             # Fail open: a cache being down must not take the login down.
             logger.warning("rate limit store unavailable, allowing: %s", exc)

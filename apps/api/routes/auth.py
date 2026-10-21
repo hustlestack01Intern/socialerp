@@ -22,7 +22,7 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
@@ -58,6 +58,43 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 # Access-token lifetime advertised to clients; must match JWTSettings default (15 min).
 ACCESS_TOKEN_EXPIRES_IN_SECONDS = 15 * 60
+
+# The refresh token lives in an HttpOnly cookie (U79). A token in
+# `localStorage` is readable by any script on the page and stays readable
+# after the page is closed; an HttpOnly cookie is not readable by script at
+# all, and the browser sends it back only to the auth endpoints.
+#
+# The cookie is scoped to /api/v1/auth so it is not attached to every call
+# the dashboard makes, and it is `SameSite=Lax` so it is not sent from
+# another site. `Secure` is set in production: over plain http a cookie
+# would travel in clear, and the browser would refuse it anyway.
+REFRESH_COOKIE_NAME = "socialerp_refresh"
+REFRESH_COOKIE_PATH = "/api/v1/auth"
+REFRESH_COOKIE_MAX_AGE = 7 * 24 * 60 * 60  # matches refresh_token_expire_days
+
+
+def _set_refresh_cookie(response: Response, token: str) -> None:
+    """Put the refresh token in the HttpOnly cookie."""
+    response.set_cookie(
+        key=REFRESH_COOKIE_NAME,
+        value=token,
+        max_age=REFRESH_COOKIE_MAX_AGE,
+        httponly=True,
+        secure=get_settings().ENVIRONMENT == "production",
+        samesite="lax",
+        path=REFRESH_COOKIE_PATH,
+    )
+
+
+def _clear_refresh_cookie(response: Response) -> None:
+    """Take the refresh token cookie away (logout)."""
+    response.delete_cookie(
+        key=REFRESH_COOKIE_NAME,
+        path=REFRESH_COOKIE_PATH,
+        httponly=True,
+        secure=get_settings().ENVIRONMENT == "production",
+        samesite="lax",
+    )
 
 
 # =============================================================================
@@ -97,9 +134,13 @@ class TokenResponse(BaseModel):
 
 
 class TokenRefresh(BaseModel):
-    """Token refresh request."""
+    """Token refresh request.
 
-    refresh_token: str
+    The token may be left out when the browser sends the HttpOnly cookie
+    (U79); an API client sends it in the body as before.
+    """
+
+    refresh_token: str | None = None
 
 
 class UserResponse(BaseModel):
@@ -239,6 +280,7 @@ def _issue_tokens(user: User) -> TokenResponse:
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 async def register(
     data: RegisterRequest,
+    response: Response,
     session: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
     """Self-serve signup: create a tenant and its owner user, then log in.
@@ -364,12 +406,15 @@ async def register(
     await session.flush()
     await session.refresh(owner)
 
-    return _issue_tokens(owner)
+    tokens = _issue_tokens(owner)
+    _set_refresh_cookie(response, tokens.refresh_token)
+    return tokens
 
 
 @router.post("/login", response_model=TokenResponse)
 async def login(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+    response: Response,
     session: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
     """Login with email + password; email is unique per tenant.
@@ -395,22 +440,38 @@ async def login(
             detail="Email exists in multiple tenants; tenant-scoped login required",
         )
 
-    return _issue_tokens(matched[0])
+    tokens = _issue_tokens(matched[0])
+    _set_refresh_cookie(response, tokens.refresh_token)
+    return tokens
 
 
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh_token(
+    request: Request,
+    response: Response,
     token_data: TokenRefresh,
     session: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
-    """Rotate a refresh token and return a new token pair."""
+    """Rotate a refresh token and return a new token pair.
+
+    The token comes from the body (for API clients) or from the HttpOnly
+    cookie (for the browser). The new pair is set in the cookie again, so a
+    browser never has to keep the token itself.
+    """
+    supplied = token_data.refresh_token or request.cookies.get(REFRESH_COOKIE_NAME)
+    if not supplied:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or revoked refresh token",
+        )
     manager = TokenManager(session)
-    pair = await manager.refresh_tokens(token_data.refresh_token)
+    pair = await manager.refresh_tokens(supplied)
     if pair is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or revoked refresh token",
         )
+    _set_refresh_cookie(response, pair.refresh_token)
     return TokenResponse(
         access_token=pair.access_token,
         refresh_token=pair.refresh_token,
@@ -420,12 +481,17 @@ async def refresh_token(
 
 @router.post("/logout")
 async def logout(
+    request: Request,
+    response: Response,
     token_data: TokenRefresh,
     session: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
-    """Revoke a refresh token."""
-    manager = TokenManager(session)
-    manager.revoke_token(token_data.refresh_token, token_type="refresh", reason="logout")
+    """Revoke a refresh token and clear the cookie that holds it."""
+    supplied = token_data.refresh_token or request.cookies.get(REFRESH_COOKIE_NAME)
+    if supplied:
+        manager = TokenManager(session)
+        manager.revoke_token(supplied, token_type="refresh", reason="logout")
+    _clear_refresh_cookie(response)
     return {"message": "Logged out successfully"}
 
 

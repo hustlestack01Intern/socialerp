@@ -1,3 +1,5 @@
+import { saveSession } from "@/lib/session";
+
 /**
  * The one place the dashboard talks to the API.
  *
@@ -120,7 +122,39 @@ export async function register(
   return (await response.json()) as TokenResponse;
 }
 
-/** The server's own trial decision. The client never computes it. */
+/**
+ * Renew the session with the HttpOnly cookie (U79).
+ *
+ * The refresh token is not in the page any more: the API keeps it in a
+ * cookie that script cannot read, and the browser sends it back on this
+ * call. The page receives a new access token and nothing else.
+ */
+export async function refreshSession(): Promise<TokenResponse> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+      // Same-origin by default, but said out loud: the cookie is the point.
+      credentials: "same-origin",
+    });
+  } catch {
+    throw new ApiError("We could not reach the server. Check your connection.", 0);
+  }
+  if (!response.ok) {
+    throw new ApiError(await readError(response), response.status);
+  }
+  return (await response.json()) as TokenResponse;
+}
+
+/**
+ * The server's own trial decision. The client never computes it.
+ *
+ * If the access token has expired (15 minutes), the cookie still holds a
+ * valid refresh token, so the call is renewed once and retried. The owner is
+ * not asked to log in again every fifteen minutes.
+ */
 export async function getSubscription(
   accessToken: string,
 ): Promise<SubscriptionView> {
@@ -134,6 +168,28 @@ export async function getSubscription(
   } catch {
     throw new ApiError("We could not reach the server. Check your connection.", 0);
   }
+
+  if (response.status === 401) {
+    // The access token is too old. Renew it with the cookie and try once
+    // more; if that fails, the owner has to log in again.
+    let renewed: TokenResponse;
+    try {
+      renewed = await refreshSession();
+    } catch {
+      throw new ApiError(await readError(response), response.status);
+    }
+    saveSession(renewed);
+    try {
+      response = await fetch(`${API_BASE}/api/v1/billing/subscription`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${renewed.access_token}` },
+        cache: "no-store",
+      });
+    } catch {
+      throw new ApiError("We could not reach the server. Check your connection.", 0);
+    }
+  }
+
   if (!response.ok) {
     throw new ApiError(await readError(response), response.status);
   }
