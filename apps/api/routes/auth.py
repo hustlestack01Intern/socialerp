@@ -28,6 +28,7 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from packages.core.audit.logger import AuditLogger
 from packages.core.auth.api_keys import ApiKeyManager
 from packages.core.auth.dependencies import get_current_tenant_id, get_current_user, get_db
 from packages.core.auth.invites import InviteCodeError, InviteCodeService
@@ -295,6 +296,10 @@ async def register(
         is_active=True,
     )
     session.add(owner)
+    # Flush so the owner has its id: the audit row below records who was
+    # created. The id default (uuid4) is Python-side, so it is only assigned
+    # on flush.
+    await session.flush()
 
     if gate_on and data.invite_code:
         # The authoritative, race-safe consumption of the code. If it fails
@@ -311,12 +316,36 @@ async def register(
     # Trial spine (M1.3): create the `pending` subscription row now. The 14-day
     # trial clock does NOT start until a channel is connected (onboarding step 2),
     # so a signup that never connects does not burn the trial. The row is
-    # committed with the tenant/user in the same transaction.
+    # written with the tenant/user in the same transaction.
     from packages.core.billing import BillingService
 
     await BillingService(session).ensure_pending(tenant.id)
 
-    await session.commit()
+    # The registration itself is an audited event: a stranger creating a
+    # tenant on the platform is exactly what an audit log is for (skeptic
+    # NEW-1). Written in the same transaction as the tenant, so a rolled-back
+    # registration leaves no audit row either.
+    await AuditLogger(session).log_action(
+        tenant_id=tenant.id,
+        user_id=owner.id,
+        action="auth.tenant_registered",
+        resource="tenant",
+        resource_id=str(tenant.id),
+        after={
+            "business_name": tenant.name,
+            "owner_email": owner.email,
+            "role": owner.role.value,
+            "invite_code_used": bool(data.invite_code),
+        },
+    )
+
+    # NO commit here. The `get_db` dependency commits after this handler
+    # returns, so a failure while issuing the tokens (or anything else after
+    # this point) rolls the whole registration back: no tenant, no owner, no
+    # subscription, and the invite code is NOT consumed. The pattern rule in
+    # `packages/core/database.py` says the same thing: routes flush, the
+    # dependency commits.
+    await session.flush()
     await session.refresh(owner)
 
     return _issue_tokens(owner)

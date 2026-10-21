@@ -41,7 +41,12 @@ async def _create_code(session, **kwargs) -> InviteCode:
 async def test_create_and_redeem(session_factory) -> None:
     async with session_factory() as session, session.begin():
         code = await _create_code(session, max_uses=1)
-        assert code.code and len(code.code) >= 8
+        # Exact shape: 10 characters of a 32-symbol alphabet in two groups.
+        # A loose "len >= 8" would not notice a shortened generator.
+        plain = code.code.replace("-", "")
+        assert len(plain) == 10, code.code
+        assert len(code.code.split("-")) == 2, code.code
+        assert set(plain) <= set("ABCDEFGHJKLMNPQRSTUVWXYZ23456789"), code.code
         assert code.uses == 0
         assert code.is_active is True
 
