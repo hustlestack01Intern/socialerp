@@ -10,8 +10,16 @@
  *   this file only carries the answer.
  */
 
-export const API_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+/**
+ * The API is called on the dashboard's OWN origin.
+ *
+ * `next.config.js` rewrites `/api/*` to the API server, so the browser
+ * never needs an absolute URL: no CORS dance, and the API's address is not
+ * exposed in the page. The rewrite target is server-side configuration
+ * (`NEXT_PUBLIC_API_URL` in the Next process, `http://localhost:8000` in
+ * development), so it can change without a rebuild of the client code.
+ */
+export const API_BASE = "";
 
 export type TokenResponse = {
   access_token: string;
@@ -68,7 +76,7 @@ export async function login(
   const body = new URLSearchParams({ username: email, password });
   let response: Response;
   try {
-    response = await fetch(`${API_URL}/api/v1/auth/login`, {
+    response = await fetch(`${API_BASE}/api/v1/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body,
@@ -98,7 +106,7 @@ export async function register(
 ): Promise<TokenResponse> {
   let response: Response;
   try {
-    response = await fetch(`${API_URL}/api/v1/auth/register`, {
+    response = await fetch(`${API_BASE}/api/v1/auth/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
@@ -118,7 +126,7 @@ export async function getSubscription(
 ): Promise<SubscriptionView> {
   let response: Response;
   try {
-    response = await fetch(`${API_URL}/api/v1/billing/subscription`, {
+    response = await fetch(`${API_BASE}/api/v1/billing/subscription`, {
       method: "GET",
       headers: { Authorization: `Bearer ${accessToken}` },
       cache: "no-store",

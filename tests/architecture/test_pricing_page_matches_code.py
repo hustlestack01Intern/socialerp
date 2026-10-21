@@ -1,4 +1,4 @@
-"""The pricing page must say what the code enforces (M1.5).
+"""The pricing page must say what the code does (M1.5, corrected 2026-10-21).
 
 A pricing page that drifts from the code is a promise the platform cannot
 keep. The page renders ``apps/dashboard/src/lib/pricing.json``; this test
@@ -8,8 +8,16 @@ compares that file with the two sources of truth in the backend:
 * the entitlement matrix (``packages/core/billing/entitlements.py``).
 
 So a plan that gains a channel, loses an agent level or changes price in the
-backend fails this test until the page is updated. The page may only claim
-what the matrix enforces; anything else has to sit in ``sold_separately``.
+backend fails this test until the page is updated.
+
+**The correction (skeptic, 2026-10-21):** the matrix is *published* but the
+per-feature cells (channels beyond WhatsApp, the agent-level ceiling, API
+access, seats) are **not enforced** anywhere in the code - only the plan
+state gate (expired / cancelled / not started) is. A page that said "every
+line is enforced by the system" was therefore making a promise the platform
+could not keep. The page now separates the two: what the software enforces
+today, and what it only records for now. These tests keep that separation
+honest.
 """
 
 from __future__ import annotations
@@ -106,3 +114,38 @@ def test_no_absolute_claims() -> None:
     source = PRICING_PAGE.read_text(encoding="utf-8").lower()
     for banned in ("100%", "guaranteed", "instant setup", "no limits"):
         assert banned not in source, f"the pricing page claims {banned!r}"
+
+
+def test_the_page_separates_enforced_from_recorded() -> None:
+    """The page must say what is enforced today AND what is not switched on.
+
+    The matrix is published but not enforced per feature; a page that only
+    lists the plan contents would read as a promise.
+    """
+    data = _pricing()
+    assert data["enforced_today"], "the page must state what the system enforces today"
+    assert data["not_enforced_yet"], "the page must state what is not enforced yet"
+    source = PRICING_PAGE.read_text(encoding="utf-8")
+    assert "enforced_today" in source, "the page must render the enforced list"
+    assert "not_enforced_yet" in source, "the page must render the not-enforced list"
+
+
+def test_the_page_may_not_claim_the_matrix_is_enforced() -> None:
+    """Banned: telling a buyer that every listed line is enforced."""
+    source = PRICING_PAGE.read_text(encoding="utf-8").lower()
+    for banned in (
+        "actually enforces",
+        "is enforced by the system",
+        "every line is enforced",
+        "what the system actually enforces",
+    ):
+        assert banned not in source, f"the pricing page claims {banned!r}"
+
+
+def test_the_page_may_not_promise_one_trial_per_business() -> None:
+    """One owner account per email is enforced; one trial per business is not."""
+    source = PRICING_PAGE.read_text(encoding="utf-8").lower()
+    assert "one trial per business." not in source, (
+        "the page states one trial per business as a fact, but only one owner "
+        "account per email address is enforced"
+    )

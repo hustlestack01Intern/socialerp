@@ -1,6 +1,6 @@
 {
   "currency": "KES",
-  "trial_note": "Free for 14 days, starting when you connect your WhatsApp number - not when you sign up. One trial per business.",
+  "trial_note": "Free for 14 days, starting when you connect your WhatsApp number - not when you sign up. One owner account per email address; we ask for one trial per business.",
   "plans": [
     {
       "id": "trial",
@@ -8,7 +8,9 @@
       "price": 0,
       "price_label": "Free",
       "period": "14 days from channel connect",
-      "channels": ["whatsapp"],
+      "channels": [
+        "whatsapp"
+      ],
       "agent_level": "L2",
       "insights": true,
       "api_access": "none",
@@ -22,7 +24,9 @@
       "price": 2999,
       "price_label": "KES 2,999",
       "period": "per month, from the payment date",
-      "channels": ["whatsapp"],
+      "channels": [
+        "whatsapp"
+      ],
       "agent_level": "L1",
       "insights": true,
       "api_access": "none",
@@ -36,7 +40,10 @@
       "price": 7999,
       "price_label": "KES 7,999",
       "period": "per month, from the payment date",
-      "channels": ["whatsapp", "instagram"],
+      "channels": [
+        "whatsapp",
+        "instagram"
+      ],
       "agent_level": "L2",
       "insights": true,
       "api_access": "api",
@@ -50,7 +57,11 @@
       "price": 19999,
       "price_label": "KES 19,999",
       "period": "per month, from the payment date",
-      "channels": ["whatsapp", "instagram", "tiktok"],
+      "channels": [
+        "whatsapp",
+        "instagram",
+        "tiktok"
+      ],
       "agent_level": "L3",
       "insights": true,
       "api_access": "api + webhooks",
@@ -78,5 +89,15 @@
     "Your own catalogue, stock ledger and order history",
     "M-Pesa STK Push with callback confirmation and reconciliation",
     "An append-only audit log of what the agent did"
+  ],
+  "enforced_today": [
+    "If your plan has expired, has been cancelled or has not started yet, the agent stops working and your customers get a holding message and a human instead. This is switched on today.",
+    "Your plan, its state and its dates are published by the API and shown in your dashboard. This is switched on today.",
+    "The trial clock starts when you connect your number, not when you sign up, so a signup that never connects does not burn your trial. This is switched on today."
+  ],
+  "not_enforced_yet": [
+    "The channel list per plan (Instagram on Professional, TikTok on Enterprise) is recorded on your plan and published by the API, but the system does not yet refuse a request because of it.",
+    "The agent-level ceiling per plan is recorded the same way, but is not yet enforced per request.",
+    "API access and the seat count are recorded on your plan, but are not yet switched on as limits."
   ]
 }

@@ -36,7 +36,10 @@ help:
 # =============================================================================
 # CHECK - Run all quality gates
 # =============================================================================
-check: lint-python typecheck-python test eval
+# The gate is the whole product: Python AND the dashboard. `lint` and
+# `typecheck` are the umbrella targets (ruff + eslint, mypy + tsc), so the
+# dashboard cannot drift behind a Python-only gate (found 2026-10-21).
+check: lint typecheck test eval
 	@echo "✅ All checks passed!"
 
 # =============================================================================

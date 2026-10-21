@@ -4,7 +4,7 @@ import pricing from "@/lib/pricing.json";
 export const metadata = {
   title: "Pricing - SocialERP",
   description:
-    "What each plan costs and exactly what it includes. Every line is enforced by the system, not a promise.",
+    "What each plan costs and what it includes - and, separately, what the system enforces today.",
 };
 
 function PlanCard({ plan }: { plan: (typeof pricing.plans)[number] }) {
@@ -55,10 +55,11 @@ export default function PricingPage() {
             Pricing
           </h1>
           <p className="mt-4 max-w-3xl text-lg text-gray-600">
-            Each line below is what the system actually enforces for that plan: the
-            channels you can connect, how much the agent may do on its own, whether
-            you get API access and how many people can log in. If a plan does not
-            say it, the system does not do it.
+            Each plan below lists what it includes: the channels you can connect,
+            how much the agent may do on its own, whether you get API access and
+            how many people can log in. What the software enforces today - and
+            what it only records for now - is stated plainly underneath, so you
+            can tell the difference between a promise and a switch.
           </p>
           <p className="mt-4 max-w-3xl text-sm text-gray-500">{pricing.trial_note}</p>
         </div>
@@ -82,6 +83,34 @@ export default function PricingPage() {
               <li key={item} className="flex gap-2">
                 <span aria-hidden="true" className="text-primary-600">
                   &#10003;
+                </span>
+                {item}
+              </li>
+            ))}
+          </ul>
+
+          <h2 className="mt-12 text-2xl font-bold text-gray-900">
+            What the system enforces today
+          </h2>
+          <ul className="mt-4 space-y-2 text-gray-700">
+            {pricing.enforced_today.map((item) => (
+              <li key={item} className="flex gap-2">
+                <span aria-hidden="true" className="text-primary-600">
+                  &#10003;
+                </span>
+                {item}
+              </li>
+            ))}
+          </ul>
+
+          <h2 className="mt-12 text-2xl font-bold text-gray-900">
+            Recorded on your plan, not switched on yet
+          </h2>
+          <ul className="mt-4 space-y-2 text-gray-700">
+            {pricing.not_enforced_yet.map((item) => (
+              <li key={item} className="flex gap-2">
+                <span aria-hidden="true" className="text-gray-400">
+                  &#8226;
                 </span>
                 {item}
               </li>

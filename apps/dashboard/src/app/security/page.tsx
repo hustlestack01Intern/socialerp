@@ -23,14 +23,14 @@ export default function SecurityPage() {
           <ul className="list-disc space-y-2 pl-6 text-gray-700">
             <li>
               Every tenant table carries a tenant key, and PostgreSQL row-level
-              security is enabled on it: a query without the right tenant
-              context returns nothing.
+              security policies are installed on it. Every query the platform
+              makes is scoped to one business.
             </li>
             <li>
-              The API fails closed. With tenant isolation switched on, a request
-              without a valid token is rejected before it reaches your data,
-              and the tenant context comes from the signed token - never from
-              the request body.
+              The API fails closed. A request without a valid token is rejected
+              before it reaches your data, and the tenant context comes from the
+              signed token - never from the request body. In production the API
+              refuses to start unless that tenant context is switched on.
             </li>
             <li>
               The isolation tests attempt to read another tenant&rsquo;s rows
@@ -104,6 +104,15 @@ export default function SecurityPage() {
             <li>
               Multi-factor authentication for owner accounts. Today a
               password is enough.
+            </li>
+            <li>
+              The database as the last line of defence. The row-level security
+              policies are installed and every query is tenant-scoped, but the
+              role the API connects with today owns those tables, and a table
+              owner is not subject to the policies. We are moving the API to a
+              restricted role with forced row-level security; until that is
+              done, the isolation tests on every build - not the database - are
+              what proves one business cannot read another&rsquo;s rows.
             </li>
           </ul>
         </section>

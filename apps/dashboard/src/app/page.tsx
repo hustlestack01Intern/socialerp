@@ -46,7 +46,9 @@ export default function HomePage() {
             </div>
             <div className="text-center">
               <div className="text-3xl font-bold text-primary-600">Per tenant</div>
-              <div className="text-sm text-gray-600">Isolation enforced by the database</div>
+              <div className="text-sm text-gray-600">
+                Every request scoped to one business
+              </div>
             </div>
           </div>
         </div>
