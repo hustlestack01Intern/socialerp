@@ -13,6 +13,14 @@ from packages.core.billing.entitlements import (
     all_plans,
     entitlements_for,
 )
+from packages.core.billing.provider import (
+    BillingProvider,
+    CollectionInstruction,
+    CollectionResult,
+    ManualBillingProvider,
+    NoopBillingProvider,
+    build_default_billing_provider,
+)
 from packages.core.billing.service import (
     METRIC_LLM_CALLS,
     METRIC_LLM_SPEND_USD_MICROS,
@@ -30,12 +38,18 @@ __all__ = [
     "METRIC_MESSAGES_INBOUND",
     "AgentLevel",
     "ApiAccess",
+    "BillingProvider",
     "BillingService",
+    "CollectionInstruction",
+    "CollectionResult",
     "EntitlementDecision",
     "Entitlements",
+    "ManualBillingProvider",
+    "NoopBillingProvider",
     "PlanTier",
     "SubscriptionStatus",
     "all_plans",
+    "build_default_billing_provider",
     "entitlements_for",
     "utc_day_key",
     "utc_month_key",

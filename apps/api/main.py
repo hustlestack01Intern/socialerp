@@ -182,6 +182,11 @@ def create_app() -> FastAPI:
     app.include_router(segments.router, tags=["segments"])
     app.include_router(insights.router, tags=["insights"])
 
+    # Trial spine (M1.5): billing — owner-only plan/usage/collection.
+    from apps.api.routes import billing
+
+    app.include_router(billing.router, tags=["billing"])
+
     # Phase 5: Agent
     # from apps.api.routes import agent
     # app.include_router(agent.router, prefix="/api/v1/agent", tags=["agent"])
