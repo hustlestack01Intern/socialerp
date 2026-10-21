@@ -165,9 +165,16 @@ evals: 8/8 cases pass | wrong-price/stock hallucinations: 0
 
 ## ✅ FINAL CONFIRMATION
 
-**All technical deliverables complete. All tests passing. Documentation comprehensive. Platform is production-ready for pilot merchants.**
+> ~~**All technical deliverables complete. All tests passing. Documentation
+> comprehensive. Platform is production-ready for pilot merchants.**~~
+> **(FALSE — struck 2026-10-21. See the correction banner at the top of this
+> file: the measurements it refers to were never true at any SHA, and the
+> platform is a PILOT CANDIDATE, not production-ready.)**
 
-**You are unblocked. Go onboard your first paying customer.** 🚀
+> ~~**You are unblocked. Go onboard your first paying customer.**~~
+> **(FALSE — struck 2026-10-21. The first cohort is invited with an invite
+> code, and the pre-go-live gate (M2: a scripted onboarding run on the
+> sandbox) has not been run yet.)**
 
 ---
 

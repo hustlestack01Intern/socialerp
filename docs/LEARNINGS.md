@@ -266,6 +266,82 @@ It is recorded as deferred **with the reason** in the plan, MAP and STATE.
 
 ---
 
+## 2026-10-21 — Skeptic wave on the M1.5 sales surface (the same day)
+
+### Rewards
+
+**EXEMPLAR — The skeptic found two real defects in code the suite was green on.**
+The registration handler called `session.commit()` mid-request (against the
+pattern rule in `packages/core/database.py`), so a failure while issuing the
+tokens left a registered tenant, a consumed invite code and a subscription
+behind — and the retry hit the 409. It also wrote **no audit row for the
+registration itself**: the log recorded the code redemption (low value) and
+not the stranger creating a tenant (high value). Both are now fixed
+(`8faac57`) and both are proven red against the old route before the fix.
+
+**EXEMPLAR — The skeptic corrected a claim we had already published.**
+"We return a uniform 403, so the endpoint is not a code oracle" was wrong:
+the *body* is uniform, but the *status code* still separates a valid code
+(201) from an invalid one (403) for an otherwise satisfiable request, and no
+status code can avoid that. ADR 0023, the route comment, the test docstring
+and the metrics table now say what is hidden and what is not, and name the
+mitigations (a per-IP rate limit, one use per code). The lesson: **"uniform"
+is a claim about a specific surface — say which one.**
+
+**EXEMPLAR — The gate caught our own new test before pytest did.**
+`make check` failed at ruff on a dead query in the new atomicity test (a
+leftover from an earlier draft of the assertion). The gate is not a
+formality; it is the thing that says no.
+
+**EXEMPLAR — A false claim on a public page, found and fixed in the same hour.**
+`/security` said "a query without the right tenant context returns nothing".
+The RLS policies are installed, but the API connects as the table owner, and
+a table owner is not subject to the policies. The page now says what is true
+and lists the role hardening under "not done yet"; the landing tile was
+corrected the same way; and a new architecture test fails when a public page
+drifts back into claiming enforcement it does not have.
+
+### Failures
+
+**FAILURE — We published a promise the code did not keep.**
+The pricing page said "each line below is what the system actually enforces".
+The entitlement matrix is *published*; the per-feature cells (Instagram on
+Professional, the agent-level ceiling, API access, seats) are enforced
+nowhere. The page now separates "enforced today" from "recorded on your
+plan, not switched on yet", and a test bans the old wording. Filed as U80
+(a human product decision: enforce the cells, or keep selling them as plan
+contents until they are enforced).
+
+**FAILURE — The guard we wrote for the drift could not see the second drift.**
+The column guard compared type *families*, so every enum was "string" and
+the `users.role` bug (the ORM wrote `OWNER`, the database accepts `owner`)
+was invisible to it. The guard now compares the values an enum column
+accepts — the labels of a native Postgres enum and the literals of a CHECK
+constraint — and is proven red by reverting the model fix. Filed as U71
+(the guard is a floor: defaults, indexes, policies and triggers are still
+unchecked).
+
+**FAILURE — A setting that promised a protection nothing implemented.**
+`RATE_LIMIT_REQUESTS_PER_MINUTE` had been in the config since the start
+with no reader. The invite gate made that concrete. It is now a real
+limiter (per IP, per process, auth paths only) and its limits are stated
+out loud in the module docstring, because a rate limit that is per process
+is not the rate limit the name suggests. Filed as U78.
+
+### Metrics
+
+| Metric | Before | After | Delta | Evidence |
+|--------|--------|-------|-------|----------|
+| Audit rows for a registration | 0 (the redemption only) | 1 (`auth.tenant_registered`) | +1 | `tests/auth/test_registration_atomicity.py` |
+| Registration failure leaves | tenant + owner + subscription + a spent code | nothing (the code is reusable) | -4 | the same test, red against the old route |
+| Drift guard: enum values compared | no | yes (native labels + CHECK literals) | +1 class | `tests/integration/test_migration_column_drift.py` |
+| Drift guard: fails in CI when Postgres is missing | skipped silently | fails | closed | the same file |
+| Public pages claiming enforcement they do not have | 3 | 0 | -3 | `tests/architecture/test_public_page_claims.py`, `test_pricing_page_matches_code.py` |
+| Auth rate limiting | none | 100/min per IP, per process | +1 layer | `tests/integration/test_rate_limit.py` |
+| `make check` covers the dashboard | no (Python only) | yes (lint + typecheck) | +1 | `Makefile:42` |
+
+---
+
 ## Template for future entries
 
 ### YYYY-MM-DD — <Phase/Increment name>

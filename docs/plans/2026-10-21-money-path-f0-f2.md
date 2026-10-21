@@ -109,3 +109,24 @@ code (`packages/core/payments/` — untouched).
 ## Docs to update
 `docs/STATE.md`, `docs/MAP.md` (phase line), `docs/SHIPPING_GUIDE.md`,
 `docs/UNCERTAINTY.md` (U68 status note), this plan's measured results section.
+
+## Measured result (2026-10-21)
+
+- **F0** docs honesty: `docs/SHIPPING_GUIDE.md` and
+  `docs/FINAL_DELIVERY_SUMMARY.md` no longer claim "PRODUCTION READY"; STATE
+  and MAP headers are synced to HEAD.
+- **F1** the M1.5 billing API (`GET/POST /api/v1/billing/*`):
+  `apps/api/routes/billing.py` + `packages/core/billing/{service,provider,
+  entitlements}.py`, migration `0015_billing`.
+- **F2** payment-verified plan changes: a non-trial plan change needs a
+  unique M-Pesa payment reference (`payment_reference`); a duplicate
+  reference is refused; the reference is recorded and audited; the trial
+  plan stays reachable without one; staff get 403; no JWT gets 401. The
+  fraudulent self-upgrade hole (U68) is closed.
+- **F3** the paid period (separate plan file): 30 days from the payment
+  date, never shortening a live period, no rollover of unused trial time.
+- The full gate for the wave is recorded in `docs/STATE.md`.
+
+**Known hole being fixed by F2** (from the original plan): `POST
+/billing/subscription` let an owner self-upgrade with no payment check
+(U68). **Closed by F2.**

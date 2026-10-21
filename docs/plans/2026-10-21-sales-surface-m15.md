@@ -269,3 +269,46 @@ The record is `docs/failures/2026-10-21-column-drift-green-suite.md`.
 | 6 | `/signup` creates a pending trial and says the clock starts at connect | done (proof script) |
 | 7 | the banner renders the server's decision only; nothing on an API error | done |
 | 8 | `make seed-demo` creates a demo tenant | **deferred** (no surface to demo yet — see B8) |
+
+## The skeptic wave (2026-10-21, after the first gate)
+
+The skeptic attacked the wave and found two real defects and three untrue
+claims. All of it is fixed; the record is in `docs/LEARNINGS.md` and
+`docs/UNCERTAINTY.md`.
+
+### Fixed
+
+| Finding | Fix | Commit |
+|---|---|---|
+| The registration committed mid-request: a failure after that left a tenant, a subscription and a **spent** invite code behind, and the retry hit the 409 | the route flushes; the dependency commits; a failed registration now rolls back completely and the code is reusable | `8faac57` |
+| A stranger creating a tenant was not audited (only the code redemption was) | the registration writes `auth.tenant_registered` in the same transaction | `8faac57` |
+| `/security` claimed "a query without the right tenant context returns nothing" - but the API connects as the table owner, and a table owner bypasses the policies | the page says what is true; the role hardening is listed under "not done yet" (U77) | `ac2d7ed` |
+| `/pricing` claimed "each line below is what the system actually enforces" - only the plan-state gate is enforced; the matrix is published | the page separates "enforced today" from "recorded on your plan, not switched on yet" (U80) | `ac2d7ed` |
+| "A uniform 403, so the endpoint is not a code oracle" - the body is uniform, the status code is not | ADR 0023, the route comment and the metrics table now say exactly what is hidden; the rate limiter makes probing expensive | `6c1c5d3`, `0b7e2a3` |
+| The drift guard could not see the enum-value mismatch (`OWNER` vs `owner`) | the guard now compares the values an enum column accepts | `8faac57` |
+| The app role had a table-wide `UPDATE` on `invite_codes` | migration `0019` narrows it to the four redemption columns | `8faac57` |
+
+### Open (not fixed here, with the reasons)
+
+- **U77/U82 (HIGH)** - the API connects as the table owner, so the row-level
+  security policies do not bite, and the public write path sets no tenant
+  context. This is the next hardening job: a restricted role, forced RLS, and
+  a tenant context on the registration path. It is a deployment change with a
+  wide blast radius, so it gets its own wave - not a drive-by edit.
+- **U80 (human)** - enforce the entitlement cells (a channel check on the
+  Instagram path, a seat count, an API-access gate, an agent-level ceiling),
+  or keep selling them as plan contents until they are enforced. The page
+  says the truth in the meantime.
+- **U79** - the refresh token lives in `localStorage`; the fix is an httpOnly
+  cookie plus a CSP, which is a design change for the auth flow.
+- **U78** - the rate limiter is per process and covers the auth paths only.
+- **U81** - "one trial per business" is not enforced (only one owner account
+  per email address is).
+
+### What the plan did not do, and why
+
+- **B8 `make seed-demo`** - deferred: there is no owner console, so a seeded
+  tenant has no visible surface to demo. It moves to the owner-console
+  milestone.
+- **The 30-minute onboarding claim** - the pages do not make it any more
+  (U74): the target is still unmeasured, and M2 measures it.

@@ -43,7 +43,9 @@ class Settings(BaseSettings):
     # Database
     # -------------------------------------------------------------------------
     POSTGRES_USER: str = "socialerp"
-    POSTGRES_PASSWORD: str = "socialerp_dev_password"
+    # Must match the compose/CI database password ("socialerp"): a mismatch
+    # here reads like a broken database rather than a wrong credential (U72).
+    POSTGRES_PASSWORD: str = "socialerp"
     POSTGRES_DB: str = "socialerp"
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: int = 5432

@@ -2,37 +2,74 @@
 
 > State of record. **Updated 2026-10-21 by the Chief Engineer — measured truth.**
 >
-> **HEAD `a0dff1d`** (M1.4 entitlement gate committed) + a working tree carrying the
-> M1.5 billing API (untracked `apps/api/routes/billing.py`, `packages/core/billing/provider.py`).
-> **The docs of 2026-10-19 ("billing does not exist / awaiting go") were stale** — M0
-> (gate repair) and M1.1–M1.4 landed 2026-10-19/20 without this file being updated.
+> **HEAD `0b7e2a3`** ("the honest version of the invite gate, the pages and the
+> open risks"). The wave below landed in this order:
+> `81a50a4` the invite gate · `d475ee9` the CI wiring · `7fc25d8` the sales
+> surface · `338d8d6` the column-drift fix · `921f2de` the failure record ·
+> `8faac57` the registration is one transaction and is audited ·
+> `ac2d7ed` the public pages say what the software does ·
+> `6c1c5d3` the rate limit on the auth endpoints · `0b7e2a3` the honest records.
 >
-> **Measured 2026-10-21 (this session, after the F1 lint/mypy fix pass):**
-> - `uv run ruff check .` → **All checks passed!**
-> - `uv run mypy packages apps` (strict) → **Success: no issues found in 130 source files**
-> - `uv run pytest tests/billing tests/architecture` → **30 passed** (billing suite + deps)
-> - Full `make check` → **pending** (run lands with the F1/F2 commits; paste counts here)
-> - Infra: colima + root `docker-compose.yml` (postgres :5432 with `socialerp_test`,
->   postgres-test :5433, redis, redis-test) — **compose, not ad-hoc containers**.
+> **Measured 2026-10-21 (this session, the final gate — log `/tmp/gate-final2.log`):**
+> - `make check` → **GATE_NUMBERS**
+> - `pnpm lint` → "✔ No ESLint warnings or errors"; `pnpm typecheck` → clean; `pnpm build` → 11 routes.
+> - `scripts/prove_sales_spine.py` → **"SALES SPINE OK"** against a database built by
+>   `alembic upgrade head` (not the metadata-built test schema).
 >
-> **Money path (plan `docs/plans/2026-10-21-money-path-f0-f2.md`, human-approved 2026-10-21):**
-> F0 docs-honesty DONE this session (SHIPPING_GUIDE/FINAL_DELIVERY_SUMMARY no longer
-> claim "PRODUCTION READY"); F1 = commit M1.5 billing API (this session);
-> F2 = payment-verified plan changes (billing protected zone — approved) in progress.
-> Known hole being fixed by F2: `POST /billing/subscription` lets an owner self-upgrade
-> with no payment check (U68). U60 (trial policy) remains a HUMAN decision — the 14-day
-> default in settings is an implementation placeholder, not an approved policy.
+> **The finding that mattered.** The suite was green (962 passed) while the
+> **production database could not register a user**: the migration chain had
+> never created ten ORM columns (`tenants.slug`, `users.full_name`,
+> `users.phone` and seven agent-action `audit_log` fields), and the ORM wrote
+> `OWNER` into a Postgres enum that only accepts `owner`. The test schema is
+> built from ORM metadata, so the tests exercise the ORM's idea of the schema
+> and never the migrations' idea of it. Fixed in `338d8d6` (migration
+> `0018_missing_columns`, the `User.role` enum fix) and pinned by a new guard,
+> `tests/integration/test_migration_column_drift.py`, which compares every ORM
+> column **and every enum value** with a migrated database - proven red on
+> 0017, green on 0018. The record: `docs/failures/2026-10-21-column-drift-green-suite.md`.
 >
-> Everything below the "Historical" marker predates this measurement. If it contradicts
-> MAP.md or the filesystem, check `git log` and `docs/plans/`.
+> **The money path and the sales surface are DONE** (plan
+> `docs/plans/2026-10-21-money-path-f0-f2.md` and
+> `docs/plans/2026-10-21-sales-surface-m15.md`, human-approved 2026-10-21):
+> F0 docs honesty · F1 the billing API · F2 payment-verified plan changes
+> (no owner self-upgrade, U68) · F3 the 30-day paid period (from the payment
+> date, never shortening a live period, no trial rollover) · B2/B3/B5/B6/B7 the
+> sales surface (`/pricing`, `/login`, `/signup`, the legal pages, the trial
+> banner, a landing page with no dead CTAs) · B4 the invite gate.
+>
+> **What the skeptic found on the same day, and what is still open:**
+> - FIXED: the registration committed mid-request (a failed registration left a
+>   tenant and a spent invite code); the registration wrote no audit row; the
+>   public pages claimed isolation and enforcement the code does not have;
+>   "a uniform 403, so no oracle" was overstated; the drift guard could not
+>   see an enum-value mismatch; the app role could rewrite an invite code.
+> - OPEN (U77/U82, HIGH): the API connects as the **table owner**, so the
+>   row-level security policies do not bite, and the public write path sets no
+>   tenant context. The pages now say the truth; the database does not yet
+>   enforce it. This is the next hardening job.
+> - OPEN (U80, human): the entitlement matrix is **published, not enforced** -
+>   only the plan-state gate runs. The pricing page says so.
+> - OPEN (U78/U79): the rate limiter is per process and covers the auth paths
+>   only; the refresh token lives in `localStorage`.
+> - DEFERRED with a reason: B8 `make seed-demo` - there is no owner console
+>   yet, so a seeded tenant has no surface to demo.
+>
+> Everything below the "Historical" marker predates this measurement. If it
+> contradicts MAP.md or the filesystem, check `git log` and `docs/plans/`.
 
 ## Current Phase
-**Money path F0→F2 (2026-10-21, human-approved).** M0 + M1.1–M1.4 are COMMITTED
-(`17bafc8`…`a0dff1d`); M1.5 billing API is being committed now; F2 (payment-verified
-plan changes) follows, then a solo full `make check` is measured and pasted above.
-Next after this: M1.5 sales surface (`/pricing /signup /login`) → M2 pre-go-live gate
-(sandbox phone test — needs the human's U61 scope answer) → concierge pilot.
-External critical path (owner, parallel): Meta business verification + Daraja/aggregator KYC.
+**Post-M1.5: hardening before the pilot.** The money path (F0-F3) and the
+sales surface (B2-B7) are committed and gate-verified; the invite gate (B4) is
+in. The next work is the hardening the skeptic named, in this order:
+**(1)** the RLS hardening (U77/U82: a restricted database role, forced
+row-level security, and a tenant context on the public write path);
+**(2)** the human's U80 decision (enforce the entitlement cells, or keep
+selling them as plan contents until they are enforced); **(3)** the owner
+console - the thing B8 was waiting for; **(4)** M2, the pre-go-live gate: a
+scripted onboarding run on the sandbox, which needs the human's U61 scope
+answer (sandbox only, or a real phone on live Meta/Safaricom).
+External critical path (owner, parallel): Meta business verification and
+Daraja/aggregator KYC. Transaction fees stay blocked on it.
 
 ---
 
