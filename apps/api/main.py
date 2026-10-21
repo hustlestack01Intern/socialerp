@@ -77,13 +77,15 @@ def create_app() -> FastAPI:
 
     # Rate limit on the auth endpoints (M1.5): a registration answers 403 for
     # a bad invite code and 201 for a good one, so the status code is a probe.
-    # The limiter is per process and covers only the auth paths; the durable
-    # version (shared counters) is still to do.
-    from packages.core.middleware.rate_limit import RateLimitMiddleware
+    # The counters live in Redis when it is configured and answering, so the
+    # limit is per platform and not per worker (U78); the in-process counter
+    # is the fallback, and the app logs which one it is using.
+    from packages.core.middleware.rate_limit import LazySharedStore, RateLimitMiddleware
 
     app.add_middleware(
         RateLimitMiddleware,
         limit=settings.RATE_LIMIT_REQUESTS_PER_MINUTE,
+        store=LazySharedStore(str(settings.REDIS_URL)),
     )
 
     # CORS
