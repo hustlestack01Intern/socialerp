@@ -206,6 +206,11 @@ def create_app() -> FastAPI:
 
     app.include_router(billing.router, tags=["billing"])
 
+    # The developer API (M1.6): what "API access" on a plan actually opens.
+    from apps.api.routes import developer
+
+    app.include_router(developer.router, tags=["developer API"])
+
     # Phase 5: Agent
     # from apps.api.routes import agent
     # app.include_router(agent.router, prefix="/api/v1/agent", tags=["agent"])
