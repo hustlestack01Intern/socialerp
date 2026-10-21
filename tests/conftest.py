@@ -17,6 +17,9 @@ os.environ["DEV_AUTO_CREATE_TENANT"] = "true"
 os.environ["POSTGRES_USER"] = "socialerp"
 os.environ["POSTGRES_PASSWORD"] = "socialerp"
 os.environ["POSTGRES_DB"] = "socialerp_test"
+# The auth rate limiter is exercised by its own test with an explicit small
+# limit; the rest of the suite must not be throttled by it.
+os.environ["RATE_LIMIT_REQUESTS_PER_MINUTE"] = "100000"
 os.environ["POSTGRES_HOST"] = "localhost"
 os.environ["POSTGRES_PORT"] = "5432"
 # The API's request-scoped DB dependency (`packages.core.database`) reads

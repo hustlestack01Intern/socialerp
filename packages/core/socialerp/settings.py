@@ -201,6 +201,12 @@ class Settings(BaseSettings):
     # this many days the pending row expires to `cancelled` so a verified number
     # is not permanently blocked (M1.3).
     TRIAL_PENDING_EXPIRY_DAYS: int = 30
+    # Requests per minute, per client IP, on the auth endpoints (register and
+    # login). A registration answers 403 for a bad invite code and 201 for a
+    # good one, so the status code alone is a probe; the limit makes probing
+    # expensive. It is per process (see packages/core/middleware/rate_limit.py
+    # for what that does and does not buy). 0 disables the limiter.
+    RATE_LIMIT_REQUESTS_PER_MINUTE: int = 100
 
     # -------------------------------------------------------------------------
     # Onboarding

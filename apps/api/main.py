@@ -75,6 +75,17 @@ def create_app() -> FastAPI:
 
         app.add_middleware(TenantContextMiddleware)
 
+    # Rate limit on the auth endpoints (M1.5): a registration answers 403 for
+    # a bad invite code and 201 for a good one, so the status code is a probe.
+    # The limiter is per process and covers only the auth paths; the durable
+    # version (shared counters) is still to do.
+    from packages.core.middleware.rate_limit import RateLimitMiddleware
+
+    app.add_middleware(
+        RateLimitMiddleware,
+        limit=settings.RATE_LIMIT_REQUESTS_PER_MINUTE,
+    )
+
     # CORS
     app.add_middleware(
         CORSMiddleware,
