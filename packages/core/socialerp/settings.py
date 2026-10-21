@@ -187,6 +187,11 @@ class Settings(BaseSettings):
     # TRIAL_EXTENSION_DAYS is permitted.
     TRIAL_LENGTH_DAYS: int = 14
     TRIAL_EXTENSION_DAYS: int = 7
+    # Length of a PAID period, in days, counted from the payment date (F3;
+    # approved 2026-10-21). Monthly in advance, per docs/PRICING_STRATEGY.md.
+    # A paid plan always has a period: without one the entitlement would never
+    # end and the tenant could never be re-decided.
+    BILLING_PAID_PERIOD_DAYS: int = 30
     # A tenant that signs up but never connects a channel stays `pending`; after
     # this many days the pending row expires to `cancelled` so a verified number
     # is not permanently blocked (M1.3).

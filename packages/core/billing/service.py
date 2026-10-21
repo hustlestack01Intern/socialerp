@@ -442,16 +442,34 @@ class BillingService:
 
         A plan change never by itself clears ``past_due`` (that needs an audited
         payment confirmation) and never shortens a paid period (INV18).
+
+        F3 (approved 2026-10-21): a **paid** plan always has a period. The
+        period runs from the payment date (``BILLING_PAID_PERIOD_DAYS``) and is
+        never shorter than a period that is already paid for. Without this, a
+        tenant that paid after an expired trial kept the trial's stale date and
+        the entitlement gate kept denying them — the sale did not unlock the
+        product — and a tenant upgraded from ``pending`` got ``period_end =
+        NULL``, i.e. an eternal subscription. A change to the trial plan keeps
+        the trial semantics (the clock starts at channel connect, U67).
         """
         sub = await self.get_subscription(tenant_id)
         if sub is None:
             sub = await self.ensure_pending(tenant_id)
-        before = {"plan": sub.plan, "status": sub.status}
+        before = {
+            "plan": sub.plan,
+            "status": sub.status,
+            "period_end": sub.period_end.isoformat() if sub.period_end else None,
+        }
         sub.plan = plan.value
         # Entering a paid plan activates entitlement; entering trial keeps trial
         # semantics (clock starts at connect).
         if plan is not PlanTier.TRIAL and sub.status not in (SubscriptionStatus.PAST_DUE.value,):
             sub.status = SubscriptionStatus.ACTIVE.value
+        if plan is not PlanTier.TRIAL:
+            settings = get_settings()
+            paid_end = self._now() + timedelta(days=settings.BILLING_PAID_PERIOD_DAYS)
+            if sub.period_end is None or sub.period_end < paid_end:
+                sub.period_end = paid_end
         sub.plan_change_evidence = evidence
         await self.session.flush()
         await AuditLogger(self.session).log_action(
@@ -461,7 +479,12 @@ class BillingService:
             resource="subscription",
             resource_id=sub.id,
             before=before,
-            after={"plan": sub.plan, "status": sub.status, "evidence": evidence},
+            after={
+                "plan": sub.plan,
+                "status": sub.status,
+                "evidence": evidence,
+                "period_end": sub.period_end.isoformat() if sub.period_end else None,
+            },
         )
         return sub
 

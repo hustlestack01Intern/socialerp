@@ -272,16 +272,14 @@ async def test_trial_to_subscription_spine(api_client, session_factory) -> None:
     assert tenant_id is not None
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "F3 (awaiting human approval): a paid plan change must open a paid period. "
-        "Today the expired trial's period_end survives the upgrade, so the gate keeps "
-        "denying a tenant that has paid (the sale does not unlock the product)."
-    ),
-)
 async def test_paid_plan_reopens_the_agent(api_client, session_factory) -> None:
-    """After payment the customer is answered again (the joint the spine needs)."""
+    """After payment the customer is answered again (the joint the spine needs).
+
+    This was the broken joint found by the experiment: a paid plan change did
+    not open a paid period, so the expired trial's date survived the upgrade
+    and the gate kept denying a tenant that had paid. Fixed by F3 (approved
+    2026-10-21); the strict ``xfail`` marker was removed when it flipped.
+    """
     tenant_id, _headers = await _spine_up_to_payment(api_client, session_factory)
 
     async with session_factory() as session:
