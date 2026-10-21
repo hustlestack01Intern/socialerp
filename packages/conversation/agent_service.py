@@ -326,6 +326,15 @@ class ConversationAgentService:
             conversation_id=conversation_id,
             contact_id=contact_id,
         )
+        # The holding reply is only a DRAFT: the customer is waiting for a
+        # human, so the conversation must enter the human queue. Without this
+        # the denial would be invisible to the owner (found by the M1.6 spine
+        # experiment, 2026-10-21).
+        await ConversationManager(self.session).set_handoff(
+            tenant_id=self.tenant_id,
+            conversation_id=conversation_id,
+            reason="entitlement_denied",
+        )
         logger.info(
             "Agent denied by entitlement",
             extra={"tenant_id": str(self.tenant_id), "reason": decision.reason},

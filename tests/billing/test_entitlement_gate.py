@@ -112,6 +112,35 @@ async def test_expired_tenant_is_denied_without_llm(tenant_session, tenant) -> N
     assert msgs[0].text_body == HOLDING_REPLY
 
 
+async def test_denied_path_hands_off_to_a_human(tenant_session, tenant) -> None:
+    """A denied customer must land in the human queue, not vanish.
+
+    The denial returns ``requires_human=True`` but the conversation itself must
+    move to ``handoff_requested``: the reply is only a DRAFT, so without the
+    handoff the customer waits in silence and the owner has no queue entry
+    (found by the M1.6 spine experiment, 2026-10-21).
+    """
+    await _set_status(
+        tenant_session, tenant.id, "expired", period_end_sql="now() - interval '1 day'"
+    )
+    contact, conversation = await _seed_conversation(tenant_session, tenant.id)
+    service = ConversationAgentService(
+        tenant_session, tenant.id, extractor=ExplodingExtractor(), sender=RecordingSender()
+    )
+    await service.respond_to_message(
+        conversation_id=conversation.id,
+        contact_id=contact.id,
+        customer_phone=PHONE,
+        text="nataka 2 black hoodie",
+        provider_message_id="wamid.deny.handoff",
+    )
+    await tenant_session.flush()
+    assert conversation.state == WhatsAppConversationState.HANDOFF_REQUESTED
+    assert conversation.handoff_reason == "entitlement_denied"
+    # The owner has an SLA to answer a customer who is waiting in silence.
+    assert conversation.first_response_due_at is not None
+
+
 async def test_pending_tenant_is_denied(tenant_session, tenant) -> None:
     await _set_status(tenant_session, tenant.id, "pending", period_end_sql="NULL")
     contact, conversation = await _seed_conversation(tenant_session, tenant.id)
