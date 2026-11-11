@@ -1,8 +1,26 @@
 # Threat Model - SocialERP
 
-**Document Version**: 1.0
-**Last Updated**: 2024-01-15
+**Document Version**: 1.1
+**Last Updated**: 2026-11-01
 **Classification**: Internal - Security Sensitive
+
+> **2026-11-01 correction (M0 truth-freeze, HEAD `a39db67`).** Several claims in the
+> original v1.0 text were aspirational, not measured. Corrected here rather than
+> silently kept:
+> - **RLS is NOT yet enforced.** Policies exist on the tenant tables, but the runtime
+>   API/worker connects as the **table owner** and no table is `FORCE ROW LEVEL
+>   SECURITY`, so the policies do not apply to the application's own reads/writes.
+>   The public registration path also writes tenant rows with no tenant context.
+>   This is U76/U77/U82 and is the **M1** work; until it lands, tenant isolation is an
+>   application-level guarantee (tenant-scoped queries + tests), not a database one.
+> - **ODPC registration and a DPIA are not established facts.** Whether either is
+>   required depends on turnover/employee thresholds, purposes and counsel's
+>   classification. Treat both as **pending Kenyan counsel review** (pilot plan M4).
+> - **"7-year retention default" is not a verified configured default.** Retention is
+>   not yet mapped per data class; that is M4 work.
+> - Reserve figures elsewhere in this document (e.g. "MFA", "field-level encryption",
+>   "encrypted backups") are design intent unless the linked code/test exists; the
+>   pilot plan's M1/M3/M4 acceptance criteria are the evidence gate.
 
 ---
 
@@ -99,7 +117,7 @@ Rider (WhatsApp)
 
 | ID | Threat | Impact | Likelihood | Mitigation |
 |----|--------|--------|------------|------------|
-| I-01 | Cross-tenant data leak via query bug | Critical | Medium | **RLS on every table**; integration tests verify isolation |
+| I-01 | Cross-tenant data leak via query bug | Critical | Medium | **PARTIAL (2026-11-01):** policies exist on tenant tables + isolation tests, but the app role owns the tables and RLS is not `FORCE`d, so the database does not yet enforce this (U76/U77/U82 → M1). Application-level tenant scoping is the current control. |
 | I-02 | Customer sees another's order history | Critical | Low | Conversation scoped to phone number; agent tools tenant-scoped |
 | I-03 | PII in logs (phone, names, addresses) | High | Medium | **Structured logging with redaction**; separate PII fields |
 | I-04 | LLM leaks tenant data in response | Critical | High | **Output validation**; no raw data in prompts; tool results validated |
@@ -133,7 +151,7 @@ Rider (WhatsApp)
 
 | Asset | Classification | Protection |
 |-------|----------------|------------|
-| Tenant database (PostgreSQL) | Critical | RLS, encryption at rest, automated backups |
+| Tenant database (PostgreSQL) | Critical | RLS policies exist but are **not yet enforced** (app role owns tables; M1); encryption-at-rest and backups are deployment-dependent, not verified here |
 | M-Pesa credentials (per tenant) | Critical | Field-level encryption, rotation, audit on access |
 | Meta App Secret / Webhook tokens | High | Environment variables, rotation, no logging |
 | LLM API keys | High | Encrypted storage, per-tenant spend caps |
@@ -150,25 +168,25 @@ Rider (WhatsApp)
 | Lawful basis for processing | Consent (customer messages), Contract (orders), Legitimate interest (fraud) |
 | Data minimization | Only collect necessary fields; no sensitive attributes inferred |
 | Purpose limitation | Data used only for order fulfillment, support, analytics (opt-in) |
-| Storage limitation | Configurable retention (default 7 years); automated deletion |
+| Storage limitation | **Pending M4:** retention not yet mapped per data class; the old "7-year default" was not a verified configuration |
 | Data subject rights | Export/delete API; consent withdrawal; automated within 30 days |
 | Security safeguards | Encryption, access controls, breach notification (72h) |
-| DPIA required | Yes - for customer profiling, automated decision-making |
-| ODPC registration | **REQUIRED** - Flag for legal review before pilot launch |
+| DPIA required | **Pending Kenyan counsel review** (threshold/purpose dependent) — do not treat as decided |
+| ODPC registration | **Pending Kenyan counsel review** — threshold exemption depends on turnover and employees; do not assume it qualifies |
 
 ---
 
 ## Mitigation Priorities
 
 ### P0 - Must Fix Before Launch
-- [ ] RLS policies on all tenant tables with integration tests
+- [ ] RLS **enforcement** (restricted role + `FORCE RLS` + public-path tenant context) — policies + tests exist, enforcement is M1
 - [ ] Signature verification on all webhooks (Meta, Daraja, aggregators)
 - [ ] STK Push callback amount validation against order
 - [ ] Prompt injection defenses (input sanitization, output validation)
 - [ ] Audit log on all agent actions, payments, admin operations
 - [ ] Per-tenant LLM spend caps with hard limits
 - [ ] Field-level encryption for PII and secrets
-- [ ] ODPC registration confirmed
+- [ ] ODPC registration duty confirmed by Kenyan counsel (M4)
 
 ### P1 - Fix Within First Month
 - [ ] Automated daily reconciliation with alerting
@@ -206,13 +224,13 @@ Steal Funds
 ```
 Cross-Tenant Access
 ├── SQL injection in tenant-scoped query
-│   └── MITIGATED: Parameterized queries + RLS
+│   └── PARTIAL: parameterized queries are in place; RLS is not yet FORCEd (M1)
 ├── IDOR via API endpoint
-│   └── MITIGATED: RLS + explicit tenant checks in service layer
+│   └── PARTIAL: explicit tenant checks in the service layer; database RLS not yet enforcing (M1)
 ├── LLM prompt injection to access other tenant data
 │   └── MITIGATED: Tenant-scoped tools + output validation
 ├── Misconfigured database permissions
-│   └── MITIGATED: RLS policies + integration tests
+│   └── OPEN: the app currently connects as the table owner (U77/U82 → M1)
 └── Shared cache/queue leakage
     └── MITIGATED: Tenant-scoped keys + namespaces
 ```

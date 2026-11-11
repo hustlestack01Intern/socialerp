@@ -89,6 +89,9 @@ async def test_login_sets_an_httponly_cookie(api_client, session_factory) -> Non
     assert "SameSite=lax" in header.replace("Lax", "lax")
     assert "Path=/api/v1/auth" in header
 
+    # U79 residual: the token must not also be readable in the JSON body.
+    assert "refresh_token" not in resp.json(), resp.json()
+
 
 async def test_the_refresh_route_accepts_the_cookie(api_client, session_factory) -> None:
     """A browser renews with the cookie; an API client renews with the body."""
@@ -106,8 +109,10 @@ async def test_the_refresh_route_accepts_the_cookie(api_client, session_factory)
     resp = await api_client.post("/api/v1/auth/refresh", json={})
     assert resp.status_code == 200, resp.text
     assert resp.json()["access_token"]
+    assert "refresh_token" not in resp.json(), resp.json()
 
-    # The API client path: the body still works.
+    # The API client path: the body still works. The rotated token is returned
+    # only in the cookie, never in the JSON body.
     token = create_refresh_token(
         user_id=str(user_id),
         tenant_id=str(tenant_id),
@@ -117,6 +122,7 @@ async def test_the_refresh_route_accepts_the_cookie(api_client, session_factory)
         "/api/v1/auth/refresh", json={"refresh_token": token}
     )
     assert resp.status_code == 200, resp.text
+    assert "refresh_token" not in resp.json(), resp.json()
 
 
 async def test_logout_clears_the_cookie(api_client, session_factory) -> None:

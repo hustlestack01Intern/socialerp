@@ -125,10 +125,17 @@ class UserLogin(BaseModel):
 
 
 class TokenResponse(BaseModel):
-    """Token response."""
+    """Token response.
+
+    The refresh token is deliberately **not** in the body: it is set in an
+    ``HttpOnly`` cookie by the auth routes (U79). A page script that can call
+    these endpoints gets a short-lived access token, not a long-lived refresh
+    token it can exfiltrate. Non-browser clients that hold a refresh token can
+    still present it to ``POST /auth/refresh`` in the body; they just cannot
+    obtain a new one from these responses.
+    """
 
     access_token: str
-    refresh_token: str
     token_type: str = "bearer"
     expires_in: int
 
@@ -253,8 +260,12 @@ def _tenant_response(tenant: Tenant) -> TenantResponse:
 # =============================================================================
 
 
-def _issue_tokens(user: User) -> TokenResponse:
-    """Issue an access/refresh token pair for a SQLAlchemy user."""
+def _issue_tokens(user: User) -> tuple[TokenResponse, str]:
+    """Issue an access/refresh token pair for a SQLAlchemy user.
+
+    Returns the public response (access token only) and the raw refresh token,
+    which the caller puts in the ``HttpOnly`` cookie and never in the body.
+    """
     access_token = create_access_token(
         user_id=str(user.id),
         tenant_id=str(user.tenant_id),
@@ -265,10 +276,12 @@ def _issue_tokens(user: User) -> TokenResponse:
         tenant_id=str(user.tenant_id),
         roles=[_role_value(user.role)],
     )
-    return TokenResponse(
-        access_token=access_token,
-        refresh_token=refresh_token,
-        expires_in=ACCESS_TOKEN_EXPIRES_IN_SECONDS,
+    return (
+        TokenResponse(
+            access_token=access_token,
+            expires_in=ACCESS_TOKEN_EXPIRES_IN_SECONDS,
+        ),
+        refresh_token,
     )
 
 
@@ -406,8 +419,8 @@ async def register(
     await session.flush()
     await session.refresh(owner)
 
-    tokens = _issue_tokens(owner)
-    _set_refresh_cookie(response, tokens.refresh_token)
+    tokens, refresh_token = _issue_tokens(owner)
+    _set_refresh_cookie(response, refresh_token)
     return tokens
 
 
@@ -440,8 +453,8 @@ async def login(
             detail="Email exists in multiple tenants; tenant-scoped login required",
         )
 
-    tokens = _issue_tokens(matched[0])
-    _set_refresh_cookie(response, tokens.refresh_token)
+    tokens, refresh_token = _issue_tokens(matched[0])
+    _set_refresh_cookie(response, refresh_token)
     return tokens
 
 
@@ -474,7 +487,6 @@ async def refresh_token(
     _set_refresh_cookie(response, pair.refresh_token)
     return TokenResponse(
         access_token=pair.access_token,
-        refresh_token=pair.refresh_token,
         expires_in=pair.expires_in,
     )
 

@@ -1,5 +1,66 @@
 # Project State
 
+> **2026-11-11 — U79 completed.** The refresh token is no longer returned in the JSON
+> body by `/register`, `/login` or `/refresh`; it lives only in the `HttpOnly` cookie
+> (`apps/api/routes/auth.py`, proven by `tests/integration/test_refresh_cookie.py`).
+> The short-lived access token still lives in `localStorage`; that residual is unchanged.
+> This is the only source change since the `a39db67` baseline. The block below is kept
+> as the 2026-11-01 measurement of record.
+>
+> **2026-11-01 — CURRENT STATE OF RECORD.** This block supersedes the 2026-10-21 block
+> immediately below; that block is kept for provenance.
+>
+> **HEAD `a39db67`** ("the refresh token leaves localStorage for an HttpOnly cookie").
+> The security wave landed as `afdfff6` (shared rate-limiter counters, U78) and
+> `a39db67` (refresh token in an HttpOnly cookie, U79); the enforcement wave before it
+> was `bf29615` (the plan × feature matrix, enforced, U80), `4ae76a2` (one business per
+> WhatsApp number, U81) and `c4e9317` (state of record).
+>
+> **Measured 2026-11-01 at `a39db67` — `make check` EXIT 0** (log `/tmp/gate-a39db67.log`;
+> the only untracked files were this session's two plan/finding docs, no source changes):
+> - `ruff check .` → **All checks passed!**
+> - `pnpm lint` (eslint) → **✔ No ESLint warnings or errors**
+> - `mypy packages apps` (strict) → **Success: no issues found in 137 source files**
+> - `pnpm typecheck` (tsc --noEmit) → **clean**
+> - `pytest` → **1029 passed**, 156 warnings, 0 failed, 23:57
+> - `make eval` → **8/8 cases**, wrong-price/stock hallucinations **0**
+> - The repeated `localhost:4317` OTLP export warning is expected (no collector
+>   running); it does not affect the gate.
+>
+> **M0 truth-freeze (2026-11-01): what the ledger said versus the code.**
+> - **Re-checked against the code and corrected in `docs/UNCERTAINTY.md`:** U51 + U52 (erasure
+>   scrubs the outbox phone and hard-deletes WhatsApp contact/message rows — `913fe69`,
+>   tests in `tests/crm/test_export_erasure.py`); U78 (Redis-shared limiter —
+>   `afdfff6`); U79 **only PARTIAL** (the dashboard no longer stores the refresh token
+>   in `localStorage`, but `/register`, `/login` and `/refresh` still return it in the
+>   JSON body — M1 step 5 must remove that; the access token also stays in
+>   `localStorage`); U80 (entitlement cells enforced by
+>   `EntitlementEnforcer` — `bf29615`); U81 (one business per WhatsApp number, unique
+>   claim under a lock, migration `0020` — `4ae76a2`).
+> - **F2 billing adjudication:** the approved F2 plan
+>   (`docs/plans/2026-10-21-money-path-f0-f2.md`, assumptions A2/O1) deliberately chose
+>   a caller-supplied, shape-checked, UNIQUE M-Pesa reference with out-of-band founder
+>   verification — **not** provider-confirmed funds. The current route matches that
+>   plan, so this is **not a code regression**. The older phrase "payment-verified plan
+>   changes" overstated it. For real paid activation it is still insufficient; that is
+>   the M3 work in `docs/plans/2026-10-23-production-pilot-launch.md`.
+> - **Still OPEN and blocking the pilot:** U71 (the drift guard does not compare
+>   indexes/defaults/policies); U76/U77/U82 (the runtime role owns the tables, RLS is
+>   not `FORCE`d, and the public registration write path sets no tenant context — the
+>   database does not yet enforce tenant isolation); U60/U73 (trial length/start are a
+>   human decision: the code and pricing page currently say **14 days from channel
+>   connect**, the 2026-10-23 pilot proposal asks for **7 days from readiness**); M3
+>   (verified subscription payment / operator approval).
+>
+> **Current position:** M0 (freeze truth, one measured release baseline) is complete as
+> measured above. **M1 (the restricted runtime role, `FORCE ROW LEVEL SECURITY`, and the
+> public-path tenant context) is the next work and touches protected zones, so it
+> starts only on an explicit human "go".** No source, test, gate, payment or privacy
+> file was changed in this session.
+>
+> ---
+>
+> **HISTORICAL — the 2026-10-21 block, kept for provenance.**
 > State of record. **Updated 2026-10-21 by the Chief Engineer — measured truth.**
 >
 > **HEAD `c4e9317`** ("the records, and the dev password that read like a broken
@@ -66,18 +127,20 @@
 > contradicts MAP.md or the filesystem, check `git log` and `docs/plans/`.
 
 ## Current Phase
-**Post-M1.5: hardening before the pilot.** The money path (F0-F3) and the
-sales surface (B2-B7) are committed and gate-verified; the invite gate (B4) is
-in. The next work is the hardening the skeptic named, in this order:
-**(1)** the RLS hardening (U77/U82: a restricted database role, forced
-row-level security, and a tenant context on the public write path);
-**(2)** the human's U80 decision (enforce the entitlement cells, or keep
-selling them as plan contents until they are enforced); **(3)** the owner
-console - the thing B8 was waiting for; **(4)** M2, the pre-go-live gate: a
-scripted onboarding run on the sandbox, which needs the human's U61 scope
-answer (sandbox only, or a real phone on live Meta/Safaricom).
-External critical path (owner, parallel): Meta business verification and
-Daraja/aggregator KYC. Transaction fees stay blocked on it.
+**Pilot run-up: M0 done, M1 awaiting an explicit go.** The measured baseline is
+`a39db67` (1029 passed, evals 8/8). M0 reconciled the ledger: U51/U52/U78/U79/U80/U81
+are resolved in code and now recorded as such; the F2 billing route is adjudicated as
+matching its approved plan, not a regression (see the banner at the top). The next
+work, in the pilot plan's order:
+**(1)** M1 — restricted runtime DB role, `FORCE ROW LEVEL SECURITY`, tenant context on
+API/worker/public-registration paths (U76/U77/U82), plus U71's wider drift guard;
+**(2)** M2 — tenant-owned WhatsApp account routing; **(3)** M3 — verified subscription
+payment / audited operator approval; **(4)** M4 — data-protection and production
+operations; **(5)** M5 — the trial/price decision (currently 14 days from channel
+connect in code; the proposal is 7 days from readiness) and one honest pilot SKU.
+Protected-zone edits (RLS, auth, billing, privacy, tests) begin only after the human's
+"go" on `docs/plans/2026-10-23-production-pilot-launch.md`. External critical path
+(owner, parallel): Meta business verification and Daraja/aggregator KYC.
 
 ---
 
