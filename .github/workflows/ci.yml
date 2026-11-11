@@ -13,7 +13,7 @@ env:
 
 jobs:
   check:
-    name: Check (ruff + mypy + pytest)
+    name: Check (ruff + mypy + pytest + evals)
     runs-on: ubuntu-latest
     timeout-minutes: 40
     services:
@@ -48,10 +48,17 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
 
+      # The Makefile runs every Python target through `uv run`. The project is a
+      # uv workspace (the `socialerp-core` member is not on PyPI), so CI must
+      # install with `uv sync`, not pip (see pyproject.toml).
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev,test]"
+        run: uv sync
 
       # The dashboard is part of the gate: `make lint` runs eslint and
       # `make typecheck` runs tsc, so without Node/pnpm the job would fail on
@@ -74,11 +81,14 @@ jobs:
       - name: Run linting (ruff + eslint)
         run: make lint
 
-      - name: Run type checking (mypy)
+      - name: Run type checking (mypy + tsc)
         run: make typecheck
 
       - name: Run tests (pytest)
         run: make test
+
+      - name: Run evaluations
+        run: make eval
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4
@@ -107,92 +117,14 @@ jobs:
   docker-build:
     name: Docker Build Test
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     needs: check
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build docker-compose (fake profile)
-        run: docker-compose --profile fake build
+      - name: Build fake provider images
+        run: docker compose --profile fake build
 
-      - name: Build docker-compose (app profile)
-        run: docker-compose --profile app build
-
-  # Optional: Run full make check locally equivalent
-  full-check:
-    name: Full Check (make check)
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: socialerp
-          POSTGRES_PASSWORD: socialerp
-          POSTGRES_DB: socialerp
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U socialerp -d socialerp"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
-      redis:
-        image: redis:7-alpine
-        ports: ["6379:6379"]
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-          cache-dependency-path: pyproject.toml
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev,test]"
-
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.9
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: pnpm
-          cache-dependency-path: apps/dashboard/pnpm-lock.yaml
-
-      - name: Install dashboard dependencies
-        run: cd apps/dashboard && pnpm install --frozen-lockfile
-
-      - name: Start fake servers
-        run: docker-compose --profile fake up -d
-
-      - name: Wait for fake servers
-        run: |
-          sleep 5
-          curl -f http://localhost:8081/health || exit 1
-          curl -f http://localhost:8082/health || exit 1
-
-      - name: Run make check
-        run: make check
-
-      - name: Run dashboard checks (eslint + tsc)
-        run: |
-          make lint-js
-          make typecheck-js
-
-      - name: Cleanup
-        if: always()
-        run: docker-compose down --remove-orphans
+      - name: Build application images
+        run: docker compose --profile app build
